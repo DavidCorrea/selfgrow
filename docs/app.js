@@ -10,9 +10,10 @@
  */
 
 import { cardArtSvg } from "./cardart.js";
-import { CARD_BY_ID, DECK_LIMIT, MINIMUM_DECK_SIZE, OPPONENT_NAME } from "./cards.js";
+import { CARDS, CARD_BY_ID, DECK_LIMIT, MINIMUM_DECK_SIZE, OPPONENT_NAME } from "./cards.js";
 import {
   collectionSize,
+  listAllCards,
   listDeckCards,
   listOwnedCards,
   loadGame,
@@ -38,6 +39,9 @@ const state = {
   cards: opened.cards,
   cardsOwned: collectionSize(opened.cards),
   distinctCards: opened.cards.length,
+  // How many different cards the game holds in all, so what has been collected
+  // can be read against the whole set rather than on its own.
+  setTotal: CARDS.length,
   deck: opened.deck,
   deckLimit: DECK_LIMIT,
   minimumDeckSize: MINIMUM_DECK_SIZE,
@@ -672,45 +676,50 @@ function deckControls(card) {
   return wrap;
 }
 
-/** One owned card, as a list item that shows its picture and reads its name,
- * numbers and deck toggle. */
-function ownedCardRow(card) {
+/**
+ * One card in the collection, as a face that shows its picture and reads its
+ * name, numbers and copy count. A card the player holds carries the deck
+ * controls that put a copy in the deck or take one out; a card they do not hold
+ * yet is marked as not collected and offers no way into a deck.
+ */
+function collectionCardRow(card) {
   const item = document.createElement("li");
-  item.className = "owned-card";
+  item.className = card.owned ? "owned-card" : "unowned-card";
   item.dataset.cardId = card.id;
 
-  // The card's picture, first, so a player learns the card by sight. A card the
-  // art module does not know yet gets no picture rather than an empty frame, and
-  // the name below is what stands in for it.
+  // The card's picture, first, so a player learns the card by sight — whether
+  // they hold it yet or are looking at what there is to collect. A card the art
+  // module does not know yet gets no picture rather than an empty frame, and the
+  // name below is what stands in for it.
   const art = cardArtSvg(card.id, card.name);
   if (art) item.append(art);
 
   const head = document.createElement("div");
-  head.className = "owned-head";
+  head.className = "card-face-head";
 
   const name = document.createElement("span");
-  name.className = "owned-name";
+  name.className = "card-face-name";
   name.textContent = card.name;
   head.append(name);
 
   // A count only where there is more than one to count; one copy is the default.
   if (card.copies > 1) {
     const copies = document.createElement("span");
-    copies.className = "owned-copies";
+    copies.className = "card-face-copies";
     copies.dataset.copies = String(card.copies);
     copies.textContent = `${card.copies} copies`;
     head.append(copies);
   }
 
   const stats = document.createElement("dl");
-  stats.className = "owned-stats";
+  stats.className = "card-face-stats";
   for (const [label, key] of [
     ["Cost", "cost"],
     ["Attack", "attack"],
     ["Health", "health"],
   ]) {
     const stat = document.createElement("div");
-    stat.className = "owned-stat";
+    stat.className = "card-face-stat";
     const term = document.createElement("dt");
     term.textContent = label;
     const value = document.createElement("dd");
@@ -720,8 +729,21 @@ function ownedCardRow(card) {
     stats.append(stat);
   }
 
-  item.append(head, stats, deckControls(card));
+  item.append(head, stats);
+  item.append(card.owned ? deckControls(card) : notCollectedNote());
   return item;
+}
+
+/**
+ * What stands where a card's deck controls would: the plain statement that this
+ * card is part of the set but not part of the collection yet, so a player reads
+ * it as something to collect toward rather than as a card they have.
+ */
+function notCollectedNote() {
+  const note = document.createElement("p");
+  note.className = "unowned-note";
+  note.textContent = "Not yet collected";
+  return note;
 }
 
 /** One card in the deck, shown as its picture and read as its name and three
@@ -750,21 +772,16 @@ function deckCardRow(card) {
   return item;
 }
 
-/** Draw the owned cards, each with the control that adds or removes it. */
-function renderOwnedCards() {
+/**
+ * Draw every card in the game: the ones the player holds with their deck
+ * controls, and the ones they do not yet with a note saying so — so the screen
+ * shows the whole set and how much of it is collected, not only what is held.
+ */
+function renderCollectionCards() {
   const list = document.getElementById("collection-list");
   if (!list) return;
 
-  const cards = listOwnedCards(state.cards);
-  if (!cards.length) {
-    const empty = document.createElement("li");
-    empty.className = "collection-empty";
-    empty.textContent = "You own no cards yet.";
-    list.replaceChildren(empty);
-    return;
-  }
-
-  list.replaceChildren(...cards.map(ownedCardRow));
+  list.replaceChildren(...listAllCards(state.cards).map(collectionCardRow));
 }
 
 /** Draw the deck's current contents, each card as a face that shows its picture
@@ -785,9 +802,9 @@ function renderDeck() {
   list.replaceChildren(...cards.map(deckCardRow));
 }
 
-/** Draw the whole Collection screen: every owned card and the deck beside it. */
+/** Draw the whole Collection screen: every card in the game and the deck beside it. */
 function renderCollection() {
-  renderOwnedCards();
+  renderCollectionCards();
   renderDeck();
 }
 
@@ -837,12 +854,12 @@ function commitDeck() {
 
 /**
  * Everything the page currently shows: the screen that is open, how many cards
- * the player owns and how many are different, the deck — its size, its limit,
- * the fewest cards a match needs and the cards themselves — whether it will
- * survive closing the page, how many matches have been played and won, the
- * result of the last finished match (whether it was a win or a loss, the card a
- * win awarded, and whether that completed the set), and the actions they can
- * take from here. This is what the get-state tool returns.
+ * the player owns and how many are different out of the whole set, the deck — its
+ * size, its limit, the fewest cards a match needs and the cards themselves —
+ * whether it will survive closing the page, how many matches have been played and
+ * won, the result of the last finished match (whether it was a win or a loss, the
+ * card a win awarded, and whether that completed the set), and the actions they
+ * can take from here. This is what the get-state tool returns.
  */
 export function readState() {
   // Only the actions a visitor can actually reach: a control this screen hides
@@ -855,6 +872,7 @@ export function readState() {
     screen: state.screen,
     cardsOwned: state.cardsOwned,
     distinctCards: state.distinctCards,
+    setTotal: state.setTotal,
     deckSize: state.deck.length,
     deckLimit: state.deckLimit,
     minimumDeckSize: state.minimumDeckSize,
@@ -948,15 +966,19 @@ export function readMatch() {
 }
 
 /**
- * Every card the player owns, with its name, cost, attack, health and how many
- * copies — the same list the Collection screen prints. This is what the
- * list-collection tool returns.
+ * Every card in the game, each saying whether the player owns it and how many
+ * copies are held — the whole set the Collection screen shows, which is what
+ * the list-collection tool returns. `ownedCards` narrows it to what is actually
+ * held, and `setTotal` is how many different cards the game has, so
+ * `distinctCards` of `setTotal` is how close the set is to complete.
  */
 export function readCollection() {
   return {
-    cards: listOwnedCards(state.cards),
+    cards: listAllCards(state.cards),
+    ownedCards: listOwnedCards(state.cards),
     cardsOwned: state.cardsOwned,
     distinctCards: state.distinctCards,
+    setTotal: state.setTotal,
     saved: state.saved,
   };
 }

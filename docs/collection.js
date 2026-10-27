@@ -320,6 +320,28 @@ export function listOwnedCards(cards) {
   });
 }
 
+/**
+ * Every card in the game, in catalog order, each with its name, cost, attack
+ * and health, how many copies the collection holds, and whether it holds any at
+ * all. A card the player does not own appears too — zero copies, `owned` false —
+ * so the whole set can be shown beside what has been collected from it.
+ */
+export function listAllCards(cards) {
+  const copiesById = new Map(cards.map((card) => [card.id, card.copies]));
+  return CARDS.map((card) => {
+    const copies = copiesById.get(card.id) ?? 0;
+    return {
+      id: card.id,
+      name: card.name,
+      cost: card.cost,
+      attack: card.attack,
+      health: card.health,
+      copies,
+      owned: copies > 0,
+    };
+  });
+}
+
 /** The deck as full card descriptions, in the order the player chose them. */
 export function listDeckCards(deck) {
   return deck.map((id) => {

@@ -239,10 +239,32 @@ body {
    the left column the home screen's numbers sit in. */
 #screen-collection .standings,
 #screen-collection .deck,
-#screen-collection .collection-list,
+#screen-collection .set,
 #screen-collection .deck-message,
 #screen-collection .storage-note {
   grid-column: 1 / -1;
+}
+
+/* "Cards collected" reads as one number out of another, so the "of" between them
+   stays quiet and the two figures carry the weight. */
+.standing-of {
+  color: var(--ink-muted);
+  font-size: 0.6em;
+  font-weight: 600;
+}
+
+/* The whole set, under the deck: its heading and then the cards themselves, in
+   the same column as everything else on the screen. */
+.set {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.set-heading {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
 }
 
 .collection-list {
@@ -254,15 +276,40 @@ body {
   grid-template-columns: repeat(auto-fill, minmax(13.5rem, 1fr));
 }
 
-/* Each owned card is a small card face: its name, then the three numbers that
-   decide a match, with the count of copies when there is more than one. */
-.owned-card {
+/* Each card in the collection is a small card face: its name, then the three
+   numbers that decide a match, with the count of copies when there is more than
+   one. A card not collected yet keeps the same face, dimmed and dashed, so the
+   set reads as one list with the cards in hand standing forward in it. */
+.owned-card,
+.unowned-card {
   display: grid;
   gap: 0.6rem;
   padding: 0.85rem 1rem 0.95rem;
   border: 1px solid var(--edge);
   border-radius: var(--radius-control);
   background-color: rgba(15, 19, 34, 0.4);
+}
+
+/* A card not collected yet is the same face marked as a gap in the set: a
+   dashed edge, a quieter ground, and its picture, name and numbers dimmed so it
+   is readable without competing with the cards the player actually holds. */
+.unowned-card {
+  border-style: dashed;
+  border-color: var(--edge-soft);
+  background-color: rgba(15, 19, 34, 0.2);
+}
+.unowned-card .card-art,
+.unowned-card .card-face-head,
+.unowned-card .card-face-stats {
+  opacity: 0.72;
+}
+
+.unowned-note {
+  align-self: end;
+  margin: 0;
+  color: var(--ink-muted);
+  font-size: 0.8rem;
+  letter-spacing: 0.02em;
 }
 
 /* The picture on a card face, drawn in the card's own palette by cardart.js.
@@ -292,7 +339,7 @@ body {
   fill: var(--on-foil);
 }
 
-.owned-head {
+.card-face-head {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
@@ -301,34 +348,34 @@ body {
   min-width: 0;
 }
 
-.owned-name {
+.card-face-name {
   font-weight: 700;
   overflow-wrap: anywhere;
 }
 
-.owned-copies {
+.card-face-copies {
   color: var(--ink-muted);
   font-size: 0.8rem;
   font-variant-numeric: tabular-nums;
 }
 
-.owned-stats {
+.card-face-stats {
   display: flex;
   gap: 1.1rem;
   margin: 0;
 }
 
-.owned-stat {
+.card-face-stat {
   display: grid;
 }
 
-.owned-stat dt {
+.card-face-stat dt {
   color: var(--ink-muted);
   font-size: 0.78rem;
   letter-spacing: 0.04em;
 }
 
-.owned-stat dd {
+.card-face-stat dd {
   margin: 0;
   color: var(--foil);
   font-weight: 700;
@@ -470,11 +517,6 @@ body {
   border: 1px solid var(--edge);
   border-left: 3px solid var(--foil);
   border-radius: var(--radius-control);
-}
-
-.collection-empty {
-  grid-column: 1 / -1;
-  color: var(--ink-muted);
 }
 
 /* Shown only when the browser refuses to store anything: a statement of what is
@@ -1002,17 +1044,19 @@ body {
   }
 
   /* A collection card that has a picture turns on its side: the picture beside
-     the name and the numbers rather than above them, so a dozen cards is a
-     couple of screens of scrolling instead of six, with the picture still big
-     enough to know the card by. A card with no drawing keeps the stacked layout
-     it falls back to. */
-  .owned-card:has(.card-art) {
+     the name and the numbers rather than above them, so the whole set is a few
+     screens of scrolling instead of a dozen, with the picture still big enough
+     to know the card by. A card with no drawing keeps the stacked layout it
+     falls back to. */
+  .owned-card:has(.card-art),
+  .unowned-card:has(.card-art) {
     grid-template-columns: minmax(0, 6rem) minmax(0, 1fr);
     align-items: center;
     column-gap: 0.75rem;
   }
 
-  .owned-card .card-art {
+  .owned-card .card-art,
+  .unowned-card .card-art {
     grid-row: 1 / span 3;
   }
 
