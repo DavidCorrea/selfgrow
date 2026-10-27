@@ -4435,6 +4435,261 @@ export async function checks() {
     game.startMatch();
   }
 
+  // --- Starting a match asks before it throws away the one you left ----------
+
+  // An unfinished match saved in the browser is progress, so pressing Start match
+  // must not silently overwrite it: the player is asked, in the same rail as the
+  // status line, whether to continue that match or discard it and start fresh,
+  // and nothing is dealt or saved until they answer. Backing out leaves the save
+  // exactly as it was, and the start-match tool reports the same conflict rather
+  // than overwriting, with the discard-saved-match tool confirming the loss.
+  const continueSavedControl = document.getElementById("action-continue-saved");
+  const discardSavedControl = document.getElementById("action-discard-saved");
+  if (!continueSavedControl || !discardSavedControl) {
+    fail(
+      "the Play screen has no way to answer a start that would discard a saved match " +
+        "(#action-continue-saved / #action-discard-saved are missing)"
+    );
+  }
+  if (matchEngine && typeof game.discardSavedMatch === "function") {
+    /**
+     * Whole, unfinished match payloads that are not the one on the board — the
+     * state a returning player is in, reached here by writing them to storage
+     * and reading them back the way a reload does.
+     */
+    const waitingMatch = (id, logLine) => ({
+      id,
+      opponentId: "emberwake",
+      opponentName: "Emberwake",
+      turn: "player",
+      over: false,
+      winner: null,
+      outcome: null,
+      recorded: false,
+      player: {
+        health: 15,
+        energy: 2,
+        maxEnergy: 4,
+        turns: 3,
+        hand: [{ id: "sprout" }],
+        table: [{ id: "glowcap", health: 2, hasAttacked: true }],
+        deck: [{ id: "elder-oak" }],
+      },
+      opponent: {
+        health: 11,
+        energy: 1,
+        maxEnergy: 5,
+        turns: 2,
+        hand: [],
+        table: [{ id: "mudback-turtle", health: 4, hasAttacked: false }],
+        deck: [],
+      },
+      log: [logLine],
+    });
+    /** Put `payload` in storage as the match waiting to be continued. */
+    const saveWaiting = (payload) => {
+      collection.saveMatch(payload);
+      game.refreshSavedMatch();
+    };
+    /**
+     * The few fields that tell one board from another, read alike from a match
+     * the page reports (playerHealth) and a match read back from storage
+     * (player.health) — so an overwrite or a lost match is caught either way.
+     */
+    const boardShape = (m) =>
+      JSON.stringify({
+        opponentName: m?.opponentName,
+        playerHealth: m?.playerHealth ?? m?.player?.health,
+        opponentHealth: m?.opponentHealth ?? m?.opponent?.health,
+        log: (m?.log ?? []).join(" | "),
+      });
+
+    if (continueSavedControl?.hidden === false || discardSavedControl?.hidden === false) {
+      fail("the continue-or-discard choice is on screen before any start asked for it");
+    }
+    if (game.readState().startConflict) {
+      fail("get-state reports a start conflict before a start was asked for");
+    }
+
+    const waiting = waitingMatch("check-waiting-match", "A match left waiting to be picked up.");
+    saveWaiting(waiting);
+    const savedBefore = window.localStorage.getItem(collection.MATCH_STORAGE_KEY);
+    const liveBefore = game.readState().match;
+    if (!game.readState().canContinue) {
+      fail("a match saved in the browser is not offered to continue, so the start conflict cannot be checked");
+    }
+
+    // Pressing Start match asks rather than deals: the saved match is untouched,
+    // the board is unchanged, and the question names the waiting opponent.
+    const asked = game.startMatch();
+    if (!asked.startConflict) {
+      fail(
+        "starting a match with an unfinished one saved reported no conflict, so the saved match " +
+          "is replaced without the player being asked"
+      );
+    } else {
+      if (!String(asked.startConflict.reason).includes(waiting.opponentName)) {
+        fail(
+          `the start conflict reads ${JSON.stringify(asked.startConflict.reason)} without naming the ` +
+            `waiting opponent "${waiting.opponentName}"`
+        );
+      }
+      if (asked.startConflict.savedMatch?.opponentName !== waiting.opponentName) {
+        fail(
+          `the start conflict describes ${JSON.stringify(asked.startConflict.savedMatch)} instead of the ` +
+            `waiting match against "${waiting.opponentName}"`
+        );
+      }
+    }
+    if (window.localStorage.getItem(collection.MATCH_STORAGE_KEY) !== savedBefore) {
+      fail("starting a match with an unfinished one saved rewrote the saved match before the player answered");
+    }
+    if (!game.readState().canContinue) {
+      fail("the saved match stopped being offered to continue as soon as a start was asked about");
+    }
+    if (boardShape(game.readState().match) !== boardShape(liveBefore)) {
+      fail("starting a match with an unfinished one saved dealt a new one before the player answered");
+    }
+
+    // The two answers stand where the Start match button was, one keyboard-
+    // reachable button each, and both are in the actions an agent reads.
+    for (const [label, control] of [
+      ["Continue saved match", continueSavedControl],
+      ["Discard and start new", discardSavedControl],
+    ]) {
+      if (!control) continue;
+      if (control.hidden || control.closest("[hidden]")) {
+        fail(`the "${label}" answer is hidden while a start is waiting on the choice`);
+      }
+      if (control.tagName !== "BUTTON" || control.tabIndex < 0) {
+        fail(`the "${label}" answer is not a button a keyboard can reach`);
+      }
+    }
+    const actionsWhileAsking = game.readState().actions;
+    for (const label of ["Continue saved match", "Discard and start new"]) {
+      if (!actionsWhileAsking.includes(label)) {
+        fail(
+          `the choice is on screen but get-state lists ${JSON.stringify(actionsWhileAsking)} ` +
+            `without "${label}"`
+        );
+      }
+    }
+    const question = textOf(document.getElementById("match-message"));
+    if (!question.includes(waiting.opponentName)) {
+      fail(
+        `the choice asked in the status line reads "${question || "(nothing)"}" without naming the ` +
+          `waiting opponent "${waiting.opponentName}"`
+      );
+    }
+
+    // The tool an agent uses reports the same conflict rather than overwriting.
+    if (startMatchTool) {
+      const viaTool = await startMatchTool.execute({});
+      if (!viaTool?.startConflict) {
+        fail(
+          "the start-match tool did not report the conflict with a saved match waiting, so an agent " +
+            "would overwrite it silently"
+        );
+      }
+      if (window.localStorage.getItem(collection.MATCH_STORAGE_KEY) !== savedBefore) {
+        fail("the start-match tool rewrote the saved match before the conflict was answered");
+      }
+    }
+
+    // Backing out — leaving the Play screen — leaves the saved match and the home
+    // screen's Continue offer exactly as they were.
+    game.showScreen("home");
+    const backedOut = game.readState();
+    if (backedOut.startConflict) {
+      fail("the continue-or-discard choice was still standing after leaving the Play screen");
+    }
+    if (!backedOut.canContinue) {
+      fail("backing out of the choice threw the saved match away");
+    }
+    if (window.localStorage.getItem(collection.MATCH_STORAGE_KEY) !== savedBefore) {
+      fail("backing out of the choice rewrote the saved match");
+    }
+    const homeOffer = document.getElementById("continue-match");
+    if (homeOffer?.hidden) {
+      fail("the home screen's Continue offer is gone after backing out of the choice");
+    }
+    game.showScreen("play");
+    if (game.readState().startConflict) {
+      fail("the choice was still standing after leaving the Play screen and coming back");
+    }
+    for (const control of [continueSavedControl, discardSavedControl]) {
+      if (control && !control.hidden) {
+        fail(`the "${textOf(control)}" answer is still on screen after backing out of the choice`);
+      }
+    }
+    if (textOf(document.getElementById("match-message")).includes("unfinished")) {
+      fail("the question a start raised is still in the status line after backing out of it");
+    }
+
+    // Answering with Continue opens the saved match exactly as it was left.
+    game.startMatch();
+    if (continueSavedControl) {
+      continueSavedControl.click();
+      const picked = game.readState();
+      if (picked.startConflict) {
+        fail("continuing the saved match from the choice left the choice standing");
+      }
+      if (!picked.match?.active) {
+        fail("continuing the saved match from the choice left no match on the board");
+      } else if (boardShape(picked.match) !== boardShape(collection.readSavedMatch())) {
+        fail(
+          "continuing from the choice did not bring the saved match back exactly as it was left: " +
+            `${boardShape(picked.match)} instead of ${boardShape(collection.readSavedMatch())}`
+        );
+      }
+    }
+
+    // Confirming the discard deals a fresh match and only then replaces the save;
+    // the tool is the same move for an agent.
+    const discardTool = toolNamed("discard-saved-match");
+    if (!discardTool) {
+      fail('no "discard-saved-match" tool is declared, so an agent cannot confirm a discard a visitor can');
+    } else {
+      const annotations = discardTool.annotations ?? {};
+      if (annotations.readOnlyHint !== false) {
+        fail('"discard-saved-match" changes the page but is not marked as changing anything (readOnlyHint: false)');
+      }
+      if (annotations.consequentialHint !== true) {
+        fail('"discard-saved-match" throws a match away for good but is not marked as hard to undo (consequentialHint: true)');
+      }
+
+      const discardedWaiting = waitingMatch(
+        "check-waiting-match-discarded",
+        "Yet another match left waiting."
+      );
+      saveWaiting(discardedWaiting);
+      const askedAgain = game.startMatch();
+      if (!askedAgain.startConflict) {
+        fail("starting a match with another unfinished one saved reported no conflict");
+      }
+      const liveBeforeDiscard = game.readState().match;
+
+      const discarded = await discardTool.execute({});
+      if (!discarded?.match?.active) {
+        fail(
+          `the discard-saved-match tool did not deal a fresh match: it reported ${JSON.stringify(discarded?.match)}`
+        );
+      }
+      if (discarded?.startConflict) {
+        fail("the conflict is still standing after the discard was confirmed");
+      }
+      const savedAfterDiscard = collection.readSavedMatch();
+      if (!savedAfterDiscard || savedAfterDiscard.id === discardedWaiting.id) {
+        fail("discarding did not replace the saved match, so reopening would offer the thrown-away game");
+      } else if (boardShape(savedAfterDiscard) !== boardShape(discarded?.match)) {
+        fail("the freshly dealt match is not the one now saved, so reloading would pick up a different game");
+      }
+      if (discarded?.match?.active && boardShape(discarded.match) === boardShape(liveBeforeDiscard)) {
+        fail("discarding the saved match did not deal a new one");
+      }
+    }
+  }
+
   // --- A player can give a match up and start another -----------------------
 
   // A match a player no longer wants — because they are losing, or because they
