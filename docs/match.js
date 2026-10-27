@@ -90,6 +90,8 @@ import {
   DEFAULT_OPPONENT,
   DRAW_ON_FALL,
   DRAW_ON_PLAY,
+  HEAL_ON_FALL,
+  HEAL_ON_FALL_AMOUNT,
   HEAL_ON_PLAY,
   HEAL_ON_PLAY_AMOUNT,
   MINIMUM_DECK_SIZE,
@@ -354,13 +356,16 @@ function firePlayAbility(match, side, card, beneficiary) {
  * way. The ability is read from the card as the match holds it, and resolved
  * from the catalog by id when the card was dealt before the field existed, so a
  * match saved before a fall ability was printed still fires it. The fall ability
- * so far draws its owner a card — the other half of a card's text, answering
- * what happens to a card after it lands rather than only as it is played.
+ * either draws its owner a card or mends that owner's hero as the card leaves the
+ * table — the other half of a card's text, answering what happens to a card after
+ * it lands rather than only as it is played.
  */
 function fireFallAbility(match, side, card) {
   const fallAbility = card.fallAbility ?? CARD_BY_ID.get(card.id)?.fallAbility ?? null;
   if (fallAbility === DRAW_ON_FALL) {
     drawFromPlay(match, side, card, side === match.player ? "you" : "the opponent");
+  } else if (fallAbility === HEAL_ON_FALL) {
+    healFromPlay(match, side, card, side === match.player ? "you" : "the opponent", HEAL_ON_FALL_AMOUNT);
   }
 }
 
@@ -381,17 +386,18 @@ function drawFromPlay(match, side, card, beneficiary) {
 }
 
 /**
- * A card that heals its owner's hero when played raises that hero's health by
- * the amount on its face, never past the health a hero starts a match with: a
- * mend can undo damage but cannot make a hero tougher than new. The log states
- * the health afterwards in the same words the board prints it — "your health"
- * for the player, "opponent health" for the other — so the number a reader sees
- * is the number the board shows.
+ * A card that mends its owner's hero raises that hero's health by `amount` — the
+ * number printed on its face, defaulting to the when-played heal's — never past
+ * the health a hero starts a match with: a mend can undo damage but cannot make a
+ * hero tougher than new. The log states the health afterwards in the same words
+ * the board prints it — "your health" for the player, "opponent health" for the
+ * other — so the number a reader sees is the number the board shows. It serves
+ * both the when-played heal and the fall heal.
  */
-function healFromPlay(match, side, card, beneficiary) {
-  side.health = Math.min(HERO_HEALTH, side.health + HEAL_ON_PLAY_AMOUNT);
+function healFromPlay(match, side, card, beneficiary, amount = HEAL_ON_PLAY_AMOUNT) {
+  side.health = Math.min(HERO_HEALTH, side.health + amount);
   const healthWord = side === match.player ? "your health" : "opponent health";
-  appendLog(match, `${card.name} heals ${beneficiary} for ${HEAL_ON_PLAY_AMOUNT} — ${healthWord} ${side.health}.`);
+  appendLog(match, `${card.name} heals ${beneficiary} for ${amount} — ${healthWord} ${side.health}.`);
 }
 
 /**

@@ -495,6 +495,23 @@ const CARD_ART = new Map([
       `,
     },
   ],
+  [
+    "comfrey-root",
+    {
+      description: "A root crown: a rounded crown with a two-leaved shoot above and three tapered roots trailing below",
+      inner: `
+        <path class="art-body" d="M48 6 C50 6 51 8 51 11 L51 20 L45 20 L45 11 C45 8 46 6 48 6 Z" />
+        <path class="art-body" d="M48 12 C41 12 35 8 33 2 C41 2 46 6 48 12 Z" />
+        <path class="art-body" d="M48 12 C55 12 61 8 63 2 C55 2 50 6 48 12 Z" />
+        <ellipse class="art-body" cx="48" cy="28" rx="17" ry="12" />
+        <path class="art-body" d="M40 37 C38 44 33 50 27 54 L35 54 C40 50 43 44 45 38 Z" />
+        <path class="art-body" d="M56 37 C58 44 63 50 69 54 L61 54 C56 50 53 44 51 38 Z" />
+        <path class="art-body" d="M46 40 L45 54 L51 54 L50 40 Z" />
+        <circle class="art-accent" cx="42" cy="27" r="2.6" />
+        <circle class="art-accent" cx="54" cy="27" r="2.6" />
+      `,
+    },
+  ],
 ]);
 
 /**

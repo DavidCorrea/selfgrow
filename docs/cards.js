@@ -70,6 +70,27 @@ export const CLEAR_ON_PLAY = `When played: deal ${CLEAR_ON_PLAY_AMOUNT} damage t
  */
 export const DRAW_ON_FALL = "When this falls: draw a card";
 
+/**
+ * How much health a card that mends its owner's hero as it falls restores. It is
+ * the same amount the when-played heal restores, so one number names the mend
+ * however a card pays it back.
+ */
+export const HEAL_ON_FALL_AMOUNT = HEAL_ON_PLAY_AMOUNT;
+
+/**
+ * The ability a card carries when it mends its owner's hero the moment it leaves
+ * the table. Where the when-played heal rewards playing a card, this one rewards
+ * losing it on purpose: a body a player expects to trade pays health back as it
+ * goes, so removing it is a cost rather than only a gain. The amount is written
+ * into the words on the face from the same constant the match heals by, so the
+ * card can never promise a number the trigger does not pay.
+ *
+ * Like the draw it shares the `fallAbility` field with, it fires from the one
+ * removal point every blow reaches, so a card that falls to a chosen attack, a
+ * turn's blows or a sweeping card mends its owner the same way.
+ */
+export const HEAL_ON_FALL = `When this falls: heal your hero ${HEAL_ON_FALL_AMOUNT}`;
+
 /** Every card in the game: id, name, cost to play, attack, health, the ability
  * printed on its face for when it is played, and the ability it carries for when
  * it falls (each absent on a card with none). */
@@ -131,6 +152,12 @@ export const CARDS = [
   // removed it a card instead of only a body. It is a reward card, so a player
   // meets the ability by collecting toward it and can then build a deck around it.
   { id: "seed-pod", name: "Seed Pod", cost: 1, attack: 1, health: 1, fallAbility: DRAW_ON_FALL },
+  // The second card that carries a fall ability, and the first that mends: a
+  // root crown a slow deck can hold back, expected to trade, so losing it pays
+  // health back to the hero rather than only taking a body. Its `fallAbility` is
+  // the same field the pod uses, so the two fall abilities never overload the
+  // when-played text and a card may still carry a when-played ability as well.
+  { id: "comfrey-root", name: "Comfrey Root", cost: 2, attack: 1, health: 3, fallAbility: HEAL_ON_FALL },
 ];
 
 /** Lookup by id — the shape the saved collection speaks in. */
@@ -194,6 +221,7 @@ export const REWARD_POOL = [
   // Appended rather than slotted in, so a save written before the pod existed
   // keeps the same next-reward order it already had.
   "seed-pod",
+  "comfrey-root",
 ];
 
 /**
