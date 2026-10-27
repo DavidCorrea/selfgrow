@@ -620,21 +620,45 @@ function selectMatchAttacker(attackerId) {
   render();
 }
 
+/** How many copies of `cardId` the deck currently holds. */
+function deckCopies(cardId) {
+  return state.deck.filter((id) => id === cardId).length;
+}
+
 /**
- * The button on an owned card that adds it to the deck, or takes it back out.
- * The label says which it will do, so the same control is both actions and a
- * keyboard visitor never has to guess what pressing it does.
+ * The controls on an owned card: how many of its copies are in the deck, and the
+ * two buttons that add one more or take one out. Both stay enabled even when the
+ * action would be refused, so pressing one shows the reason instead of a dead
+ * control telling the player nothing.
  */
-function deckToggleButton(card) {
-  const inDeck = state.deck.includes(card.id);
-  const button = document.createElement("button");
-  button.type = "button";
-  button.className = "btn btn-secondary deck-toggle";
-  button.dataset.deckToggle = card.id;
-  button.textContent = inDeck ? `Remove ${card.name} from deck` : `Add ${card.name} to deck`;
-  if (inDeck) button.classList.add("is-in-deck");
-  button.addEventListener("click", () => toggleDeckCard(card.id));
-  return button;
+function deckControls(card) {
+  const placed = deckCopies(card.id);
+  const wrap = document.createElement("div");
+  wrap.className = "deck-actions";
+
+  const count = document.createElement("span");
+  count.className = "owned-in-deck";
+  count.dataset.inDeck = card.id;
+  count.textContent = `In deck: ${placed} of ${card.copies}`;
+
+  const add = document.createElement("button");
+  add.type = "button";
+  add.className = "btn btn-secondary deck-add";
+  add.dataset.deckAdd = card.id;
+  add.textContent = `Add ${card.name} to deck`;
+  if (placed >= card.copies) add.classList.add("is-at-limit");
+  add.addEventListener("click", () => addDeckCard(card.id));
+
+  const remove = document.createElement("button");
+  remove.type = "button";
+  remove.className = "btn btn-secondary deck-remove";
+  remove.dataset.deckRemove = card.id;
+  remove.textContent = `Remove ${card.name} from deck`;
+  if (!placed) remove.classList.add("is-at-limit");
+  remove.addEventListener("click", () => removeDeckCard(card.id));
+
+  wrap.append(count, add, remove);
+  return wrap;
 }
 
 /** One owned card, as a list item that shows its picture and reads its name,
@@ -685,7 +709,7 @@ function ownedCardRow(card) {
     stats.append(stat);
   }
 
-  item.append(head, stats, deckToggleButton(card));
+  item.append(head, stats, deckControls(card));
   return item;
 }
 
@@ -761,32 +785,36 @@ function setDeckMessage(message) {
   if (deckMessage) deckMessage.textContent = message;
 }
 
-/** Return focus to a card's toggle after the list was redrawn under it. */
-function focusDeckToggle(cardId) {
-  const button = document.querySelector(`[data-deck-toggle="${cardId}"]`);
+/** Return focus to a card's add or remove button after the list was redrawn under it. */
+function focusDeckControl(attribute, cardId) {
+  const button = document.querySelector(`[data-${attribute}="${cardId}"]`);
   if (button) button.focus();
 }
 
 /**
- * What pressing a card's toggle does: add it to the deck, or take it out. A
+ * What pressing a card's Add button does: put one more copy in the deck. A
  * refusal is shown in the status line rather than swallowed, because a control
  * that silently does nothing tells the player nothing.
  */
-function toggleDeckCard(cardId) {
-  const inDeck = state.deck.includes(cardId);
-  const name = cardName(cardId);
+function addDeckCard(cardId) {
   try {
-    if (inDeck) {
-      removeCardFromDeck(cardId);
-      setDeckMessage(`Removed ${name} from your deck.`);
-    } else {
-      addCardToDeck(cardId);
-      setDeckMessage(`Added ${name} to your deck.`);
-    }
+    addCardToDeck(cardId);
+    setDeckMessage(`Added ${cardName(cardId)} to your deck.`);
   } catch (error) {
     setDeckMessage(error.message);
   }
-  focusDeckToggle(cardId);
+  focusDeckControl("deck-add", cardId);
+}
+
+/** What pressing a card's Remove button does: take one copy back out of the deck. */
+function removeDeckCard(cardId) {
+  try {
+    removeCardFromDeck(cardId);
+    setDeckMessage(`Removed ${cardName(cardId)} from your deck.`);
+  } catch (error) {
+    setDeckMessage(error.message);
+  }
+  focusDeckControl("deck-remove", cardId);
 }
 
 /** Persist the deck beside the collection and redraw everything that reads it. */
@@ -922,18 +950,28 @@ export function readCollection() {
   };
 }
 
+/** `1 copy` / `3 copies`, so a refusal reads as a sentence about what is owned. */
+function copiesLabel(count) {
+  return `${count} ${count === 1 ? "copy" : "copies"}`;
+}
+
 /**
- * Add an owned card to the deck — what a visitor does by pressing its "Add … to
- * deck" button, and what the add-card-to-deck tool does on their behalf.
- * Refused, with a reason, when the card is not owned, is already in the deck, or
- * the deck is already at its limit. Returns the state afterwards.
+ * Add one owned copy of a card to the deck — what a visitor does by pressing its
+ * "Add … to deck" button, and what the add-card-to-deck tool does on their
+ * behalf. A player may hold as many copies of an id as they own, up to the deck's
+ * limit. Refused, with a reason, when the card is not owned, when every owned
+ * copy is already in the deck, or when the deck is already at its limit. Returns
+ * the state afterwards.
  */
 export function addCardToDeck(cardId) {
-  if (!state.cards.some((card) => card.id === cardId)) {
+  const owned = state.cards.find((card) => card.id === cardId)?.copies ?? 0;
+  if (owned < 1) {
     throw new Error(`you do not own "${cardId}", so it cannot go in your deck`);
   }
-  if (state.deck.includes(cardId)) {
-    throw new Error(`"${cardName(cardId)}" is already in your deck`);
+  if (deckCopies(cardId) >= owned) {
+    throw new Error(
+      `you own ${copiesLabel(owned)} of "${cardName(cardId)}" and all ${owned} are already in your deck`
+    );
   }
   if (state.deck.length >= state.deckLimit) {
     throw new Error(
@@ -947,17 +985,18 @@ export function addCardToDeck(cardId) {
 }
 
 /**
- * Remove a card from the deck — what a visitor does by pressing its "Remove …
- * from deck" button, and what the remove-card-to-deck tool does on their behalf.
- * Refused, with a reason, when the card is not in the deck. Returns the state
- * afterwards.
+ * Remove one copy of a card from the deck — what a visitor does by pressing its
+ * "Remove … from deck" button, and what the remove-card-to-deck tool does on
+ * their behalf. Refused, with a reason, when no copy of the card is in the deck.
+ * Returns the state afterwards.
  */
 export function removeCardFromDeck(cardId) {
-  if (!state.deck.includes(cardId)) {
+  const at = state.deck.indexOf(cardId);
+  if (at === -1) {
     throw new Error(`"${cardName(cardId)}" is not in your deck, so it cannot be removed`);
   }
 
-  state.deck = state.deck.filter((id) => id !== cardId);
+  state.deck = [...state.deck.slice(0, at), ...state.deck.slice(at + 1)];
   commitDeck();
   return readState();
 }
