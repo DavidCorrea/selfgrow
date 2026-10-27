@@ -57,7 +57,12 @@
  * its owner's hero instead — raising its health by the amount on its face, never
  * past the 20 a hero starts a match with — and the log states the health
  * afterwards, in the same words the board prints it, so a slow deck has an
- * answer to an early rush. In either case the cost still leaves that side's
+ * answer to an early rush. A card whose face says "When played: deal 1 damage to
+ * the opponent's front card" answers the board instead: the damage lands on the
+ * front card of the other table, or on that side's hero once its table is empty,
+ * with the same targeting and the same log wording as a blow at the end of a
+ * turn — so a card killed as another lands leaves the table on the same line as
+ * one killed any other way. In every case the cost still leaves that side's
  * energy, so the card trades energy for a fresh option rather than being free.
  *
  * The front card is only the default. During their own turn the player may send
@@ -77,6 +82,8 @@ import {
   MINIMUM_DECK_SIZE,
   OPPONENT_BY_ID,
   OPPONENTS,
+  STRIKE_ON_PLAY,
+  STRIKE_ON_PLAY_AMOUNT,
 } from "./cards.js";
 
 /** Both heroes start at this much health and stay there until a match can end. */
@@ -320,6 +327,7 @@ function appendLog(match, line) {
 function firePlayAbility(match, side, card, beneficiary) {
   if (card.ability === DRAW_ON_PLAY) drawFromPlay(match, side, card, beneficiary);
   else if (card.ability === HEAL_ON_PLAY) healFromPlay(match, side, card, beneficiary);
+  else if (card.ability === STRIKE_ON_PLAY) strikeFromPlay(match, side, card);
 }
 
 /**
@@ -350,6 +358,31 @@ function healFromPlay(match, side, card, beneficiary) {
   side.health = Math.min(HERO_HEALTH, side.health + HEAL_ON_PLAY_AMOUNT);
   const healthWord = side === match.player ? "your health" : "opponent health";
   appendLog(match, `${card.name} heals ${beneficiary} for ${HEAL_ON_PLAY_AMOUNT} — ${healthWord} ${side.health}.`);
+}
+
+/**
+ * A card that strikes as it lands deals the damage on its face to the front card
+ * of the other table, or to that side's hero once its table is empty. It is one
+ * call to the same `landBlow` a turn's blows use, so the damage line, the
+ * "falls — it leaves … table" line and the hero-fall line read exactly as they
+ * do at the end of a turn, and a strike that ends the match ends it the same way.
+ * The damage comes from the constant written into the card's face rather than
+ * from its attack, so the number the card promises is the number it deals.
+ */
+function strikeFromPlay(match, side, card) {
+  const defender = side === match.player ? match.opponent : match.player;
+  const attackerWord = side === match.player ? "Your" : "Opponent's";
+  const defenderWord = side === match.player ? "the opponent" : "you";
+  const healthWord = side === match.player ? "opponent health" : "your health";
+  landBlow(
+    match,
+    { name: card.name, attack: STRIKE_ON_PLAY_AMOUNT },
+    defender,
+    attackerWord,
+    defenderWord,
+    healthWord,
+    defender.table[0] ?? null
+  );
 }
 
 /**
@@ -544,6 +577,9 @@ function takeOpponentTurn(match) {
       `Opponent plays ${card.name} (cost ${card.cost}) — energy ${opponent.energy} of ${opponent.maxEnergy}.`
     );
     firePlayAbility(match, opponent, card, "the opponent");
+    // A when-played strike can end the match here, so nothing further is played
+    // or logged once a hero has fallen.
+    if (match.over) return true;
   }
   if (played === 0) appendLog(match, "Opponent plays no cards.");
 
