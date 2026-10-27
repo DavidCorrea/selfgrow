@@ -2377,6 +2377,104 @@ export async function checks() {
           }
         }
       }
+
+      // Every card in a match is a picture-first face: the drawing fills the top
+      // of the card, the name and numbers read as a caption under it, and the
+      // control that uses the card stays below the face. The same card is the
+      // same size wherever it appears, so a card on a table is never a smaller
+      // thumbnail of the one in hand.
+      const smallestArtWidth = {};
+      for (const [where, selector, cards] of [
+        ["your hand", "#match-hand", afterEnd.hand],
+        ["your table", "#match-table", afterEnd.table],
+        ["the opponent's table", "#match-opponent-table", afterEnd.opponentTable],
+      ]) {
+        let smallest = Infinity;
+        for (const card of cards) {
+          const row = document.querySelector(`${selector} [data-card-id="${card.id}"]`);
+          if (!row) continue;
+          const face = row.getBoundingClientRect();
+          const caption = row.querySelector(".match-card-head");
+          const art = row.querySelector("svg.card-art");
+          const control = row.querySelector("button");
+          const printedName = textOf(row.querySelector(".match-card-name"));
+          const printedStats = textOf(row.querySelector(".match-card-stats"));
+
+          if (printedName !== card.name) {
+            fail(
+              `the card face for "${card.name}" on ${where} does not print its name as a caption: it reads "${printedName}"`
+            );
+          }
+          if (!printedStats) {
+            fail(`the card face for "${card.name}" on ${where} shows no cost/attack/health, so the picture is the whole face`);
+          }
+          if (!art) {
+            fail(`the card face for "${card.name}" on ${where} has no drawing filling it`);
+            continue;
+          }
+          const artRect = art.getBoundingClientRect();
+          const captionRect = caption ? caption.getBoundingClientRect() : null;
+          if (captionRect && artRect.bottom > captionRect.top + 1) {
+            fail(
+              `on ${where} the drawing on "${card.name}" runs past its name and numbers instead of sitting above them ` +
+                "as the top of the face"
+            );
+          }
+          if (artRect.width < face.width * 0.85) {
+            fail(
+              `on ${where} the drawing on "${card.name}" fills only ${Math.round((artRect.width / face.width) * 100)}% of ` +
+                "the card's width, so the creature is a thumbnail rather than the face"
+            );
+          }
+          if (artRect.width < 64 || artRect.height < 40) {
+            fail(
+              `on ${where} the drawing on "${card.name}" is ${Math.round(artRect.width)}x${Math.round(artRect.height)}px, ` +
+                "too small to know the creature by at a glance"
+            );
+          }
+          if (control) {
+            if (captionRect && control.getBoundingClientRect().top < captionRect.bottom - 1) {
+              fail(`the control on "${card.name}" (${where}) sits on the face rather than under it`);
+            }
+            if (!`${textOf(control)} ${control.getAttribute("aria-label") || ""}`.includes(card.name)) {
+              fail(`the control on "${card.name}" (${where}) does not name the card it acts on`);
+            }
+          }
+          smallest = Math.min(smallest, artRect.width);
+        }
+        if (smallest !== Infinity) smallestArtWidth[where] = smallest;
+      }
+      // A card on a table is never drawn smaller than the one in hand.
+      if (smallestArtWidth["your hand"]) {
+        for (const where of ["your table", "the opponent's table"]) {
+          const tableArt = smallestArtWidth[where];
+          if (tableArt && tableArt < smallestArtWidth["your hand"] * 0.85) {
+            fail(
+              `the smallest drawing on ${where} is ${Math.round(tableArt)}px wide while the hand's smallest is ` +
+                `${Math.round(smallestArtWidth["your hand"])}px, so the same card is drawn smaller on a table than in hand`
+            );
+          }
+        }
+      }
+
+      // A card with no drawing still reads as its name and numbers rather than an
+      // empty frame: the same face without its picture keeps the caption.
+      const sampleFace = document.querySelector("#match-hand .match-card");
+      if (sampleFace) {
+        const bare = sampleFace.cloneNode(true);
+        bare.removeAttribute("data-card-id");
+        bare.querySelector("svg.card-art")?.remove();
+        document.getElementById("match-hand")?.append(bare);
+        const bareName = textOf(bare.querySelector(".match-card-name"));
+        const bareStats = textOf(bare.querySelector(".match-card-stats"));
+        if (bare.getBoundingClientRect().height <= 0 || !bareName || !bareStats) {
+          fail(
+            "a match card with no drawing collapses instead of reading its name and numbers " +
+              `(name "${bareName}", numbers "${bareStats}")`
+          );
+        }
+        bare.remove();
+      }
     }
 
     // The player directs an attack with their own hand on the keyboard: every
