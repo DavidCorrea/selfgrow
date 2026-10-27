@@ -145,6 +145,12 @@ function matchCardItem(card, { playable = false, affordable = true } = {}) {
   item.className = "match-card";
   item.dataset.cardId = card.id;
 
+  // The card's picture, first, so the same card is recognised by sight in a
+  // match as it is in the collection. A card the art module does not know yet
+  // gets no picture rather than an empty frame, as in the collection.
+  const art = cardArtSvg(card.id, card.name);
+  if (art) item.append(art);
+
   const name = document.createElement("span");
   name.className = "match-card-name";
   name.textContent = card.name;

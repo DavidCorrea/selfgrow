@@ -624,6 +624,14 @@ body {
   background-color: rgba(34, 42, 69, 0.7);
 }
 
+/* The card's picture in a match, at a thumbnail size rather than the
+   collection's full width, so a chip stays a chip. The shared 96/64 aspect
+   ratio keeps it identical to the same card in the collection. */
+.match-card .card-art {
+  width: 3.5rem;
+  flex: none;
+}
+
 .match-card-head {
   display: inline-flex;
   align-items: baseline;
@@ -901,12 +909,18 @@ body {
     gap: 0.3rem;
   }
 
+  /* Picture, name-and-numbers, then the control: three columns so a hand card
+     stays one short row and the hand grid never overflows a portrait phone. */
   .match-card-playable {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: auto minmax(0, 1fr) auto;
     align-items: center;
     gap: 0.4rem;
     padding: 0.25rem 0.55rem;
+  }
+
+  .match-hand .match-card .card-art {
+    width: 2.75rem;
   }
 
   .match-hand .match-card-head {
