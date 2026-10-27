@@ -3772,9 +3772,9 @@ export async function checks() {
   if (!setCollectionViewTool) {
     fail('no "set-collection-view" tool is declared, so an agent cannot choose between every card and only those still to collect');
   } else if (setList) {
-    if (setViewButtons.length !== 4) {
+    if (setViewButtons.length !== 5) {
       fail(
-        `the Collection screen offers ${setViewButtons.length} view control(s) where it should offer four — every card, only those still to collect, only those that act when played, and only those that act when they fall`
+        `the Collection screen offers ${setViewButtons.length} view control(s) where it should offer five — every card, only those still to collect, only those that act when played, only those that act when they fall, and only those that grow each turn`
       );
     }
 
@@ -3987,10 +3987,85 @@ export async function checks() {
       fail(`switching the set back from "falls" reports the view as "${backFromFallView.collectionView}"`);
     }
 
+    // The "grows" view lists only the cards whose face carries a growth
+    // ability — owned and unowned alike — so a player building around a card
+    // that gets stronger each turn can see the cards that carry it. Which cards
+    // those are is the catalog's answer, not the page's.
+    const growthIds = setIds.filter((id) => catalogGrowthAbility(id) !== null);
+    if (!growthIds.length) {
+      fail('no card in the game carries a growth ability, so the "grows" view has nothing to list');
+    }
+    const afterGrowthView = await setCollectionViewTool.execute({ view: "grows" });
+    if (afterGrowthView.collectionView !== "grows") {
+      fail(`switching the set to "grows" reports the view as "${afterGrowthView.collectionView}" instead of "grows"`);
+    }
+    const growthRows = [...setList.querySelectorAll("[data-card-id]")].map((row) => row.dataset.cardId);
+    if (growthRows.join(", ") !== growthIds.join(", ")) {
+      const withoutGrowth = growthRows.filter((id) => catalogGrowthAbility(id) === null);
+      const hidden = growthIds.filter((id) => !growthRows.includes(id));
+      fail(
+        `the "grows" view lists ${growthRows.length} card(s) in the order ${growthRows.slice(0, 4).join(", ")}, … where the game's ` +
+          `${growthIds.length} growth card(s) in catalog order are ${growthIds.join(", ")}` +
+          `${withoutGrowth.length ? `; it shows ${withoutGrowth.join(", ")}, which carry no growth ability` : ""}` +
+          `${hidden.length ? `; it hides ${hidden.join(", ")}, which carry one` : ""}`
+      );
+    }
+    const pressedGrows = setViewButtons
+      .filter((button) => button.getAttribute("aria-pressed") === "true")
+      .map((button) => button.dataset.collectionView);
+    if (pressedGrows.length !== 1 || pressedGrows[0] !== "grows") {
+      fail(`the "grows" view does not mark its own button pressed (pressed: ${pressedGrows.join(", ") || "none"})`);
+    }
+    if (setList.getAttribute("aria-label") === allViewListLabel) {
+      fail(
+        'the set list names what it lists the same way in the "grows" view as in the "all" view, so a screen reader cannot tell which cards are showing'
+      );
+    }
+
+    // The empty note a view prints when it has nothing to list is part of the
+    // view's contract, not decoration: it must exist and name the growth
+    // behaviour so a player meeting an empty "grows" view is told why, not
+    // shown a blank.
+    const growsViewText = game.COLLECTION_VIEW_TEXT?.grows;
+    if (!growsViewText || typeof growsViewText.empty !== "string" || !growsViewText.empty.trim()) {
+      fail('the "grows" view has no empty note, so an empty list would read as a blank rather than saying no card grows while it stays');
+    } else if (!/grow/i.test(growsViewText.empty)) {
+      fail(`the "grows" view's empty note reads "${growsViewText.empty}" without naming the growth behaviour it stands for`);
+    }
+
+    // Both readers agree on the view, and switching it leaves the count of cards
+    // collected, the collection and the deck exactly as they were.
+    const growthState = await getState.execute({});
+    if (growthState.collectionView !== "grows") {
+      fail(`get-state reports the collection view as "${growthState.collectionView}" while the "grows" view is showing`);
+    }
+    if (game.readCollection().view !== "grows") {
+      fail(`list-collection reports the collection view as "${game.readCollection().view}" while the "grows" view is showing`);
+    }
+    const collectedWhileGrowing = textOf(
+      document.querySelector('#screen-collection [data-field="distinctCards"]')?.closest(".standing-value")
+    );
+    if (collectedWhileGrowing !== collectedExpected) {
+      fail(
+        `the "grows" view leaves the cards collected reading "${collectedWhileGrowing}" where the set stands at "${collectedExpected}"`
+      );
+    }
+    if (JSON.stringify(asIdCopies(game.readCollection().ownedCards)) !== JSON.stringify(asIdCopies(beforeView.ownedCards))) {
+      fail('switching the set to the "grows" view changed the cards in the collection');
+    }
+    if (JSON.stringify(game.readState().deck) !== JSON.stringify(beforeState.deck)) {
+      fail('switching the set to the "grows" view changed the deck');
+    }
+
+    const backFromGrowthView = await setCollectionViewTool.execute({ view: "all" });
+    if (backFromGrowthView.collectionView !== "all") {
+      fail(`switching the set back from "grows" reports the view as "${backFromGrowthView.collectionView}"`);
+    }
+
     // A view the page does not have is refused with a reason, and changes nothing.
     const refusedView = await setCollectionViewTool.execute({ view: "everything" });
     if (!refusedView.error) {
-      fail('setting the collection view to "everything" was accepted, though the page has only "all", "missing", "abilities" and "falls"');
+      fail('setting the collection view to "everything" was accepted, though the page has only "all", "missing", "abilities", "falls" and "grows"');
     }
     if (game.readCollection().view !== "all") {
       fail(`a refused view left the collection showing "${game.readCollection().view}" instead of "all"`);
