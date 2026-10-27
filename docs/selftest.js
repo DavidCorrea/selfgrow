@@ -3435,6 +3435,9 @@ export async function checks() {
 
   // --- The match fits a phone in portrait -----------------------------------
 
+  // The way back off the board, wherever the match's controls are laid out.
+  const backToHome = document.querySelector('#screen-play .actions [data-screen-target="home"]');
+
   if (isPhone) {
     const live = game.readState().match;
     if (!live || live.over) {
@@ -3448,6 +3451,7 @@ export async function checks() {
         ["your energy", document.getElementById("match-energy")],
         ["your hand", document.getElementById("match-hand")],
         ["End turn", document.getElementById("action-end-turn")],
+        ["Back to home", backToHome],
       ]) {
         if (!element || element.hidden) {
           fail(`${what} is not on the match screen, so a phone cannot show it on the first screen`);
@@ -3467,6 +3471,79 @@ export async function checks() {
           `the hand reaches ${Math.round(rectOf(hand).bottom)}px while the action bar starts at ` +
             `${Math.round(barTop)}px, so the bar covers the cards a player has to press`
         );
+      }
+    }
+  }
+
+  // --- The match fits a wide window ------------------------------------------
+
+  // A laptop is the window a match is most often played in, so the whole board has
+  // to be there too — the same promise the phone keeps by docking its controls.
+  // End turn advances the game, and a player who has to scroll to it every turn is
+  // playing a worse game than the one on their phone. The suite opens in a smaller
+  // window than that, so the window this is measured against is the height the
+  // ticket names rather than whatever the checks happen to run in.
+  const WIDE_WINDOW_HEIGHT = 900;
+  const WIDE_LAYOUT_WIDTH = 860; // where the page's own wide match layout begins
+
+  if (!isPhone && viewportWidth >= WIDE_LAYOUT_WIDTH) {
+    window.scrollTo(0, 0);
+    const live = game.readState().match;
+    if (!live || live.over) {
+      fail("no live match could be dealt, so the match's layout on a wide window cannot be checked");
+    } else {
+      for (const [what, element] of [
+        ["your health", document.getElementById("match-player-health")],
+        ["the opponent's health", document.getElementById("match-opponent-health")],
+        ["your energy", document.getElementById("match-energy")],
+        ["your hand", document.getElementById("match-hand")],
+        ["your table", document.getElementById("match-player-table-side")],
+        ["the opponent's table", document.getElementById("match-opponent-table-side")],
+        ["End turn", document.getElementById("action-end-turn")],
+        ["Back to home", backToHome],
+      ]) {
+        if (!element || element.hidden) {
+          fail(`${what} is not on the match screen, so a wide window cannot show it on the first screen`);
+          continue;
+        }
+        const bottom = rectOf(element).bottom;
+        if (bottom > WIDE_WINDOW_HEIGHT + 1) {
+          fail(
+            `${what} ends ${Math.round(bottom - WIDE_WINDOW_HEIGHT)}px below the fold of a ` +
+              `${viewportWidth}x${WIDE_WINDOW_HEIGHT} window, so a match cannot be played without scrolling`
+          );
+        }
+      }
+
+      // The log grows with the match, so it has to be the panel that scrolls and
+      // not the page: sixty lines in, the record is still readable where it sits
+      // and the controls are still where they were.
+      const log = document.getElementById("match-log");
+      if (!log) {
+        fail("the match screen has no match log, so what happened in a match cannot be read");
+      } else {
+        const added = Array.from({ length: 60 }, (_, i) => {
+          const line = document.createElement("li");
+          line.className = "match-log-line";
+          line.textContent = `measured line ${i + 1} — a long enough line to wrap in its panel`;
+          return line;
+        });
+        log.append(...added);
+        const pageHeight = scrolling.scrollHeight;
+        const logScrolls = log.scrollHeight > log.clientHeight + 1;
+        for (const line of added) line.remove();
+        if (!logScrolls) {
+          fail(
+            `a long match log does not scroll in its own panel — sixty lines fitted in ${log.clientHeight}px, ` +
+              "so the panel is growing with the log instead of holding its place"
+          );
+        }
+        if (pageHeight > WIDE_WINDOW_HEIGHT + 1) {
+          fail(
+            `a long match log makes the page taller: it is ${pageHeight}px on a ${viewportWidth}x` +
+              `${WIDE_WINDOW_HEIGHT} window, so the controls a player needs scroll away`
+          );
+        }
       }
     }
   }

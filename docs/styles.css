@@ -673,21 +673,6 @@ body {
   margin-top: 0.2rem;
 }
 
-/* On a wide window the two tables sit side by side, with the log under them. */
-@media (min-width: 860px) {
-  .match-board {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-    align-items: start;
-  }
-
-  .match-standings,
-  .match-result,
-  .match-hand-side,
-  .match-log-wrap {
-    grid-column: 1 / -1;
-  }
-}
-
 .match-side,
 .match-log-wrap {
   display: grid;
@@ -964,6 +949,210 @@ body {
   border: 1px solid var(--edge);
   border-left: 3px solid var(--foil);
   border-radius: var(--radius-control);
+}
+
+/* --------------------------------------------------------------------------
+   A match on a wide window fits one window
+   -------------------------------------------------------------------------- */
+
+/* The whole match — the health row, the hand, both tables, the log and the
+   controls — has to be playable without scrolling, the way it already is on a
+   phone, because End turn is the one control that moves the game on. So while a
+   match is open the card gives its own chrome back to the table and is sized to
+   the window, and the panels that grow without bound (the hand, both tables, the
+   log) take the height that is left and scroll inside themselves. Nothing is
+   drawn differently; it is the same board in a tighter frame. */
+@media (min-width: 860px) {
+  /* One row of exactly the window's height, so the card's own height is a
+     definite one and the board below can be sized from what is left. */
+  body:has(#screen-play:not([hidden]) #match-board:not([hidden])) {
+    height: 100dvh;
+    padding: 0.9rem;
+    grid-template-rows: minmax(0, 1fr);
+  }
+
+  /* A definite height, not a cap: grid tracks are sized from it, which is what
+     lets the board below take exactly the room the window has left. */
+  body:has(#screen-play:not([hidden]) #match-board:not([hidden])) .card {
+    display: grid;
+    grid-template-rows: auto auto minmax(0, 1fr);
+    height: 100%;
+    padding: clamp(0.9rem, 1.6vw, 1.5rem);
+  }
+
+  /* The nameplate and the rules are how the table introduces itself, not part of
+     a match: during one they step back to a quiet line each. */
+  body:has(#screen-play:not([hidden]) #match-board:not([hidden])) .wordmark {
+    font-size: clamp(1.5rem, 1rem + 1.2vw, 2.1rem);
+  }
+
+  body:has(#screen-play:not([hidden]) #match-board:not([hidden])) .rules {
+    padding-block: 0.35rem 0.5rem;
+    font-size: 0.9rem;
+  }
+
+  /* The board on the left, the match's controls on a rail of their own beside
+     it, so End turn is never below what a player can see. */
+  #screen-play {
+    grid-template-columns: minmax(0, 1fr) 15rem;
+    grid-template-rows: auto minmax(0, 1fr);
+    align-items: stretch;
+    column-gap: clamp(0.6rem, 1.2vw, 1rem);
+    row-gap: 0.6rem;
+    min-height: 0;
+  }
+
+  #screen-play > #play-heading {
+    grid-row: 1;
+    grid-column: 1 / -1;
+  }
+
+  /* Before a match the note stands where the board will be. */
+  #screen-play > #match-intro,
+  #screen-play > .match-board {
+    grid-row: 2;
+    grid-column: 1;
+    min-height: 0;
+  }
+
+  #screen-play > .actions {
+    display: grid;
+    grid-row: 2;
+    grid-column: 2;
+    grid-auto-rows: min-content;
+    align-self: start;
+    align-content: start;
+    gap: 0.5rem;
+  }
+
+  /* The hand across the top, then your table, theirs and the log in a row:
+     every part of a turn under one glance, in the order a turn is played. The
+     hand is held to a share of the board rather than to its content, so a hand
+     that wraps onto a second row cannot push both tables off the bottom. */
+  #screen-play > .match-board {
+    grid-template-columns: minmax(0, 1.15fr) minmax(0, 1.15fr) minmax(0, 0.7fr);
+    grid-template-rows: auto minmax(0, 40%) minmax(0, 1fr);
+    align-items: stretch;
+    gap: clamp(0.5rem, 0.9vw, 0.8rem);
+  }
+
+  /* A finished match is what is on the board: the outcome takes the height it
+     needs to be read whole, and the idle tables below it give theirs up. */
+  #screen-play > .match-board:has(.match-result:not([hidden])) {
+    grid-template-rows: auto minmax(0, auto) minmax(0, 1fr);
+  }
+
+  /* The health row is a line of the board, not a band: tightened to the numbers
+     a turn turns on so the hand and tables keep their room. */
+  .match-board .match-standings {
+    grid-area: 1 / 1 / 2 / -1;
+    gap: clamp(0.9rem, 2vw, 1.6rem);
+    padding-bottom: 0.45rem;
+  }
+
+  .match-board .match-standings .standing-value {
+    font-size: clamp(1.15rem, 0.9rem + 0.7vw, 1.5rem);
+  }
+
+  .match-board .match-standings .standing-label {
+    font-size: 0.8rem;
+  }
+
+  /* The hand and the match's result share one slot: a match that has ended has
+     no hand left to hold, so the outcome takes the room the cards had. Each is
+     as tall as what it holds and no taller, so the room its slot is given is
+     never empty space taken from the tables. */
+  .match-board .match-hand-side,
+  .match-board .match-result {
+    grid-area: 2 / 1 / 3 / -1;
+    align-self: start;
+    max-height: 100%;
+    min-height: 0;
+  }
+
+  .match-board .match-result {
+    padding: clamp(0.7rem, 1.4vw, 0.95rem) clamp(0.8rem, 1.8vw, 1.1rem);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  .match-board #match-hand-side {
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  /* A hand of more cards than the slot holds scrolls in its own row rather than
+     climbing over the tables. */
+  .match-board .match-hand {
+    align-content: start;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  /* The player's deck sits under their battlefield, the opponent's hand above
+     theirs; whichever side a pile is on, the surface is what takes the room. */
+  .match-board #match-player-table-side {
+    grid-area: 3 / 1 / 4 / 2;
+    grid-template-rows: auto minmax(0, 1fr) auto;
+  }
+
+  .match-board #match-opponent-table-side {
+    grid-area: 3 / 2 / 4 / 3;
+    grid-template-rows: auto auto minmax(0, 1fr);
+  }
+
+  .match-board .match-log-wrap {
+    grid-area: 3 / 3 / 4 / 4;
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  /* A match's panels hold the room they are given rather than growing it: a
+     panel's own content scrolls, so the page never does. Their own chrome is
+     tightened here too, because every pixel of padding and heading is a pixel a
+     table cannot show of the cards on it. */
+  .match-board .match-side,
+  .match-board .match-log-wrap {
+    min-height: 0;
+    gap: 0.35rem;
+    padding: 0.5rem 0.6rem 0.55rem;
+  }
+
+  .match-board .match-heading {
+    font-size: 0.9rem;
+    line-height: 1.2;
+  }
+
+  /* A battlefield that holds more cards than its panel can show scrolls under
+     the hand that laid them, instead of stretching the row. */
+  .match-board .match-surface {
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  /* The card itself is drawn a touch tighter in a match, so a full card face —
+     picture, numbers and the control under them — fits one row of its table. */
+  .match-board .match-card {
+    gap: 0.35rem;
+    padding: 0.45rem 0.4rem 0.5rem;
+  }
+
+  /* Face-down backs are smaller than a face, so a pile costs a table a strip of
+     its panel rather than a card's height. */
+  .match-board .card-pile-card .card-back {
+    width: 2.2rem;
+  }
+
+  .match-board .card-pile-stack .card-pile-card + .card-pile-card {
+    margin-top: -1.15rem;
+  }
+
+  /* The log fills the height its panel was given instead of a fixed height of
+     its own, so a long match scrolls inside the panel rather than down the page. */
+  .match-board .match-log {
+    max-height: none;
+    min-height: 0;
+  }
 }
 
 /* --------------------------------------------------------------------------
