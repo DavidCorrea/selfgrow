@@ -18,7 +18,9 @@
  * what a card can do as it lands, and a slow deck's answer to an early rush.
  * `STRIKE_ON_PLAY` answers the board itself: the card hits the front card of the
  * opponent's table, or the opponent's hero once that table is empty, on the same
- * targeting the rest of the game uses when a turn ends.
+ * targeting the rest of the game uses when a turn ends. `CLEAR_ON_PLAY` sweeps
+ * the whole opposing table instead of its front: every card there loses the same
+ * small amount at once, so a card answers a table that has out-numbered it.
  */
 export const DRAW_ON_PLAY = "When played: draw a card";
 
@@ -42,6 +44,18 @@ export const STRIKE_ON_PLAY_AMOUNT = 1;
  * so the card can never promise a number the trigger does not deal.
  */
 export const STRIKE_ON_PLAY = `When played: deal ${STRIKE_ON_PLAY_AMOUNT} damage to the opponent's front card`;
+
+/** How much damage a card that sweeps the opponent's table as it lands deals to
+ * every card on that table at once. */
+export const CLEAR_ON_PLAY_AMOUNT = 1;
+
+/**
+ * The ability a card carries when it sweeps the opponent's table as it lands.
+ * The amount is written into the words on the face from the same constant the
+ * match damages by, so the card can never promise a number the trigger does not
+ * deal to each card it touches.
+ */
+export const CLEAR_ON_PLAY = `When played: deal ${CLEAR_ON_PLAY_AMOUNT} damage to each card on the opponent's table`;
 
 /** Every card in the game: id, name, cost to play, attack, health, and the
  * ability printed on its face (absent on a card with none). */
@@ -84,6 +98,11 @@ export const CARDS = [
   { id: "hollow-wisp", name: "Hollow Wisp", cost: 4, attack: 2, health: 5 },
   { id: "granite-warden", name: "Granite Warden", cost: 5, attack: 4, health: 6 },
   { id: "ironbark-titan", name: "Ironbark Titan", cost: 6, attack: 6, health: 7 },
+  // One reward card reads as a sweeping gale rather than a single strike — a
+  // thorned gust that crosses the whole opposing table — so it carries the clear
+  // ability, the one that answers a table of cheap cards at once rather than one
+  // card at a time.
+  { id: "thorn-gale", name: "Thorn Gale", cost: 5, attack: 3, health: 4, ability: CLEAR_ON_PLAY },
 ];
 
 /** Lookup by id — the shape the saved collection speaks in. */
@@ -141,6 +160,7 @@ export const REWARD_POOL = [
   "hollow-wisp",
   "granite-warden",
   "ironbark-titan",
+  "thorn-gale",
 ];
 
 /**

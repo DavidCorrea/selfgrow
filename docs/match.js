@@ -75,6 +75,8 @@
 import {
   CARDS,
   CARD_BY_ID,
+  CLEAR_ON_PLAY,
+  CLEAR_ON_PLAY_AMOUNT,
   DEFAULT_OPPONENT,
   DRAW_ON_PLAY,
   HEAL_ON_PLAY,
@@ -328,6 +330,7 @@ function firePlayAbility(match, side, card, beneficiary) {
   if (card.ability === DRAW_ON_PLAY) drawFromPlay(match, side, card, beneficiary);
   else if (card.ability === HEAL_ON_PLAY) healFromPlay(match, side, card, beneficiary);
   else if (card.ability === STRIKE_ON_PLAY) strikeFromPlay(match, side, card);
+  else if (card.ability === CLEAR_ON_PLAY) clearFromPlay(match, side, card);
 }
 
 /**
@@ -383,6 +386,35 @@ function strikeFromPlay(match, side, card) {
     healthWord,
     defender.table[0] ?? null
   );
+}
+
+/**
+ * A card that sweeps the opponent's table as it lands deals the damage on its
+ * face to every card there at once — the answer to a table that has out-numbered
+ * one card's single blow. Each card takes its own call to the same `landBlow` a
+ * turn's blows use, so a card worn to zero leaves on the same "falls — it leaves
+ * … table" line, and the damage comes from the constant written into the card's
+ * face rather than from its attack. The table is copied before the sweep, so a
+ * card removed by a blow cannot shift the cards still waiting for theirs. A sweep
+ * never touches a hero — a blow at a card always returns before the hero is hit —
+ * so clearing a table cannot end the match by itself.
+ */
+function clearFromPlay(match, side, card) {
+  const defender = side === match.player ? match.opponent : match.player;
+  const attackerWord = side === match.player ? "Your" : "Opponent's";
+  const defenderWord = side === match.player ? "the opponent" : "you";
+  const healthWord = side === match.player ? "opponent health" : "your health";
+  for (const targetCard of [...defender.table]) {
+    landBlow(
+      match,
+      { name: card.name, attack: CLEAR_ON_PLAY_AMOUNT },
+      defender,
+      attackerWord,
+      defenderWord,
+      healthWord,
+      targetCard
+    );
+  }
 }
 
 /**

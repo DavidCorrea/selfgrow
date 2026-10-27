@@ -442,6 +442,19 @@ const CARD_ART = new Map([
       `,
     },
   ],
+  [
+    "thorn-gale",
+    {
+      description: "A swirling gust: a curved crescent of wind trailing three thorned spikes",
+      inner: `
+        <path class="art-body" d="M14 42 C22 22 50 12 78 20 C64 24 46 28 34 40 C46 50 64 54 84 48 C62 62 30 58 14 42 Z" />
+        <path class="art-body" d="M28 36 L16 22 L36 30 Z" />
+        <path class="art-body" d="M42 22 L40 4 L54 16 Z" />
+        <path class="art-body" d="M60 16 L70 2 L68 20 Z" />
+        <circle class="art-accent" cx="46" cy="38" r="2.6" />
+      `,
+    },
+  ],
 ]);
 
 /**
