@@ -268,10 +268,11 @@ export const REWARD_POOL = [
  * plays its smallest cards first so its table fills with several at once — the
  * choice that makes the kind of deck its `description` promises the kind of match
  * it plays. Each deck also brings a card that does something as it lands, chosen
- * to suit that same promise — the slow, wearing character mends and scythes the
- * player's whole table at once, the fast ones strike — so a player meets the
- * ability inside a match and learns to watch for it on the opponent's turn. The
- * first entry is the opponent a match is against unless the player picks another.
+ * to suit that same promise — the slow, wearing character mends, scythes the
+ * player's whole table at once and strikes back as one of its bodies falls, the
+ * fast ones strike — so a player meets the ability inside a match and learns to
+ * watch for it on the opponent's turn. The first entry is the opponent a match is
+ * against unless the player picks another.
  */
 export const OPPONENTS = [
   {
@@ -282,7 +283,7 @@ export const OPPONENTS = [
     cardPreference: "dearest",
     accent: "--opponent-thornmere",
     deck: [
-      "vine-lasher",
+      "whipthorn",
       "mudback-turtle",
       "thornling",
       "glowcap",
@@ -350,13 +351,20 @@ export const OPPONENT_NAME = DEFAULT_OPPONENT.name;
 
 /**
  * Thornmere's fixed deck: slow, thorned, mud-backed growth, the opposite of a
- * deck built for speed. It mends its hero and carries one sweeping gale, so the
- * slow warden is also the opponent that teaches a player not to commit every
- * small card at once — its Thorn Gale deals 1 to the whole player's table.
+ * deck built for speed. It mends its hero, carries one sweeping gale and brings a
+ * card that strikes as it falls, so the slow warden is also the opponent that
+ * teaches a player not to commit every small card at once — its Thorn Gale deals
+ * 1 to the whole player's table — and that killing one of its bodies costs the
+ * player's own front card — its Whipthorn deals 1 to the player's front card (or
+ * to the player's hero once the player's table is empty) the moment it leaves the
+ * table.
  *
  * The order is part of the fixture, not an accident: a deal with a fixed random
  * source leaves the second, third and fourth cards in the opponent's opening
  * hand, so the turtle and the thornling there are what the match's own checks
- * fight with. Reordering this list means rethinking those checks.
+ * fight with. The fall-striking Whipthorn sits first so that, under the fixed
+ * shuffle the checks deal with, it is the last card drawn rather than one of the
+ * dealt hand — which is why it can be swapped in without moving the opening hand
+ * those checks fight. Reordering this list means rethinking those checks.
  */
 export const OPPONENT_DECK = DEFAULT_OPPONENT.deck;
