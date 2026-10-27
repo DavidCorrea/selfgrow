@@ -3841,11 +3841,11 @@ export async function checks() {
 
   // The Play screen stands before a match with a short how-a-match-works strip:
   // four labelled points — what a card costs, how the table fights, which hero
-  // losing ends it, and what a card does the moment it is played — folded behind
-  // one control. A player who has not finished a match meets it open, and the
-  // same words and whether they show are what the get-match-rules tool hands an
-  // agent. The strip must not push the picker or the Start match button off the
-  // first screen.
+  // losing ends it, and what a card's face can say it does when it is played or
+  // when it falls — folded behind one control. A player who has not finished a
+  // match meets it open, and the same words and whether they show are what the
+  // get-match-rules tool hands an agent. The strip must not push the picker or
+  // the Start match button off the first screen.
   {
     const rulesSection = document.getElementById("match-rules");
     const rulesPoints = document.getElementById("match-rules-points");
@@ -3892,36 +3892,68 @@ export async function checks() {
         }
       }
 
-      // The fourth point is the newest rule: a card can act the moment it is
-      // played. It names all three things a card can do as it lands, in the
-      // words a card's own face prints them — the abilities are read from
-      // docs/cards.js, so the rule a newcomer reads and the card they watch
-      // cannot say different things.
-      const whenPlayedPoint = rulesState.points[3];
-      if (!whenPlayedPoint) {
-        fail("the match rules carry no fourth point, so nothing tells a newcomer a card can act as it lands");
+      // The fourth point is a card acting on its own. It names all four things a
+      // card can do as it is played, and every fall ability a card can print for
+      // when it leaves the table, in the words the card's own face prints them —
+      // the abilities are read from docs/cards.js, so the rule a newcomer reads
+      // and the card they watch cannot say different things, and the point keeps
+      // step as fall abilities are added. Both halves share one point because a
+      // point of its own for falling pushed the picker past the fold.
+      const whenActedPoint = rulesState.points[3];
+      if (!whenActedPoint) {
+        fail("the match rules carry no fourth point, so nothing tells a newcomer a card can act on its own");
       } else {
-        const fourthRule = `${whenPlayedPoint.label} ${whenPlayedPoint.text}`.toLowerCase();
-        if (!fourthRule.includes("played")) {
-          fail(
-            `the fourth match rule reads "${whenPlayedPoint.label} — ${whenPlayedPoint.text}", whose label never ` +
-              "says a card can act when played"
-          );
-        }
-        for (const [ability, why] of [
-          [cardCatalog.DRAW_ON_PLAY, "draw you a card"],
-          [cardCatalog.HEAL_ON_PLAY, "heal your hero"],
-          [cardCatalog.STRIKE_ON_PLAY, "strike the opponent's front card"],
-          [cardCatalog.CLEAR_ON_PLAY, "sweep every card on the opponent's table"],
+        const fourthRule = `${whenActedPoint.label} ${whenActedPoint.text}`.toLowerCase();
+        for (const [word, why] of [
+          ["played", "act when played"],
+          ["fall", "act when it falls"],
         ]) {
-          // The rule drops the shared "When played:" prefix its own label stands
-          // in for, so the rest of the ability is what must appear.
-          const words = ability.replace(/^When played:\s*/, "").toLowerCase();
-          if (!fourthRule.includes(words)) {
+          if (!fourthRule.includes(word)) {
             fail(
-              `the fourth match rule reads "${whenPlayedPoint.label} — ${whenPlayedPoint.text}", which never says ` +
-                `a played card can "${words}", so a newcomer may never learn a card can ${why}`
+              `the fourth match rule reads "${whenActedPoint.label} — ${whenActedPoint.text}", which never says ` +
+                `a card can ${why}`
             );
+          }
+        }
+        // The point names the played abilities before the word "fall" and the
+        // fall abilities after it, so each half is read on its own: a copy that
+        // kept the played half and quietly dropped the fall half would otherwise
+        // pass, since every fall ability happens to repeat a played one.
+        const [playedHalf, ...afterFall] = whenActedPoint.text.toLowerCase().split("fall");
+        const fallHalf = afterFall.join("fall");
+        const halves = [
+          {
+            half: playedHalf,
+            when: "as it is played",
+            abilities: [
+              [cardCatalog.DRAW_ON_PLAY, "draw you a card"],
+              [cardCatalog.HEAL_ON_PLAY, "heal your hero"],
+              [cardCatalog.STRIKE_ON_PLAY, "strike the opponent's front card"],
+              [cardCatalog.CLEAR_ON_PLAY, "sweep every card on the opponent's table"],
+            ],
+          },
+          {
+            half: fallHalf,
+            when: "as it falls",
+            abilities: [
+              [cardCatalog.DRAW_ON_FALL, "draw you a card as it goes"],
+              [cardCatalog.HEAL_ON_FALL, "heal your hero as it goes"],
+              [cardCatalog.STRIKE_ON_FALL, "strike the opponent's front card as it goes"],
+            ],
+          },
+        ];
+        for (const { half, when, abilities } of halves) {
+          for (const [ability, why] of abilities) {
+            // The rule drops the shared "When played:" / "When this falls:"
+            // prefix its own words stand in for, so the rest of the ability is
+            // what must appear.
+            const words = ability.replace(/^When (?:played|this falls):\s*/, "").toLowerCase();
+            if (!half.includes(words)) {
+              fail(
+                `the fourth match rule reads "${whenActedPoint.label} — ${whenActedPoint.text}", which never says ` +
+                  `a card can "${words}" ${when}, so a newcomer may never learn a card can ${why}`
+              );
+            }
           }
         }
       }

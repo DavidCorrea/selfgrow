@@ -16,10 +16,13 @@ import {
   CLEAR_ON_PLAY,
   DECK_LIMIT,
   DEFAULT_OPPONENT,
+  DRAW_ON_FALL,
   DRAW_ON_PLAY,
+  HEAL_ON_FALL,
   HEAL_ON_PLAY,
   MINIMUM_DECK_SIZE,
   OPPONENTS,
+  STRIKE_ON_FALL,
   STRIKE_ON_PLAY,
 } from "./cards.js";
 import {
@@ -65,11 +68,23 @@ const whenPlayedEffects = [DRAW_ON_PLAY, HEAL_ON_PLAY, STRIKE_ON_PLAY, CLEAR_ON_
   ability.replace(/^When played:\s*/, "")
 );
 
+// The three things a card can do the moment it leaves the table, read from the
+// same constants a card's face prints. The shared "When this falls:" prefix is
+// dropped for the same reason the when-played prefix is: the rule's own label
+// already says a card acts as it falls. So the rule a newcomer reads and the
+// fall a card pays out are one list and cannot say different things.
+const fallEffects = [DRAW_ON_FALL, HEAL_ON_FALL, STRIKE_ON_FALL].map((ability) =>
+  ability.replace(/^When this falls:\s*/, "")
+);
+
+// "a, b, or c", so a rule listing abilities reads as one sentence.
+const listed = (words) => `${words.slice(0, -1).join(", ")}, or ${words.at(-1)}`;
+
 // What a match asks of a player, in the four things a newcomer cannot yet read
 // for themselves: what a card costs, how the table fights, which hero loses, and
-// what a card does the moment it is played. They are written once, here, and
-// both the Play screen and the get-match-rules tool read them, so the page and
-// the tool cannot drift apart.
+// what a card's face can say it does when it is played or when it falls. They
+// are written once, here, and both the Play screen and the get-match-rules tool
+// read them, so the page and the tool cannot drift apart.
 const MATCH_RULES = [
   {
     label: "Cards cost energy",
@@ -83,9 +98,13 @@ const MATCH_RULES = [
     label: "First hero to 0 loses",
     text: "both heroes start at 20 health; the first to reach 0 ends it",
   },
+  // One point covers both, rather than two rows: the strip stands before the
+  // picker, and a fifth row pushed the opponent picker past the fold on a short
+  // window. Folding them keeps the strip reading in one breath and the picker
+  // where a newcomer can reach it.
   {
-    label: "Some cards act when played",
-    text: `a card can ${whenPlayedEffects.slice(0, -1).join(", ")}, or ${whenPlayedEffects.at(-1)}`,
+    label: "Some cards act when played or when they fall",
+    text: `a played card can ${listed(whenPlayedEffects)}; a card that falls can ${listed(fallEffects)}`,
   },
 ];
 
