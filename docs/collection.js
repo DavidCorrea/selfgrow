@@ -14,14 +14,23 @@
  * player's cards — and a match that cannot be written is simply not offered back.
  */
 
-import { CARDS, CARD_BY_ID, DECK_LIMIT, OPPONENTS, REWARD_POOL, STARTER_COLLECTION } from "./cards.js";
+import {
+  CARDS,
+  CARD_BY_ID,
+  DECK_LIMIT,
+  OPPONENT_BY_ID,
+  OPPONENTS,
+  REWARD_POOL,
+  STARTER_COLLECTION,
+} from "./cards.js";
 import { ENERGY_CAP, HERO_HEALTH } from "./match.js";
 
 /**
  * The single key a save lives under — the collection, the deck and the progress
- * beside them. A change to their shape needs a new key; the deck, the wins and
- * the matches were each added additively, so a save written before one existed
- * still reads as one that simply has none of it yet.
+ * beside them. A change to their shape needs a new key; the deck, the wins, the
+ * matches and the record against each opponent were each added additively, so a
+ * save written before one existed still reads as one that simply has none of it
+ * yet.
  */
 export const STORAGE_KEY = "selfgrow.collection.v1";
 
@@ -175,8 +184,30 @@ function wholeCount(value) {
 }
 
 /**
+ * The record a player has against each opponent, read from a saved payload: one
+ * entry per opponent faced, `{ wins, matches }`, keyed by the opponent's id. A
+ * record with no matches behind it is no record — a first meeting reads as one —
+ * an id this game does not have is dropped rather than carried, and wins are
+ * never allowed to exceed the matches they were won in. A save written before
+ * opponents existed reads as a player who has faced nobody yet.
+ */
+function normalizeOpponents(saved) {
+  const opponents = {};
+  if (!saved || typeof saved !== "object") return opponents;
+
+  for (const [opponentId, record] of Object.entries(saved)) {
+    if (!OPPONENT_BY_ID.has(opponentId)) continue;
+    const matches = wholeCount(record?.matches);
+    if (matches === 0) continue;
+    opponents[opponentId] = { wins: Math.min(wholeCount(record?.wins), matches), matches };
+  }
+  return opponents;
+}
+
+/**
  * The progress saved beside the cards: how many matches have been finished, how
- * many of them were won, and the id of the last result recorded. The id is what
+ * many of them were won, the id of the last result recorded, and the record held
+ * against each opponent (`opponents`, keyed by opponent id). The id is what
  * keeps a single match from being counted twice when its result is revisited.
  * A save written before these fields existed reads as a player who has played
  * nothing yet, rather than as a broken save.
@@ -187,6 +218,7 @@ export function readProgress(storage = defaultStorage()) {
     wins: wholeCount(payload?.wins),
     matches: wholeCount(payload?.matches),
     lastMatchId: typeof payload?.lastMatchId === "string" ? payload.lastMatchId : null,
+    opponents: normalizeOpponents(payload?.opponents),
   };
 }
 
@@ -389,6 +421,7 @@ function writeSave(cards, deck, storage, progress = readProgress(storage)) {
         wins: wholeCount(progress?.wins),
         matches: wholeCount(progress?.matches),
         lastMatchId: progress?.lastMatchId ?? null,
+        opponents: normalizeOpponents(progress?.opponents),
       })
     );
     return true;
@@ -439,14 +472,20 @@ export function nextRewardId(cards) {
  * every reward card is held does it fall back to the cycle of `REWARD_POOL` by
  * wins — a duplicate — and report the set as complete.
  *
+ * `opponentId` is who the match was against, so the result is counted against
+ * that opponent's own record and nobody else's. The match always counts there;
+ * the win only when the match was won.
+ *
  * `matchId` is remembered so that recording the same match again — a result
  * screen asked for twice — does nothing instead of awarding a second card.
- * Returns the collection this produced, the new totals, the card that was added
- * (or null), whether the set was already complete (`setComplete`, true only when
- * the reward was a duplicate because nothing was left to earn), and whether the
- * save will survive closing the page.
+ * Returns the collection this produced, the new totals, the record held against
+ * each opponent (`opponents`), whether this win was the first against that
+ * opponent (`firstWin`), the card that was added (or null), whether the set was
+ * already complete (`setComplete`, true only when the reward was a duplicate
+ * because nothing was left to earn), and whether the save will survive closing
+ * the page.
  */
-export function recordResult(outcome, matchId, storage = defaultStorage()) {
+export function recordResult(outcome, matchId, storage = defaultStorage(), opponentId = null) {
   const cards = readCollection(storage) ?? starterCards();
   const progress = readProgress(storage);
 
@@ -455,6 +494,8 @@ export function recordResult(outcome, matchId, storage = defaultStorage()) {
       cards,
       wins: progress.wins,
       matches: progress.matches,
+      opponents: progress.opponents,
+      firstWin: false,
       awarded: null,
       setComplete: false,
       recorded: false,
@@ -473,20 +514,45 @@ export function recordResult(outcome, matchId, storage = defaultStorage()) {
   const nextCards = awardedId ? withExtraCopy(cards, awardedId) : cards;
   const wins = progress.wins + (won ? 1 : 0);
   const matches = progress.matches + 1;
+  const faced = countOpponentResult(progress.opponents, opponentId, won);
   const wrote = writeSave(nextCards, readDeck(storage), storage, {
     wins,
     matches,
     lastMatchId: matchId ?? progress.lastMatchId,
+    opponents: faced.opponents,
   });
 
   return {
     cards: nextCards,
     wins,
     matches,
+    opponents: faced.opponents,
+    firstWin: faced.firstWin,
     awarded: awardedId ? { ...CARD_BY_ID.get(awardedId) } : null,
     setComplete,
     recorded: true,
     saved: wrote && storage?.durable !== false,
+  };
+}
+
+/**
+ * One finished match counted against the opponent it was fought: that
+ * opponent's record gains a match, and a win too when the match was won. The
+ * `firstWin` beside it is true exactly when the win was that opponent's first,
+ * so the result screen can say so. An id naming no opponent this game has
+ * changes nothing and is never a first win, rather than leaving a record behind
+ * for a character nobody can face.
+ */
+function countOpponentResult(opponents, opponentId, won) {
+  if (!OPPONENT_BY_ID.has(opponentId)) return { opponents, firstWin: false };
+
+  const before = opponents[opponentId] ?? { wins: 0, matches: 0 };
+  return {
+    opponents: {
+      ...opponents,
+      [opponentId]: { wins: before.wins + (won ? 1 : 0), matches: before.matches + 1 },
+    },
+    firstWin: won && before.wins === 0,
   };
 }
 
@@ -516,18 +582,33 @@ export function loadGame(storage = defaultStorage()) {
         deck: saved,
         wins: progress.wins,
         matches: progress.matches,
+        opponents: progress.opponents,
         saved: storage?.durable !== false,
       };
     }
     const deck = starterDeck(cards);
     const wrote = saveDeck(cards, deck, storage);
-    return { cards, deck, wins: progress.wins, matches: progress.matches, saved: wrote && storage?.durable !== false };
+    return {
+      cards,
+      deck,
+      wins: progress.wins,
+      matches: progress.matches,
+      opponents: progress.opponents,
+      saved: wrote && storage?.durable !== false,
+    };
   }
 
   const starter = starterCards();
   const deck = starterDeck(starter);
   const wrote = saveDeck(starter, deck, storage);
-  return { cards: starter, deck, wins: 0, matches: 0, saved: wrote && storage?.durable !== false };
+  return {
+    cards: starter,
+    deck,
+    wins: 0,
+    matches: 0,
+    opponents: {},
+    saved: wrote && storage?.durable !== false,
+  };
 }
 
 /** How many cards the collection holds, copies counted. */

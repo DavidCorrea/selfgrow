@@ -1053,6 +1053,232 @@ export async function checks() {
     );
   }
 
+  // --- How you have fared against each opponent -----------------------------
+
+  // Each opponent brings a deck of its own and plays it its own way, so which of
+  // them has been beaten is worth knowing. The record lives in the save beside
+  // the cards, and a result moves only the opponent it was fought against.
+  const recordStore = stubStorage();
+  collection.saveCollection(owned.cards, recordStore);
+  const [firstOpponent, secondOpponent] = cardCatalog.OPPONENTS ?? [];
+
+  if (!firstOpponent || !secondOpponent) {
+    fail(
+      `the game offers ${(cardCatalog.OPPONENTS ?? []).length} opponent(s), so a record against one cannot be ` +
+        "told apart from a record against another"
+    );
+  } else {
+    const firstWin = collection.recordResult("win", "record-win-1", recordStore, firstOpponent.id);
+    if (firstWin.firstWin !== true) {
+      fail(
+        `a first win against "${firstOpponent.id}" reported firstWin ${firstWin.firstWin}, so the result screen ` +
+          "would not mark it as a first"
+      );
+    }
+    const firstRecord = firstWin.opponents?.[firstOpponent.id];
+    if (firstRecord?.wins !== 1 || firstRecord?.matches !== 1) {
+      fail(
+        `a first win against "${firstOpponent.id}" left the record ${JSON.stringify(firstRecord)} instead of ` +
+          "{ wins: 1, matches: 1 }"
+      );
+    }
+    if (firstWin.opponents?.[secondOpponent.id]) {
+      fail(
+        `a win against "${firstOpponent.id}" also gave "${secondOpponent.id}" the record ` +
+          `${JSON.stringify(firstWin.opponents[secondOpponent.id])}, though the match was not against it`
+      );
+    }
+
+    // A second win is not a first, and a loss counts the match without counting a
+    // win — and neither moves the other opponent's record.
+    const secondWin = collection.recordResult("win", "record-win-2", recordStore, firstOpponent.id);
+    if (secondWin.firstWin !== false) {
+      fail(
+        `a second win against "${firstOpponent.id}" reported firstWin ${secondWin.firstWin}, so a repeat win ` +
+          "would be announced as a first"
+      );
+    }
+    const lostToSecond = collection.recordResult("loss", "record-loss-1", recordStore, secondOpponent.id);
+    if (lostToSecond.firstWin) {
+      fail(`a loss against "${secondOpponent.id}" reported a first win, though the match was lost`);
+    }
+    const firstAfter = lostToSecond.opponents?.[firstOpponent.id];
+    const secondAfter = lostToSecond.opponents?.[secondOpponent.id];
+    if (firstAfter?.wins !== 2 || firstAfter?.matches !== 2) {
+      fail(
+        `after two wins and a loss the record against "${firstOpponent.id}" reads ${JSON.stringify(firstAfter)} ` +
+          "instead of { wins: 2, matches: 2 }"
+      );
+    }
+    if (secondAfter?.wins !== 0 || secondAfter?.matches !== 1) {
+      fail(
+        `after a loss the record against "${secondOpponent.id}" reads ${JSON.stringify(secondAfter)} instead of ` +
+          "{ wins: 0, matches: 1 }"
+      );
+    }
+
+    // The same match recorded again — a result screen asked for twice — moves
+    // neither opponent's record. The id remembered is the last result recorded,
+    // so the loss just counted is the one replayed here.
+    const replayedRecord = collection.recordResult("loss", "record-loss-1", recordStore, secondOpponent.id);
+    if (replayedRecord.recorded || replayedRecord.firstWin) {
+      fail(
+        `recording the same match twice reported it ${replayedRecord.recorded ? "recorded" : "unrecorded"} with ` +
+          `firstWin ${replayedRecord.firstWin}, so a revisited result would count twice`
+      );
+    }
+    if (JSON.stringify(replayedRecord.opponents?.[secondOpponent.id]) !== JSON.stringify(secondAfter)) {
+      fail(
+        `recording the same match twice changed the record against "${secondOpponent.id}" from ` +
+          `${JSON.stringify(secondAfter)} to ${JSON.stringify(replayedRecord.opponents?.[secondOpponent.id])}`
+      );
+    }
+    if (JSON.stringify(replayedRecord.opponents?.[firstOpponent.id]) !== JSON.stringify(firstAfter)) {
+      fail(
+        `recording the same match twice changed the record against "${firstOpponent.id}" from ` +
+          `${JSON.stringify(firstAfter)} to ${JSON.stringify(replayedRecord.opponents?.[firstOpponent.id])}`
+      );
+    }
+
+    // It survives closing the page: the same records read back from the save.
+    const savedRecords = collection.readProgress(recordStore).opponents;
+    if (JSON.stringify(savedRecords?.[firstOpponent.id]) !== JSON.stringify({ wins: 2, matches: 2 })) {
+      fail(
+        `the record against "${firstOpponent.id}" did not survive a save and load: it read back ` +
+          `${JSON.stringify(savedRecords?.[firstOpponent.id])} instead of { wins: 2, matches: 2 }`
+      );
+    }
+    if (JSON.stringify(savedRecords?.[secondOpponent.id]) !== JSON.stringify({ wins: 0, matches: 1 })) {
+      fail(
+        `the record against "${secondOpponent.id}" did not survive a save and load: it read back ` +
+          `${JSON.stringify(savedRecords?.[secondOpponent.id])} instead of { wins: 0, matches: 1 }`
+      );
+    }
+
+    // Changing the deck writes the same save, so it must carry the records with
+    // it rather than leaving the player who has been beaten behind.
+    collection.saveDeck(collection.readCollection(recordStore), ["sprout"], recordStore);
+    const afterDeckSave = collection.readProgress(recordStore).opponents;
+    if (JSON.stringify(afterDeckSave?.[firstOpponent.id]) !== JSON.stringify({ wins: 2, matches: 2 })) {
+      fail(
+        `saving the deck forgot the record against "${firstOpponent.id}": it reads ` +
+          `${JSON.stringify(afterDeckSave?.[firstOpponent.id])} instead of { wins: 2, matches: 2 }`
+      );
+    }
+
+    // A save written before opponents were recorded reads as a player who has
+    // faced nobody yet, rather than as a broken record.
+    const beforeOpponents = collection.readProgress(olderSave).opponents;
+    if (!beforeOpponents || Object.keys(beforeOpponents).length) {
+      fail(
+        `a save written before opponents were recorded read back ${JSON.stringify(beforeOpponents)} instead of no ` +
+          "records at all"
+      );
+    }
+
+    // And a junk record is cleaned up rather than reaching the screen: a wins
+    // count above the matches played, and an opponent this game does not have.
+    const junkRecords = stubStorage({
+      [collection.STORAGE_KEY]: JSON.stringify({
+        version: 1,
+        cards: owned.cards.map(({ id, copies }) => ({ id, copies })),
+        deck: [],
+        opponents: {
+          [firstOpponent.id]: { wins: 9, matches: 2 },
+          "no-such-opponent": { wins: 4, matches: 4 },
+        },
+      }),
+    });
+    const cleanedRecords = collection.readProgress(junkRecords).opponents;
+    const cleanedFirst = cleanedRecords?.[firstOpponent.id];
+    if (!cleanedFirst || cleanedFirst.matches !== 2 || cleanedFirst.wins > cleanedFirst.matches) {
+      fail(
+        `a saved record of { wins: 9, matches: 2 } read back as ${JSON.stringify(cleanedFirst)} instead of two ` +
+          "matches with at most two wins, so a junk record reaches the screen"
+      );
+    }
+    if (cleanedRecords?.["no-such-opponent"]) {
+      fail(
+        `a save naming the unknown opponent "no-such-opponent" kept a record for it ` +
+          `(${JSON.stringify(cleanedRecords["no-such-opponent"])}), which nobody can face`
+      );
+    }
+  }
+
+  // What the picker prints under each character must be the record the state
+  // carries, so a visitor and an agent read the same history — and a beaten
+  // opponent is marked by a word rather than by colour alone.
+  if (typeof game.opponentRecordText !== "function") {
+    fail("app.js does not export opponentRecordText, so the picker's record line cannot be checked");
+  } else {
+    const liveWithRecords = game.readState();
+    const recordOptions = [
+      ...(document.getElementById("opponent-options")?.querySelectorAll(".opponent-option") ?? []),
+    ];
+    if (recordOptions.length !== liveWithRecords.opponents.length) {
+      fail(
+        `the picker draws ${recordOptions.length} opponent option(s) while the state lists ` +
+          `${liveWithRecords.opponents.length}`
+      );
+    }
+    for (const opponent of liveWithRecords.opponents) {
+      const record = opponent.record;
+      if (!record || !Number.isSafeInteger(record.wins) || !Number.isSafeInteger(record.matches)) {
+        fail(
+          `the state carries no readable record against "${opponent.id}" (${JSON.stringify(record)}), so an ` +
+            "agent cannot tell how the player has fared against it"
+        );
+        continue;
+      }
+      if (record.beaten !== record.wins > 0) {
+        fail(
+          `the state says "${opponent.id}" beaten: ${record.beaten} with ${record.wins} win(s), so whether the ` +
+            "opponent has been beaten is not read from the wins"
+        );
+      }
+      const option = recordOptions.find((entry) => entry.dataset.opponentId === opponent.id);
+      const line = option?.querySelector(".opponent-record");
+      if (!line) {
+        fail(
+          `the picker's option for "${opponent.name}" shows no record line (.opponent-record), so a player ` +
+            "choosing who to face cannot see how they have fared against it"
+        );
+        continue;
+      }
+      const expectedRecord = game.opponentRecordText(record.wins, record.matches);
+      if (textOf(line) !== expectedRecord) {
+        fail(
+          `the picker's record for "${opponent.name}" reads "${textOf(line)}" while its ${record.wins} win(s) ` +
+            `of ${record.matches} match(es) read as "${expectedRecord}"`
+        );
+      }
+      if (line.classList.contains("opponent-record-beaten") !== record.wins > 0) {
+        fail(
+          `the picker's record for "${opponent.name}" is ${record.wins > 0 ? "not" : ""} marked beaten with ` +
+            `${record.wins} win(s) against it`
+        );
+      }
+    }
+
+    // The words themselves: a first meeting reads as one, and an opponent beaten
+    // says so in words rather than only in a colour.
+    const noMeeting = game.opponentRecordText(0, 0);
+    const unbeaten = game.opponentRecordText(0, 2);
+    const beaten = game.opponentRecordText(1, 2);
+    if (!/no match/i.test(noMeeting)) {
+      fail(`an opponent never faced reads "${noMeeting}", which does not say there are no matches yet`);
+    }
+    if (!unbeaten.includes("0") || !unbeaten.includes("2")) {
+      fail(`an opponent faced twice and never beaten reads "${unbeaten}", which does not say 0 of 2 matches won`);
+    }
+    if (!/beaten/i.test(beaten)) {
+      fail(`an opponent beaten once reads "${beaten}", which does not say so in words`);
+    }
+    if (beaten.toLowerCase() === unbeaten.toLowerCase()) {
+      fail("an opponent beaten once and one never beaten read the same record, so the mark carries nothing");
+    }
+  }
+
   // --- The deck: chosen from the collection, capped, and kept ---------------
 
   const deckList = document.getElementById("deck-list");
@@ -4081,10 +4307,36 @@ export async function checks() {
     }
   }
 
+  /** The record the page holds against each opponent, keyed by opponent id. */
+  const opponentRecordsNow = () =>
+    Object.fromEntries(
+      game.readState().opponents.map((opponent) => [
+        opponent.id,
+        { wins: opponent.record.wins, matches: opponent.record.matches },
+      ])
+    );
+
+  /**
+   * How one match moved each opponent's record, keyed by opponent id — so a
+   * result can be shown to move the opponent it was fought and nobody else's.
+   */
+  const recordMoves = (before) => {
+    const after = opponentRecordsNow();
+    return Object.fromEntries(
+      Object.entries(after).map(([id, record]) => [
+        id,
+        { wins: record.wins - before[id].wins, matches: record.matches - before[id].matches },
+      ])
+    );
+  };
+
   const cardsHeldBefore = collection.collectionSize(game.readCollection().ownedCards);
   // What the player owned before the match, so the reward can be told apart from
   // a card they already held — which is what decides how the result reads.
   const ownedIdsBeforeMatch = game.readCollection().ownedCards.map((card) => card.id);
+  // And what each opponent's record held before it, so the match's own effect on
+  // it can be told from a record that was already there.
+  const recordsBeforeMatch = opponentRecordsNow();
   game.startMatch();
   const playedOut = playToResult();
   checkResult("playing the strongest card your energy covers, turn after turn", playedOut);
@@ -4120,6 +4372,47 @@ export async function checks() {
       fail(`a won match left the collection holding ${cardsHeldAfter} card(s) instead of exactly one more than ${cardsHeldBefore}`);
     } else if (!textOf(resultReward).includes(awarded.name)) {
       fail(`a win added "${awarded.name}" but the result does not say which card: it reads "${textOf(resultReward)}"`);
+    }
+  }
+
+  // The win says where it stands against the opponent it was won against: it
+  // moves that opponent's record and nobody else's, and a first win is announced
+  // on the result where the win happened. Whether a real match is won is the
+  // shuffle's to decide, so each branch is checked for what it must say.
+  if (playedOut?.outcome === "win") {
+    const moves = recordMoves(recordsBeforeMatch);
+    const facedId = playedOut.opponentId;
+    if (moves[facedId]?.wins !== 1 || moves[facedId]?.matches !== 1) {
+      fail(
+        `a win against "${facedId}" moved its record by ${JSON.stringify(moves[facedId])} instead of one win ` +
+          "and one match"
+      );
+    }
+    const strayMoves = Object.entries(moves).filter(
+      ([id, move]) => id !== facedId && (move.wins || move.matches)
+    );
+    if (strayMoves.length) {
+      fail(
+        `a win against "${facedId}" also moved the record against ` +
+          `${JSON.stringify(strayMoves.map(([id]) => id))}, which the match was not fought against`
+      );
+    }
+
+    const firstWinLine = document.getElementById("result-first-win");
+    if (!firstWinLine) {
+      fail("the result has no place for a first win against an opponent (#result-first-win is missing)");
+    } else if (afterPlay.result?.firstWin) {
+      if (firstWinLine.hidden || !textOf(firstWinLine).includes(playedOut.opponentName)) {
+        fail(
+          `a first win against "${playedOut.opponentName}" is not announced on the result: it reads ` +
+            `"${textOf(firstWinLine)}" (hidden ${firstWinLine.hidden})`
+        );
+      }
+    } else if (!firstWinLine.hidden || textOf(firstWinLine)) {
+      fail(
+        `a win that was not a first still reads "${textOf(firstWinLine)}" on the result, so the mark is not ` +
+          "kept for a first win"
+      );
     }
   }
 
@@ -4235,6 +4528,7 @@ export async function checks() {
   // table cuts your hero down. The page has to say so, with your hero at zero,
   // record the match, and earn nothing for the loss.
   const beforeIdle = game.readState();
+  const recordsBeforeIdle = opponentRecordsNow();
   game.startMatch();
   for (let turn = 0; turn < 30 && !game.readState().match?.over; turn += 1) {
     endTurnButton.click();
@@ -4271,6 +4565,36 @@ export async function checks() {
     }
     if (resultReward?.querySelector(".card-art")) {
       fail("after a loss the result shows a card, but a loss earns nothing");
+    }
+
+    // A loss is counted against the opponent it was fought and nobody else:
+    // the match climbs that opponent's record without a win, so a record of how
+    // often each has been faced stays honest.
+    const lossMoves = recordMoves(recordsBeforeIdle);
+    const facedId = idled.opponentId;
+    if (lossMoves[facedId]?.wins !== 0 || lossMoves[facedId]?.matches !== 1) {
+      fail(
+        `a loss against "${facedId}" moved its record by ${JSON.stringify(lossMoves[facedId])} instead of no ` +
+          "wins and one match"
+      );
+    }
+    const strayLossMoves = Object.entries(lossMoves).filter(
+      ([id, move]) => id !== facedId && (move.wins || move.matches)
+    );
+    if (strayLossMoves.length) {
+      fail(
+        `a loss against "${facedId}" also moved the record against ` +
+          `${JSON.stringify(strayLossMoves.map(([id]) => id))}, which the match was not fought against`
+      );
+    }
+    const firstWinAfterLoss = document.getElementById("result-first-win");
+    if (firstWinAfterLoss && (!firstWinAfterLoss.hidden || textOf(firstWinAfterLoss))) {
+      fail(
+        `after a loss the result reads "${textOf(firstWinAfterLoss)}", though no win happened to be a first`
+      );
+    }
+    if (idled.opponentId && afterIdle.opponents.some((opponent) => opponent.id === idled.opponentId && opponent.record.matches < 1)) {
+      fail(`the loss against "${idled.opponentId}" was not recorded against it, so the picker would not show it`);
     }
 
     // The record survives being closed and opened again.
@@ -5846,6 +6170,93 @@ export async function checks() {
     if (!hidesFalling) {
       fail("reduced motion does not hide the falling-card marker, so a card could still appear to leave the table");
     }
+  }
+
+  // --- A first win is announced where the win happens -----------------------
+
+  // The result screen is where a win lands, so that is where a first against an
+  // opponent is said, and where the opponent's record is seen to move. The
+  // record against the last opponent is cleared in the save first and a
+  // controlled board is then won in one blow, so this is a first win whatever
+  // earlier checks happened to play.
+  const firstWinOpponent = (cardCatalog.OPPONENTS ?? [])[cardCatalog.OPPONENTS.length - 1];
+  const firstWinSave = JSON.parse(window.localStorage.getItem(collection.STORAGE_KEY) ?? "null");
+  const firstWinBoard = {
+    id: "check-first-win",
+    opponentId: firstWinOpponent?.id,
+    opponentName: firstWinOpponent?.name,
+    turn: "player",
+    over: false,
+    winner: null,
+    outcome: null,
+    recorded: false,
+    // One striker with more than enough attack, and an opponent hero on its last
+    // health with an empty table: the next blow ends the match, so it is won.
+    player: {
+      health: 20,
+      energy: 5,
+      maxEnergy: 5,
+      turns: 0,
+      hand: [],
+      table: [{ id: "glowcap", health: 4, hasAttacked: false }],
+      deck: [],
+    },
+    opponent: { health: 1, energy: 1, maxEnergy: 1, turns: 0, hand: [], table: [], deck: [] },
+    log: ["A match set up so the next blow is a first win."],
+  };
+
+  if (!firstWinOpponent || !firstWinSave) {
+    fail(
+      "the save could not be read to check what a first win says, so a first win against an opponent " +
+        "is left unverified"
+    );
+  } else if (collection.saveMatch(firstWinBoard)) {
+    // Let the opponent stand unbeaten, so the win about to happen is its first.
+    if (firstWinSave.opponents?.[firstWinOpponent.id]) {
+      delete firstWinSave.opponents[firstWinOpponent.id];
+      window.localStorage.setItem(collection.STORAGE_KEY, JSON.stringify(firstWinSave));
+    }
+    game.refreshSavedMatch();
+    game.continueMatch();
+    game.attackMatch("glowcap", "hero");
+
+    const afterFirstWin = game.readState();
+    if (afterFirstWin.result?.outcome !== "win" || afterFirstWin.result?.firstWin !== true) {
+      fail(
+        `a win against "${firstWinOpponent.id}" with no win recorded against it before read ` +
+          `${JSON.stringify(afterFirstWin.result)}, so a first win is not told apart from a repeat`
+      );
+    }
+    const winLine = document.getElementById("result-first-win");
+    if (!winLine || winLine.hidden || !textOf(winLine).includes(firstWinOpponent.name)) {
+      fail(
+        `a first win against "${firstWinOpponent.name}" is not announced on the result: it reads ` +
+          `"${textOf(winLine)}" (hidden ${winLine?.hidden})`
+      );
+    }
+
+    const afterRecord = afterFirstWin.opponents.find((opponent) => opponent.id === firstWinOpponent.id)?.record;
+    if (afterRecord?.wins !== 1 || afterRecord?.matches !== 1 || !afterRecord.beaten) {
+      fail(
+        `the first win against "${firstWinOpponent.id}" left its record ${JSON.stringify(afterRecord)} over ` +
+          "instead of one win in one match and marked beaten"
+      );
+    }
+    const afterOption = document.querySelector(
+      `#opponent-options [data-opponent-id="${firstWinOpponent.id}"] .opponent-record`
+    );
+    const expectedAfterWin = game.opponentRecordText(afterRecord?.wins ?? 0, afterRecord?.matches ?? 0);
+    if (!afterOption || textOf(afterOption) !== expectedAfterWin) {
+      fail(
+        `after a first win the picker's record for "${firstWinOpponent.name}" reads ` +
+          `"${textOf(afterOption)}" instead of "${expectedAfterWin}"`
+      );
+    }
+    if (!afterOption?.classList.contains("opponent-record-beaten")) {
+      fail(`the picker does not mark "${firstWinOpponent.name}" beaten after it was beaten`);
+    }
+  } else {
+    fail("a controlled match could not be saved, so what a first win says cannot be checked");
   }
 
   return problems;

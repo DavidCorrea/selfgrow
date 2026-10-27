@@ -268,6 +268,11 @@
                match, so the outcome is what gets announced. -->
           <section class="match-result" id="match-result" aria-labelledby="match-result-heading" hidden>
             <h3 class="result-heading" id="match-result-heading" tabindex="-1"></h3>
+            <!-- The one win worth marking at the moment it happens: a first
+                 against this opponent, so the payoff is read where the win is
+                 rather than only in the picker a screen away. Filled in from
+                 the result, and hidden when the win was not a first. -->
+            <p class="result-first-win" id="result-first-win" hidden></p>
             <p class="result-health" id="match-final-health"></p>
             <!-- What the result did to the collection: the one card a win
                  earned — its picture, name and numbers — or plainly that
