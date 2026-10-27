@@ -1672,6 +1672,38 @@ body {
   animation: card-ability 420ms var(--ease-out);
 }
 
+/* A card the opponent played on its last turn: a quiet chip naming it, cleared
+   on the next draw of the board. It is a label, not a control — it takes no
+   pointer — and its words are real text, so a screen reader hears which cards
+   are new without the log being read back. The muted ink sets it apart from the
+   foil of a blow, so "just played" reads as news of the board rather than as
+   another strike; nothing animates it, so a visitor who asked for less motion
+   still sees it whole. */
+.match-just-played-mark {
+  width: fit-content;
+  padding: 0.1rem 0.5rem;
+  border: 1px solid rgba(168, 177, 212, 0.5);
+  border-radius: 999px;
+  color: var(--ink-muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-wrap: pretty;
+}
+
+/* On a card the mark heads the face while it reads last, the same as the
+   end-of-turn target chip, so a fixed-height table surface cannot scroll it out
+   of sight. */
+.match-card .match-just-played-mark {
+  order: -1;
+}
+
+/* The card it sits on wears the same muted keyline, so the chip and the card
+   read as one mark rather than a label dropped on any face. */
+.match-card.is-just-played {
+  border-color: rgba(168, 177, 212, 0.55);
+}
+
 /* The card that has just left the table, still shown at the spot it stood. It
    takes no pointer and carries no card identity, and the log is what names the
    fall, so the marker never announces the blow a second time. */

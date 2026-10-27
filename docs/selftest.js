@@ -9030,6 +9030,135 @@ export async function checks() {
     }
   }
 
+  // --- The card the opponent just played -------------------------------------
+
+  // A turn of the opponent's can put several cards on its table at once, and the
+  // board redraws with all of them already standing there. Each card the
+  // opponent played on its last turn wears a "Just played" mark, in words and in
+  // styling, on the draw that follows that turn — and only on that draw, so a
+  // card played several turns ago never keeps the mark. The log still names every
+  // play, so the wording on the card is the board's own answer, not a replacement
+  // for the record.
+  if (matchEngine && typeof game.continueMatch === "function") {
+    // A controlled board: the opponent holds two cards it can afford and an
+    // empty deck, and the player's table is empty, so ending the turn puts both
+    // of the opponent's cards on its table in one draw.
+    const opponentPlayed = {
+      id: "check-match-just-played",
+      opponentName: cardCatalog.OPPONENT_NAME,
+      turn: "player",
+      over: false,
+      winner: null,
+      outcome: null,
+      recorded: false,
+      player: {
+        health: 20,
+        energy: 3,
+        maxEnergy: 3,
+        turns: 0,
+        hand: [],
+        table: [],
+        deck: [],
+      },
+      opponent: {
+        health: 20,
+        energy: 6,
+        maxEnergy: 6,
+        turns: 0,
+        hand: [
+          { id: "pebble-toad", health: 2, hasAttacked: false },
+          { id: "mudback-turtle", health: 5, hasAttacked: false },
+        ],
+        table: [],
+        deck: [],
+      },
+      log: ["A match set up to show a card the opponent just played."],
+    };
+
+    if (!collection.saveMatch(opponentPlayed)) {
+      fail("a controlled match could not be saved, so the cards the opponent just played cannot be checked");
+    } else {
+      game.refreshSavedMatch();
+      let loaded = null;
+      try {
+        loaded = game.continueMatch();
+      } catch (e) {
+        fail(`a controlled match could not be loaded to check the cards the opponent just played — ${e.message}`);
+      }
+
+      if (loaded?.match) {
+        // A freshly loaded match is a clean baseline: no card the opponent has not
+        // played yet should already wear the mark.
+        if (document.querySelector("#match-opponent-table .is-just-played")) {
+          fail("a freshly loaded match already marks a card as just played, so the mark cannot be told from the first draw");
+        }
+
+        const logBefore = loaded.match.log.length;
+        game.endMatchTurn();
+
+        const afterTurn = game.readState().match;
+        const playLines = afterTurn.log.slice(logBefore).filter((line) => /^Opponent plays /.test(line));
+        const playedNames = afterTurn.opponentTable.map((card) => card.name);
+        if (playLines.length !== playedNames.length || playedNames.length === 0) {
+          fail(
+            `the opponent played ${playedNames.length} card(s) but the log added ${playLines.length} play ` +
+              `line(s): ${JSON.stringify(afterTurn.log.slice(logBefore))}`
+          );
+        }
+
+        // Every card standing on the opponent's table after its turn carries the
+        // mark, in its class, in a text span a screen reader reads, and in the
+        // state an agent reads.
+        const shownCards = [...document.querySelectorAll("#match-opponent-table .match-card[data-card-id]")];
+        for (const card of shownCards) {
+          const cardId = card.dataset.cardId;
+          if (!card.classList.contains("is-just-played")) {
+            fail(`the opponent's card "${cardId}" was just played but is not marked as just played on the table`);
+          }
+          const mark = card.querySelector(".match-just-played-mark");
+          if (!mark) {
+            fail(`the opponent's card "${cardId}" is marked just played but carries no wording a screen reader reads`);
+          } else if (textOf(mark) !== "Just played") {
+            fail(
+              `the "just played" wording on "${cardId}" reads ${JSON.stringify(textOf(mark))} instead of "Just played"`
+            );
+          } else if (mark.getAttribute("aria-hidden") === "true") {
+            fail(`the "just played" wording on "${cardId}" is hidden from assistive technology`);
+          }
+        }
+        for (const card of afterTurn.opponentTable) {
+          if (!card.justPlayed) {
+            fail(
+              `get-state reports justPlayed false for the opponent's card "${card.id}", which was just played`
+            );
+          }
+        }
+        if (!playedNames.every((name) => playLines.some((line) => line.includes(name)))) {
+          fail(
+            `the log does not name every card the opponent played: ${JSON.stringify(playLines)} for ${JSON.stringify(playedNames)}`
+          );
+        }
+
+        // The next draw of the board clears the mark: the opponent's hand is
+        // empty, so it plays nothing, and the cards that struck a turn ago stand
+        // on its table without the mark.
+        game.endMatchTurn();
+        const onNextDraw = game.readState().match;
+        if (document.querySelector("#match-opponent-table .is-just-played, #match-opponent-table .match-just-played-mark")) {
+          fail("the \"Just played\" mark lingers on the board on the draw after the one that showed it");
+        }
+        for (const card of onNextDraw.opponentTable) {
+          if (card.justPlayed) {
+            fail(
+              `get-state still reports justPlayed true for the opponent's card "${card.id}" on a later draw, ` +
+                "so the fact outlives the turn it belongs to"
+            );
+          }
+        }
+      }
+    }
+  }
+
   // --- A card that draws its owner a card when it falls ----------------------
 
   // The first fall ability: a card whose face says so draws its owner a card the
