@@ -37,9 +37,9 @@
   --ink: #eef1fb;
   --ink-muted: #a8b1d4;
 
-  /* Each opponent has an accent of its own, spent on its sigil and on the option
-     picked in the Play screen's picker — so who is being chosen is read from a
-     mark and a word as well as from a colour. */
+  /* Each opponent has an accent of its own, spent on its portrait and on the
+     option picked in the Play screen's picker — so who is being chosen is read
+     from a figure and a word as well as from a colour. */
   --opponent-thornmere: #7fd6a6;
   --opponent-emberwake: #ffa06b;
   --opponent-mistfen: #8fc7e6;
@@ -626,12 +626,15 @@ body {
   text-transform: uppercase;
 }
 
-/* Options share a row when the width can hold two and stack when it cannot, so a
-   phone in portrait fits the picker as two short rows on the first screen. */
+/* Options share a row when the width can hold more than one and stack when it
+   cannot, so a phone in portrait reads one character per row and the first
+   screen still holds all of them. The 15rem floor is what a portrait and the
+   words beside it need to sit next to each other without squeezing the look and
+   the deck into a column of two words. */
 .opponent-options {
   display: grid;
   gap: 0.55rem;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 12.5rem), 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr));
 }
 
 /* The whole option is the radio's label: its mark in its own accent, its name,
@@ -657,9 +660,9 @@ body {
 
 /* The chosen opponent is the one the Start match button will open the board
    against, so it is marked by more than a filled radio: the accent keyline, a
-   lift in the surface and the mark held at full strength. */
+   lift in the surface and the portrait held at full strength. */
 .opponent-option:has(.opponent-radio:checked) {
-  border-color: var(--sigil-accent);
+  border-color: var(--opponent-accent);
   background-color: rgba(168, 177, 212, 0.1);
 }
 
@@ -674,26 +677,28 @@ body {
   width: 1.1rem;
   height: 1.1rem;
   margin: 0;
-  accent-color: var(--sigil-accent);
+  accent-color: var(--opponent-accent);
 }
 
-/* The mark of each option is drawn in its opponent's accent, the one detail cut
-   into it in the ink that prints on foil. */
-.opponent-sigil {
-  width: 1.75rem;
-  height: 1.75rem;
-  opacity: 0.75;
+/* The portrait of each option is the character itself, drawn in that opponent's
+   accent, the one detail cut into it in the ink that prints on foil. Three rem
+   is big enough to know a face at a glance, and small enough that the picker
+   keeps the height it had on a phone. */
+.opponent-portrait {
+  width: 3rem;
+  height: 3rem;
+  opacity: 0.8;
 }
 
-.opponent-option:has(.opponent-radio:checked) .opponent-sigil {
+.opponent-option:has(.opponent-radio:checked) .opponent-portrait {
   opacity: 1;
 }
 
-.sigil-body {
-  fill: var(--sigil-accent);
+.portrait-body {
+  fill: var(--opponent-accent);
 }
 
-.sigil-accent {
+.portrait-accent {
   fill: var(--on-foil);
 }
 

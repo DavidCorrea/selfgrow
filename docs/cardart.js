@@ -1,9 +1,10 @@
 /**
- * selfgrow — the picture on every card.
+ * selfgrow — the picture on every card, and the portrait of every opponent.
  *
  * Each card is drawn here, once, as a flat silhouette inside one shared frame,
- * so a player learns the cards by sight the way a real card is learned, and a
- * card added later belongs with the ones already on the table. Nothing is
+ * and each opponent as a figure of the same kind without the frame, so a player
+ * learns the cards and the characters by sight the way a real card is learned,
+ * and one added later belongs with the ones already on the table. Nothing is
  * fetched: every drawing is inline SVG built from the same handful of shapes, so
  * the page makes no request that leaves its own origin and there is no build
  * step between a card and its picture.
@@ -25,10 +26,11 @@
  *   - Framing. One 96x64 viewBox with a rounded frame inset 1.5 units. The frame
  *     is drawn once, by cardArtSvg, and each card's `inner` markup is only the
  *     creature inside it — so no card can be framed differently from another.
- *   - Marks. An opponent's sigil is the same language without the card frame: one
- *     solid mark in a 24x24 square, drawn in that opponent's accent instead of
- *     the foil, so opponents are told apart by what their mark is, not only by
- *     its colour.
+ *   - Characters. An opponent is drawn the same way, larger and without the card
+ *     frame: one figure in a 64x64 square, standing on one shared ground line at
+ *     y=56. The figure is that opponent's accent instead of the foil, so
+ *     Thornmere, Emberwake and Mistfen are told apart by sight the way a card is
+ *     — the same shape language, so a character added later belongs with these.
  */
 
 const SVG_NAMESPACE = "http://www.w3.org/2000/svg";
@@ -48,6 +50,18 @@ export const ART_STYLE = {
   },
   shapeLanguage:
     "circles, ellipses and tapered wedges centred on a shared ground line at y=54, inside one 96x64 rounded frame",
+  portrait: {
+    medium: "a flat vector silhouette, one figure per opponent, with no outlines, gradients or shadows — the same medium as the creatures on the cards",
+    viewBox: "0 0 64 64",
+    groundLine: "every figure stands on one shared ground line at y=56, inside x=6..58",
+    palette: {
+      // The opponent's own accent, named by `accent` in docs/cards.js and carried
+      // on the picker option as --opponent-accent, so a portrait is drawn in the
+      // colour of the character it belongs to.
+      body: "--opponent-accent",
+      detail: "--on-foil",
+    },
+  },
 };
 
 // The frame every card is drawn inside, so the whole set is framed by one shape
@@ -460,65 +474,91 @@ export function cardArtSvg(cardId, label) {
 }
 
 /**
- * The mark each opponent is known by, drawn in the same shape language as the
- * creatures: flat wedges and circles, one solid mass, no outline of its own.
- * Each is one drawing in a square frame, so an opponent is recognised by its
- * mark at a glance as well as by its name.
+ * Who each opponent is, drawn: one figure per character, in the same flat
+ * silhouettes as the creatures on the cards but standing on their own rather
+ * than in a card's frame. Each figure is a different one — a hooded warden, an
+ * upright herald, a figure rising from the fen — so an opponent is recognised by
+ * sight before the name is read, exactly as a card is.
  */
-const OPPONENT_SIGILS = new Map([
+const OPPONENT_PORTRAITS = new Map([
   [
-    "bramble",
+    "thornmere",
     {
-      description: "A thorned stem leaning left",
+      description: "A hooded warden in a cloak, a thorn crown on the hood and a staff at his side",
       inner: `
-        <path class="sigil-body" d="M10 23 L14 23 L12 2 Z" />
-        <path class="sigil-body" d="M12 16 L2 10 L11 20 Z" />
-        <path class="sigil-body" d="M12 10 L22 5 L13 14 Z" />
+        <rect class="portrait-body" x="9" y="10" width="4" height="46" rx="2" />
+        <circle class="portrait-body" cx="11" cy="8" r="4" />
+        <path class="portrait-body" d="M38 30 C27 30 21 40 20 56 L56 56 C55 40 49 30 38 30 Z" />
+        <circle class="portrait-body" cx="38" cy="22" r="10" />
+        <path class="portrait-body" d="M28 14 L30 3 L34 15 Z" />
+        <path class="portrait-body" d="M37 13 L39 1 L43 14 Z" />
+        <path class="portrait-body" d="M45 15 L49 5 L48 16 Z" />
+        <circle class="portrait-accent" cx="34" cy="22" r="2.4" />
+        <circle class="portrait-accent" cx="42" cy="22" r="2.4" />
       `,
     },
   ],
   [
-    "flame",
+    "emberwake",
     {
-      description: "A flame licking up from a bright core",
+      description: "An upright herald in a robe with both arms out, a flame crest over the head and sparks at the hands",
       inner: `
-        <path class="sigil-body" d="M12 1 C14 7 19 9 19 15 a7 7 0 0 1 -14 0 C5 11 8 9 9 4 C10 8 12 9 12 12 Z" />
-        <path class="sigil-accent" d="M12 11 C13 14 15 15 15 17.5 a3 3 0 0 1 -6 0 C9 15 11 14 11 12 Z" />
+        <path class="portrait-body" d="M33 33 C23 33 19 43 18 56 L48 56 C47 43 43 33 33 33 Z" />
+        <path class="portrait-body" d="M23 34 L10 25 L7 31 L20 40 Z" />
+        <path class="portrait-body" d="M43 34 L56 25 L59 31 L46 40 Z" />
+        <circle class="portrait-body" cx="33" cy="25" r="8" />
+        <path class="portrait-body" d="M33 2 C35 7 40 9 40 13 a7 7 0 0 1 -14 0 C26 9 30 7 31 3 C32 7 33 8 33 11 Z" />
+        <circle class="portrait-body" cx="11" cy="15" r="2.6" />
+        <circle class="portrait-body" cx="55" cy="14" r="2.4" />
+        <circle class="portrait-accent" cx="30" cy="24" r="2.2" />
+        <circle class="portrait-accent" cx="36" cy="24" r="2.2" />
+        <path class="portrait-accent" d="M33 7 C34 10 37 11 37 13 a4 4 0 0 1 -8 0 C29 11 32 10 32 8 Z" />
       `,
     },
   ],
   [
-    "reed",
+    "mistfen",
     {
-      description: "Three reeds standing in a still line of water",
+      description: "A draped figure rising from the fen, standing in a rippled line of water among four reeds",
       inner: `
-        <path class="sigil-body" d="M4 20 L6 20 L5 6 Z" />
-        <path class="sigil-body" d="M11 20 L13 20 L12 1 Z" />
-        <path class="sigil-body" d="M18 20 L20 20 L19 9 Z" />
-        <path class="sigil-body" d="M2 19.5 L22 19.5 L22 22.5 L2 22.5 Z" />
-        <path class="sigil-accent" d="M7 19.5 L9 19.5 L9 22.5 L7 22.5 Z" />
-        <path class="sigil-accent" d="M15 19.5 L17 19.5 L17 22.5 L15 22.5 Z" />
+        <rect class="portrait-body" x="7" y="24" width="3" height="32" rx="1.5" />
+        <rect class="portrait-body" x="12" y="12" width="3" height="44" rx="1.5" />
+        <rect class="portrait-body" x="50" y="26" width="3" height="30" rx="1.5" />
+        <rect class="portrait-body" x="55" y="15" width="3" height="41" rx="1.5" />
+        <path class="portrait-body" d="M34 19 C26 19 22 28 21 36 C20 45 20 51 20 56 L48 56 C48 51 48 45 47 36 C46 28 42 19 34 19 Z" />
+        <path class="portrait-body" d="M6 52.5 C15 50.5 23 54.5 32 52.5 C41 50.5 49 54.5 58 52.5 L58 56 L6 56 Z" />
+        <circle class="portrait-accent" cx="30" cy="30" r="2.2" />
+        <circle class="portrait-accent" cx="38" cy="30" r="2.2" />
       `,
     },
   ],
 ]);
 
 /**
- * One opponent's mark, as an <svg> the page can drop beside their name: a square
- * drawing in the opponent's own accent colour, hidden from assistive technology
- * because the opponent's name is written beside it — the picture is what a
- * sighted player sees, not a second thing to be read out.
+ * The drawing for one opponent: its description and the SVG markup of its
+ * figure, or null when no portrait answers to that id — the same shape as
+ * cardArt(), so a caller can check a portrait against the written style.
  */
-export function opponentSigilSvg(opponent) {
-  const sigil = OPPONENT_SIGILS.get(opponent.sigil);
-  if (!sigil) return null;
+export function opponentPortrait(opponentId) {
+  return OPPONENT_PORTRAITS.get(opponentId) ?? null;
+}
+
+/**
+ * One opponent's portrait, as an <svg> the page can drop beside their name: the
+ * figure drawn in that opponent's own accent colour, hidden from assistive
+ * technology because the opponent's name, look and deck are written beside it —
+ * the picture is what a sighted player sees, not a second thing to be read out.
+ */
+export function opponentPortraitSvg(opponent) {
+  const portrait = opponentPortrait(opponent.id);
+  if (!portrait) return null;
 
   const svg = document.createElementNS(SVG_NAMESPACE, "svg");
-  svg.setAttribute("class", "opponent-sigil");
-  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("class", "opponent-portrait");
+  svg.setAttribute("viewBox", "0 0 64 64");
   svg.setAttribute("aria-hidden", "true");
   svg.setAttribute("focusable", "false");
-  svg.innerHTML = sigil.inner;
+  svg.innerHTML = portrait.inner;
   return svg;
 }
 
