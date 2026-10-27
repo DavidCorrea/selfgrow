@@ -128,7 +128,7 @@ export const CARDS = [
   { id: "elder-oak", name: "Elder Oak", cost: 6, attack: 4, health: 9 },
   // The reward cards, earned by winning rather than dealt at the start. They are
   // real cards — playable, and saved like any other — so a win grows what a
-  // player can put in a deck. Moon Bloom, the first one a win earns, is also one
+  // player can put in a deck. Moon Bloom, first in the reward pool, is also one
   // of the two cards that draw a card when played, so the ability is met in the
   // starter deck and then hunted for in the reward pool.
   { id: "moon-bloom", name: "Moon Bloom", cost: 2, attack: 2, health: 3, ability: DRAW_ON_PLAY },
@@ -230,12 +230,14 @@ export const STARTER_COLLECTION = [
 ];
 
 /**
- * The cards a win can add, in the order they are preferred: a win earns the
- * first one the player does not hold yet, so the order is the order the pool is
- * exhausted in. None of them is in the starter collection, so the first wins are
- * always cards the player did not already have. Once every one of them is held,
- * a win falls back to walking this list by how many matches have been won — a
- * duplicate.
+ * The cards a win can add, and the order they are preferred in once an
+ * opponent's signature card is not the one being earned. A win earns the first
+ * one the player does not hold yet, so the order is the order the pool is
+ * exhausted in. Every opponent's signature is also a card in this pool, so
+ * whichever reward a win earns, it comes from here. None of them is in the
+ * starter collection, so the first wins are always cards the player did not
+ * already have. Once every one of them is held, a win falls back to walking this
+ * list by how many matches have been won — a duplicate.
  */
 export const REWARD_POOL = [
   "moon-bloom",
@@ -291,6 +293,12 @@ export const REWARD_POOL = [
  * built around what a card does as it falls, the half of a card's behaviour no
  * other opponent centres on, so the fourth character is a lesson of its own. The
  * first entry is the opponent a match is against unless the player picks another.
+ *
+ * `signature` is the one card that stands for how that opponent plays: a card
+ * from their own deck and, like every reward card, in `REWARD_POOL`. A first win
+ * against an opponent adds it while the player does not already hold it, so
+ * beating a new character grows the collection in a way beating the same one
+ * again does not and each character is a collection goal of its own.
  */
 export const OPPONENTS = [
   {
@@ -300,6 +308,9 @@ export const OPPONENTS = [
     description: "Slow, thorned growth — big bodies that wear you down",
     cardPreference: "dearest",
     accent: "--opponent-thornmere",
+    // Thorn Gale: the sweeping gust that answers a whole table at once, the card
+    // that stands for the slow warden's control.
+    signature: "thorn-gale",
     deck: [
       "whipthorn",
       "mudback-turtle",
@@ -320,6 +331,9 @@ export const OPPONENTS = [
     description: "Fast, cheap strikers that hit before you can answer",
     cardPreference: "cheapest",
     accent: "--opponent-emberwake",
+    // Cinder Shrike: the fiery-tipped striker that hits as it lands, the card
+    // that stands for the herald's rush.
+    signature: "cinder-shrike",
     deck: [
       "dewdrop-nymph",
       "sprout",
@@ -340,6 +354,9 @@ export const OPPONENTS = [
     description: "Cheap, creeping things that rise from the fen in numbers",
     cardPreference: "cheapest",
     accent: "--opponent-mistfen",
+    // Fern Drake: the cheap body that strikes as it lands, the card that stands
+    // for the fen's swarm.
+    signature: "fern-drake",
     deck: [
       "dewdrop-nymph",
       "sprout",
@@ -360,6 +377,9 @@ export const OPPONENTS = [
     description: "Cheap bodies traded away — they pay you back when they fall",
     cardPreference: "cheapest",
     accent: "--opponent-barrowmere",
+    // Seed Pod: the cheap body that hands its owner a card as it falls, the card
+    // that stands for the grave-tender's trade.
+    signature: "seed-pod",
     // The one deck built around what a card does as it falls rather than as it
     // lands: every body here is cheap enough to trade without regret, and three
     // of them pay their owner back the moment they are removed — a card drawn, a

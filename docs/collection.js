@@ -460,24 +460,35 @@ function withExtraCopy(cards, cardId) {
 }
 
 /**
- * The reward card a win would add next: the first card in `REWARD_POOL` the
- * collection does not hold, or null once every one of them is held.
+ * The reward card a win would add next.
+ *
+ * An opponent faced for the first time earns that opponent's signature card —
+ * the card that stands for how they play — while the player does not already
+ * hold it; every other win earns the first card in `REWARD_POOL` the collection
+ * does not hold, or null once every one of them is held. A win against an
+ * already-beaten opponent (`beaten` true), or one against a character whose
+ * signature is already owned, therefore earns exactly what it did before this
+ * choice existed.
  *
  * This is the one place the choice is made, so the card the home screen promises
  * under "Next win earns" and the card `recordResult` actually awards can never
- * disagree. The starter collection holds every non-reward card, so a reward card
- * not held is simply one left to earn.
+ * disagree. The starter collection holds every non-reward card, and every
+ * signature is itself a `REWARD_POOL` card, so a reward card not held is simply
+ * one left to earn.
  */
-export function nextRewardId(cards) {
+export function nextRewardId(cards, opponent = null, beaten = false) {
   const owned = new Set(cards.map((card) => card.id));
+  const signature = opponent?.signature;
+  if (signature && !owned.has(signature) && !beaten) return signature;
   return REWARD_POOL.find((id) => !owned.has(id)) ?? null;
 }
 
 /**
  * Record a finished match. The match counts toward the matches played; a win
  * adds exactly one reward card to the collection, and a loss adds none. A win
- * earns the first reward card the player does not hold yet — the same card
- * `nextRewardId` names — so each win keeps the collection growing; only once
+ * earns the card `nextRewardId` names — a first win against an opponent their
+ * signature card while it is unowned, otherwise the first reward card the
+ * player does not hold yet — so each win keeps the collection growing; only once
  * every reward card is held does it fall back to the cycle of `REWARD_POOL` by
  * wins — a duplicate — and report the set as complete.
  *
@@ -513,9 +524,14 @@ export function recordResult(outcome, matchId, storage = defaultStorage(), oppon
   }
 
   const won = outcome === "win";
+  // The signature a first win against this opponent earns, and whether the
+  // player has already beaten them — a repeat win earns the usual reward, never
+  // the signature a first win already gave.
+  const opponent = OPPONENT_BY_ID.get(opponentId) ?? null;
+  const beaten = (progress.opponents?.[opponentId]?.wins ?? 0) > 0;
   // A reward card left to earn is a card the player does not own; none left
   // means the whole game's set is already held.
-  const unownedRewardId = nextRewardId(cards);
+  const unownedRewardId = nextRewardId(cards, opponent, beaten);
   const setComplete = won && unownedRewardId === null;
   const awardedId = won
     ? (unownedRewardId ?? REWARD_POOL[progress.wins % REWARD_POOL.length])

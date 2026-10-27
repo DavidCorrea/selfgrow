@@ -119,10 +119,18 @@ export async function checks() {
       fail("the home screen has no place for the card the next win will add (#next-reward)");
       return;
     }
-    // The state's next card must be the one shared choice a win awards by, so the
-    // home screen's promise can never drift from the reward.
+    // The state's next card must be the one shared choice a win awards by — read
+    // against the opponent the picker has chosen and whether it has been beaten,
+    // exactly as the win itself will read it — so the home screen's promise can
+    // never drift from the reward.
     if (typeof collection.nextRewardId === "function") {
-      const expectedId = collection.nextRewardId(game.readCollection().ownedCards);
+      const chosen = live.opponents.find((opponent) => opponent.id === live.selectedOpponentId);
+      const chosenOpponent = cardCatalog.OPPONENT_BY_ID.get(live.selectedOpponentId);
+      const expectedId = collection.nextRewardId(
+        game.readCollection().ownedCards,
+        chosenOpponent ?? null,
+        Boolean(chosen?.record?.beaten)
+      );
       if (expectedId !== (live.nextReward?.id ?? null)) {
         fail(
           `the state's next-win card is "${live.nextReward?.id ?? null}" while the shared reward choice ` +
@@ -689,6 +697,42 @@ export async function checks() {
   // short heading, so a player can see the goal rather than only the count.
   checkNextRewardShown();
 
+  // --- The home screen promises the chosen opponent's signature card ---------
+
+  // Beating a new character earns that character's signature card, so the home
+  // screen's "Next win earns" is that card while the chosen opponent is
+  // unbeaten and the card is still to collect — not a generic reward that would
+  // be the same whichever character is faced. On a first visit nobody has been
+  // beaten and no reward card is held, so the promise is the signature itself.
+  {
+    const live = game.readState();
+    const chosen = live.opponents.find((opponent) => opponent.id === live.selectedOpponentId);
+    const chosenOpponent = cardCatalog.OPPONENT_BY_ID.get(live.selectedOpponentId);
+    const signatureOwned = game
+      .readCollection()
+      .ownedCards.some((card) => card.id === chosenOpponent?.signature);
+    if (!chosenOpponent?.signature) {
+      fail(
+        `the chosen opponent "${live.selectedOpponentId}" has no signature card, so the home screen cannot ` +
+          "promise what beating them earns"
+      );
+    } else if (!chosen?.record?.beaten && !signatureOwned) {
+      if (live.nextReward?.id !== chosenOpponent.signature) {
+        fail(
+          `with "${live.selectedOpponentId}" unbeaten and its signature "${chosenOpponent.signature}" unowned, ` +
+            `the state's next-win card is "${live.nextReward?.id ?? null}" instead of that signature`
+        );
+      }
+      const shownId = readNextReward().cardId;
+      if (shownId !== chosenOpponent.signature) {
+        fail(
+          `the home screen shows "${shownId}" under "Next win earns" instead of the chosen opponent ` +
+            `"${live.selectedOpponentId}"'s signature "${chosenOpponent.signature}"`
+        );
+      }
+    }
+  }
+
   // --- The collection survives closing the page ------------------------------
 
   const raw = window.localStorage.getItem(collection.STORAGE_KEY);
@@ -1054,6 +1098,118 @@ export async function checks() {
         `with every reward card held the next-win card is still ` +
           `"${collection.nextRewardId(everything)}" instead of none`
       );
+    }
+  }
+
+  // --- A first win earns the opponent's signature card ----------------------
+
+  // Every opponent brings a deck of their own, and each names one card from it
+  // as their signature — the card that stands for how they play. Beating a
+  // character for the first time earns it while the player does not hold it, so
+  // the four characters are collection goals and not only choices of how to
+  // play: beating a new one grows the collection in a way beating the same one
+  // again does not.
+  const signatureOpponents = cardCatalog.OPPONENTS ?? [];
+  if (signatureOpponents.length < 2) {
+    fail(
+      `the game offers ${signatureOpponents.length} opponent(s), so beating a new character cannot be told ` +
+        "from beating one already faced"
+    );
+  } else if (typeof collection.nextRewardId !== "function") {
+    fail("collection.js does not export nextRewardId, so the signature card a first win earns cannot be checked");
+  } else {
+    for (const opponent of signatureOpponents) {
+      const signature = opponent.signature;
+      if (!signature) {
+        fail(`opponent "${opponent.id}" has no signature card, so beating them earns nothing of their own`);
+        continue;
+      }
+      if (!opponent.deck.includes(signature)) {
+        fail(
+          `opponent "${opponent.id}"'s signature card "${signature}" is not in their own deck, so it does not ` +
+            "stand for how they play"
+        );
+      }
+      if (!pool.includes(signature)) {
+        fail(
+          `opponent "${opponent.id}"'s signature card "${signature}" is not a reward card, so a win can never earn it`
+        );
+      }
+    }
+
+    const rival = signatureOpponents.find((opponent) => opponent.signature);
+    if (!rival) {
+      fail("no opponent names a signature card, so a first win against one cannot be checked");
+    } else {
+      const starters = cardCatalog.STARTER_COLLECTION.map(({ id, copies }) => ({ id, copies }));
+
+      // Before the win, the choice promises the signature; the win then awards
+      // exactly that card and reports itself as a first.
+      const promised = collection.nextRewardId(starters, rival, false);
+      if (promised !== rival.signature) {
+        fail(
+          `with "${rival.id}" unbeaten and its signature "${rival.signature}" unowned the next-win card is ` +
+            `"${promised}" instead of it`
+        );
+      }
+      const signatureStore = stubStorage();
+      collection.saveCollection(starters, signatureStore);
+      const firstWin = collection.recordResult("win", "signature-first", signatureStore, rival.id);
+      if (firstWin.awarded?.id !== rival.signature) {
+        fail(
+          `a first win against "${rival.id}" awarded "${firstWin.awarded?.id}" instead of its signature ` +
+            `"${rival.signature}"`
+        );
+      }
+      if (!firstWin.firstWin) {
+        fail(`a first win against "${rival.id}" did not report itself as a first`);
+      }
+
+      // A first win against a character whose signature is already owned earns
+      // the usual reward instead, never a second copy of the signature.
+      const ownedSignature = starters.concat([{ id: rival.signature, copies: 1 }]);
+      const ownedPromised = collection.nextRewardId(ownedSignature, rival, false);
+      if (ownedPromised === rival.signature) {
+        fail(`with the signature "${rival.signature}" already owned, the next-win card is still it`);
+      }
+      const ownedStore = stubStorage();
+      collection.saveCollection(ownedSignature, ownedStore);
+      const ownedFirstWin = collection.recordResult("win", "signature-owned", ownedStore, rival.id);
+      if (ownedFirstWin.awarded?.id === rival.signature) {
+        fail(
+          `a first win against "${rival.id}" awarded its signature "${rival.signature}" though the player ` +
+            "already owned it"
+        );
+      }
+      if (!ownedFirstWin.awarded) {
+        fail(`a first win against "${rival.id}" with its signature already owned awarded no card at all`);
+      }
+
+      // A win against an already-beaten opponent earns the usual reward, never
+      // the signature again — the second win below follows a first that already
+      // gave it.
+      const beatenPromised = collection.nextRewardId(starters, rival, true);
+      if (beatenPromised === rival.signature) {
+        fail(
+          `with "${rival.id}" already beaten the next-win card is still its signature "${rival.signature}", ` +
+            "so a repeat win would be promised a card a first win already gave"
+        );
+      }
+      const repeatStore = stubStorage();
+      collection.saveCollection(starters, repeatStore);
+      collection.recordResult("win", "signature-repeat-1", repeatStore, rival.id);
+      const repeatWin = collection.recordResult("win", "signature-repeat-2", repeatStore, rival.id);
+      if (repeatWin.awarded?.id === rival.signature) {
+        fail(
+          `a repeat win against the already-beaten "${rival.id}" awarded its signature "${rival.signature}" ` +
+            "again, though only a first win earns it"
+        );
+      }
+      if (!repeatWin.awarded) {
+        fail(
+          `a repeat win against "${rival.id}" awarded no card at all, though there were reward cards left to earn`
+        );
+      }
     }
   }
 
