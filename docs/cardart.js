@@ -20,7 +20,7 @@
  *     than smudged over it. A creature with no eye is drawn in --foil alone.
  *   - Shape language. Bodies are circles, ellipses and tapered wedges; a limb, a
  *     wing or a thorn is a wedge, never a stroke. Every creature is centred on
- *     the same ground line at y=54 and stays inside x=8..88, so all fifteen sit
+ *     the same ground line at y=54 and stays inside x=8..88, so all eighteen sit
  *     the same way in the frame.
  *   - Framing. One 96x64 viewBox with a rounded frame inset 1.5 units. The frame
  *     is drawn once, by cardArtSvg, and each card's `inner` markup is only the
@@ -46,8 +46,8 @@ export const ART_STYLE = {
     "circles, ellipses and tapered wedges centred on a shared ground line at y=54, inside one 96x64 rounded frame",
 };
 
-// The frame every card is drawn inside, so all fifteen are framed by one shape
-// rather than by fifteen similar ones. It is the only stroke in a picture.
+// The frame every card is drawn inside, so all eighteen are framed by one shape
+// rather than by eighteen similar ones. It is the only stroke in a picture.
 const FRAME = '<rect class="art-frame" x="1.5" y="1.5" width="93" height="61" rx="12"/>';
 
 /**
@@ -271,6 +271,54 @@ const CARD_ART = new Map([
         <path class="art-body" d="M63 18 L76 21 L63 25 Z" />
         <path class="art-body" d="M52 13 L58 3 L62 15 Z" />
         <circle class="art-accent" cx="58" cy="18" r="2.4" />
+      `,
+    },
+  ],
+  [
+    "dewdrop-nymph",
+    {
+      description: "A dewdrop nymph: a droplet for a head on a slender body, with two leaf arms",
+      inner: `
+        <path class="art-body" d="M48 38 L54 54 L42 54 Z" />
+        <path class="art-body" d="M42 42 Q28 38 22 28 Q34 29 42 38 Z" />
+        <path class="art-body" d="M54 42 Q68 38 74 28 Q62 29 54 38 Z" />
+        <path class="art-body" d="M48 14 C53 20 56 25 56 30 C56 35 52 39 48 39 C44 39 40 35 40 30 C40 25 43 20 48 14 Z" />
+        <circle class="art-accent" cx="45" cy="29" r="1.8" />
+        <circle class="art-accent" cx="51" cy="29" r="1.8" />
+      `,
+    },
+  ],
+  [
+    "twilight-fox",
+    {
+      description: "A fox: a sleek body, two pointed ears and a long sweeping tail",
+      inner: `
+        <path class="art-body" d="M30 44 C14 40 6 26 10 14 C20 22 30 30 40 36 Z" />
+        <ellipse class="art-body" cx="50" cy="40" rx="20" ry="11" />
+        <rect class="art-body" x="40" y="46" width="7" height="8" rx="3.5" />
+        <rect class="art-body" x="54" y="46" width="7" height="8" rx="3.5" />
+        <path class="art-body" d="M56 18 L54 6 L66 14 Z" />
+        <path class="art-body" d="M68 16 L76 5 L80 17 Z" />
+        <circle class="art-body" cx="62" cy="26" r="11" />
+        <path class="art-body" d="M70 26 L86 30 L70 34 Z" />
+        <circle class="art-accent" cx="64" cy="24" r="2.2" />
+      `,
+    },
+  ],
+  [
+    "bark-sentinel",
+    {
+      description: "A bark sentinel: a tall trunk body with a knotted face and two branch arms",
+      inner: `
+        <path class="art-body" d="M40 54 L32 62 L44 58 Z" />
+        <path class="art-body" d="M56 54 L64 62 L52 58 Z" />
+        <rect class="art-body" x="38" y="14" width="20" height="42" rx="9" />
+        <ellipse class="art-body" cx="48" cy="12" rx="12" ry="8" />
+        <path class="art-body" d="M38 26 L18 16 L16 24 L36 33 Z" />
+        <path class="art-body" d="M58 26 L78 16 L80 24 L60 33 Z" />
+        <circle class="art-accent" cx="43" cy="26" r="2.4" />
+        <circle class="art-accent" cx="53" cy="26" r="2.4" />
+        <circle class="art-accent" cx="48" cy="41" r="3" />
       `,
     },
   ],

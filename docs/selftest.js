@@ -358,6 +358,34 @@ export async function checks() {
       }
     }
 
+    // --- Every card a win can award is a real, unowned, pictured reward ------
+
+    // A win is the only way to own a reward card, so the pool is the whole of
+    // what collecting offers. Each one must be a card the game can play (in the
+    // catalog), a card the player cannot already have (absent from the starter
+    // collection), and a card a player can know by sight (a described drawing).
+    const rewardPool = cardCatalog.REWARD_POOL;
+    const starterIds = new Set(cardCatalog.STARTER_COLLECTION.map((entry) => entry.id));
+    if (rewardPool.length < 3) {
+      fail(`the game offers only ${rewardPool.length} reward card(s), so a win stops being something new too soon`);
+    }
+    for (const id of rewardPool) {
+      const card = cardCatalog.CARD_BY_ID.get(id);
+      if (!card) {
+        fail(`the reward pool names "${id}", which is not a card in the game, so a win cannot award it`);
+        continue;
+      }
+      if (starterIds.has(id)) {
+        fail(`"${card.name}" is a reward card but is also dealt at the start, so a win for it is not something new`);
+      }
+      const art = cardArt.cardArt(id);
+      if (!art || !(art.inner || "").trim()) {
+        fail(`the reward card "${card.name}" has no picture, so the card a win earns cannot be known by sight`);
+      } else if (!art.description?.trim()) {
+        fail(`the reward card "${card.name}"'s picture is not described, so it cannot be checked against the style`);
+      }
+    }
+
     // Two cards drawn identically are one card to a player's eye.
     const drawnBy = new Map();
     for (const [id, drawing] of drawings) {
