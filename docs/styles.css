@@ -2235,6 +2235,20 @@ body {
     gap: 0.6rem;
   }
 
+  /* The fourth point now names a third kind of ability, so its line wraps once
+     more on a phone. The strip's own gaps and padding tighten to absorb that
+     line, so the picker and the Start match button still share the first
+     screen with all four points open. */
+  .match-rules {
+    gap: 0.15rem;
+    padding-top: 0.1rem;
+    padding-bottom: 0.1rem;
+  }
+
+  .match-rules-points {
+    gap: 0;
+  }
+
   /* The how-a-match-works strip and the opponent picker share the first screen,
      so on a phone the options tighten: the name, the record against the
      opponent, the look and the deck all still read, in fewer lines. */

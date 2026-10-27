@@ -4550,11 +4550,12 @@ export async function checks() {
 
   // The Play screen stands before a match with a short how-a-match-works strip:
   // four labelled points — what a card costs, how the table fights, which hero
-  // losing ends it, and what a card's face can say it does when it is played or
-  // when it falls — folded behind one control. A player who has not finished a
-  // match meets it open, and the same words and whether they show are what the
-  // get-match-rules tool hands an agent. The strip must not push the picker or
-  // the Start match button off the first screen.
+  // losing ends it, and what a card's face can say it does when it is played,
+  // when it falls or while it stays growing — folded behind one control. A
+  // player who has not finished a match meets it open, and the same words and
+  // whether they show are what the get-match-rules tool hands an agent. The
+  // strip must not push the picker or the Start match button off the first
+  // screen.
   {
     const rulesSection = document.getElementById("match-rules");
     const rulesPoints = document.getElementById("match-rules-points");
@@ -4602,12 +4603,13 @@ export async function checks() {
       }
 
       // The fourth point is a card acting on its own. It names all four things a
-      // card can do as it is played, and every fall ability a card can print for
-      // when it leaves the table, in the words the card's own face prints them —
-      // the abilities are read from docs/cards.js, so the rule a newcomer reads
-      // and the card they watch cannot say different things, and the point keeps
-      // step as fall abilities are added. Both halves share one point because a
-      // point of its own for falling pushed the picker past the fold.
+      // card can do as it is played, every fall ability a card can print for
+      // when it leaves the table, and the growth ability a card prints for
+      // staying on the table — each in the words the card's own face prints
+      // them, read from docs/cards.js, so the rule a newcomer reads and the card
+      // they watch cannot say different things, and the point keeps step as
+      // abilities are added. All three share one point because a point of its
+      // own for falling or growing pushed the picker past the fold.
       const whenActedPoint = rulesState.points[3];
       if (!whenActedPoint) {
         fail("the match rules carry no fourth point, so nothing tells a newcomer a card can act on its own");
@@ -4624,10 +4626,11 @@ export async function checks() {
             );
           }
         }
-        // The point names the played abilities before the word "fall" and the
-        // fall abilities after it, so each half is read on its own: a copy that
-        // kept the played half and quietly dropped the fall half would otherwise
-        // pass, since every fall ability happens to repeat a played one.
+        // The point names the played abilities before the word "fall", and the
+        // fall abilities and the growth ability after it, so each half is read
+        // on its own: a copy that kept the played half and quietly dropped the
+        // fall half would otherwise pass, since every fall ability happens to
+        // repeat a played one.
         const [playedHalf, ...afterFall] = whenActedPoint.text.toLowerCase().split("fall");
         const fallHalf = afterFall.join("fall");
         const halves = [
@@ -4663,6 +4666,25 @@ export async function checks() {
                   `a card can "${words}" ${when}, so a newcomer may never learn a card can ${why}`
               );
             }
+          }
+        }
+
+        // The point also names the growth a card prints for staying on the
+        // table, read from the same constant the card's face uses, so the rule a
+        // newcomer reads and the growth they watch cannot drift apart.
+        if (typeof cardCatalog.GROWTH_ABILITY !== "string" || !cardCatalog.GROWTH_ABILITY) {
+          fail(
+            "docs/cards.js exports no GROWTH_ABILITY, so the fourth match rule cannot name what a card that " +
+              "stays on the table does"
+          );
+        } else {
+          const growthWords = cardCatalog.GROWTH_ABILITY.replace(/^Grows:\s*/, "").toLowerCase();
+          if (!fourthRule.includes(growthWords)) {
+            fail(
+              `the fourth match rule reads "${whenActedPoint.label} — ${whenActedPoint.text}", which never says ` +
+                `a card that stays can "${growthWords}", so a newcomer may never learn a card can grow stronger ` +
+                "each turn it remains on the table"
+            );
           }
         }
       }
