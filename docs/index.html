@@ -193,7 +193,14 @@
               <dt class="standing-label">Your health</dt>
               <dd class="standing-value"><span id="match-player-health">20</span></dd>
             </div>
-            <div class="standing">
+            <!-- The opponent leads with their portrait, so the character the
+                 picker showed stays on the board for the whole match. The
+                 drawing is decorative: the opponent's name is written into the
+                 health label beside it, so a screen reader reads who is faced.
+                 The board fills the span with the drawing while a match runs and
+                 empties it before one or once it is over. -->
+            <div class="standing standing-opponent">
+              <span class="match-opponent-portrait" id="match-opponent-portrait" aria-hidden="true" hidden></span>
               <dt class="standing-label" id="match-opponent-health-label">Opponent health</dt>
               <dd class="standing-value"><span id="match-opponent-health">20</span></dd>
             </div>
