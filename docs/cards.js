@@ -28,6 +28,9 @@ export const CARDS = [
   { id: "moon-bloom", name: "Moon Bloom", cost: 2, attack: 2, health: 3 },
   { id: "amber-antler", name: "Amber Antler", cost: 4, attack: 4, health: 3 },
   { id: "cinder-shrike", name: "Cinder Shrike", cost: 3, attack: 4, health: 1 },
+  { id: "dewdrop-nymph", name: "Dewdrop Nymph", cost: 1, attack: 1, health: 3 },
+  { id: "twilight-fox", name: "Twilight Fox", cost: 3, attack: 2, health: 2 },
+  { id: "bark-sentinel", name: "Bark Sentinel", cost: 5, attack: 3, health: 8 },
 ];
 
 /** Lookup by id — the shape the saved collection speaks in. */
@@ -72,7 +75,14 @@ export const STARTER_COLLECTION = [
  * a win falls back to walking this list by how many matches have been won — a
  * duplicate.
  */
-export const REWARD_POOL = ["moon-bloom", "amber-antler", "cinder-shrike"];
+export const REWARD_POOL = [
+  "moon-bloom",
+  "amber-antler",
+  "cinder-shrike",
+  "dewdrop-nymph",
+  "twilight-fox",
+  "bark-sentinel",
+];
 
 /**
  * The opponent the player faces: a character, with a deck of their own.
