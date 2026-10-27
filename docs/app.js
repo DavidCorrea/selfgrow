@@ -39,6 +39,11 @@ const SCREEN_LABELS = {
 // checks against, so a caller cannot ask for a view the page does not show.
 const COLLECTION_VIEWS = ["all", "missing"];
 
+// The two orders the Collection screen's set list can be read in: the catalog's
+// own order, or cheapest first. The list is also the schema a tool checks
+// against, so a caller cannot ask for an order the page does not show.
+const COLLECTION_ORDERS = ["catalog", "cost"];
+
 // What a match asks of a player, in the three things a newcomer cannot yet read
 // for themselves: what a card costs, how the table fights, and which hero loses.
 // They are written once, here, and both the Play screen and the get-match-rules
@@ -107,6 +112,10 @@ const state = {
   // the game, "missing" for only the ones not collected yet. It is a page-only
   // choice, so switching it never touches the collection or the deck.
   collectionView: "all",
+  // How the Collection screen's set list is read: "catalog" in the game's own
+  // order, "cost" cheapest first. Like the view, it is a page-only choice, so
+  // switching it never touches the collection or the deck.
+  collectionOrder: "catalog",
   // The opponent the next match will be against, chosen from the picker on the
   // Play screen. It belongs to the page rather than to a match: a match already
   // running keeps the opponent it was started against.
@@ -130,6 +139,9 @@ const deckSummary = document.getElementById("deck-summary");
 // The two buttons that switch the set list between the whole set and only what
 // is still to collect, gathered once so their pressed state can be redrawn.
 const collectionViewButtons = [...document.querySelectorAll("[data-collection-view]")];
+// The two buttons that order the set list by the catalog or by cost, gathered
+// once so their pressed state can be redrawn.
+const collectionOrderButtons = [...document.querySelectorAll("[data-collection-order]")];
 // The home screen's promise of what the next win will add, and the place its
 // card is drawn. Both optional, so a missing one degrades to no figure.
 const nextRewardHeading = document.getElementById("next-reward-heading");
@@ -1313,6 +1325,24 @@ export function setCollectionView(view) {
 }
 
 /**
+ * Choose how the Collection screen's set list is read — what a visitor does by
+ * pressing the "Catalog order" or "By cost" button, and what the
+ * set-collection-order tool does on their behalf. "catalog" keeps the game's
+ * own order, "cost" reads the same cards cheapest first. It only changes how
+ * the list is read: the collection and the deck are untouched. Refused, with
+ * the reason, when the order names neither "catalog" nor "cost". Returns the
+ * state afterwards, the same shape readState() gives.
+ */
+export function setCollectionOrder(order) {
+  if (!COLLECTION_ORDERS.includes(order)) {
+    throw new Error(`there is no "${order}" order for the collection to show — pick one of: ${COLLECTION_ORDERS.join(", ")}`);
+  }
+  state.collectionOrder = order;
+  renderCollection();
+  return readState();
+}
+
+/**
  * Pick up the match that was left: set it running again from the saved record —
  * both sides' health, energy, hands, tables, decks and the log exactly as they
  * were, on the same side's turn — open the Play screen and return the state.
@@ -1646,7 +1676,16 @@ function renderCollectionCards() {
   if (!list) return;
 
   const showingMissing = state.collectionView === "missing";
-  const cards = listAllCards(state.cards).filter((card) => !showingMissing || !card.owned);
+  const catalogCards = listAllCards(state.cards);
+  const catalogIndexById = new Map(catalogCards.map((card, index) => [card.id, index]));
+  const shown = catalogCards.filter((card) => !showingMissing || !card.owned);
+  // Catalog order is the default reading; "cost" reorders a copy of the same
+  // cards cheapest-first, ties left in catalog order so the list reads the same
+  // every time. It changes nothing about the collection or the deck.
+  const cards =
+    state.collectionOrder === "cost"
+      ? [...shown].sort((a, b) => a.cost - b.cost || catalogIndexById.get(a.id) - catalogIndexById.get(b.id))
+      : shown;
 
   // The list names what it is showing, so a screen reader hears the same view
   // the buttons say is selected.
@@ -1678,6 +1717,16 @@ function renderCollectionView() {
   }
 }
 
+/**
+ * Mark which of the set's order buttons is pressed, so the order on screen is
+ * read without relying on colour: the word and `aria-pressed` carry the fact.
+ */
+function renderCollectionOrder() {
+  for (const button of collectionOrderButtons) {
+    button.setAttribute("aria-pressed", String(button.dataset.collectionOrder === state.collectionOrder));
+  }
+}
+
 /** Draw the deck's current contents, each card as a face that shows its picture
  * and reads its name and numbers. */
 function renderDeck() {
@@ -1700,6 +1749,7 @@ function renderDeck() {
 function renderCollection() {
   renderCollectionCards();
   renderCollectionView();
+  renderCollectionOrder();
   renderDeck();
 }
 
@@ -1807,6 +1857,8 @@ export function readState() {
     setTotal: state.setTotal,
     // Which cards the Collection screen's set list is showing: "all" or "missing".
     collectionView: state.collectionView,
+    // How that list is read: "catalog" for the game's own order, "cost" cheapest first.
+    collectionOrder: state.collectionOrder,
     deckSize: state.deck.length,
     deckLimit: state.deckLimit,
     minimumDeckSize: state.minimumDeckSize,
@@ -1963,7 +2015,8 @@ export function readMatch() {
  * held, and `setTotal` is how many different cards the game has, so
  * `distinctCards` of `setTotal` is how close the set is to complete. `view`
  * says which cards the Collection screen's set list is showing — every card, or
- * only the ones not collected yet.
+ * only the ones not collected yet — and `order` how those cards are read, in the
+ * game's own catalog order or cheapest first.
  */
 export function readCollection() {
   return {
@@ -1974,6 +2027,8 @@ export function readCollection() {
     setTotal: state.setTotal,
     // Which cards the Collection screen's set list is showing: "all" or "missing".
     view: state.collectionView,
+    // How that list is read: "catalog" for the game's own order, "cost" cheapest first.
+    order: state.collectionOrder,
     saved: state.saved,
   };
 }
@@ -2093,6 +2148,9 @@ opponentPicker?.addEventListener("change", (event) => {
 matchRulesToggle?.addEventListener("click", () => toggleMatchRules());
 for (const button of collectionViewButtons) {
   button.addEventListener("click", () => setCollectionView(button.dataset.collectionView));
+}
+for (const button of collectionOrderButtons) {
+  button.addEventListener("click", () => setCollectionOrder(button.dataset.collectionOrder));
 }
 startMatchButton?.addEventListener("click", () => runMatchAction(() => startMatch()));
 continueSavedButton?.addEventListener("click", () => runMatchAction(() => continueMatch()));

@@ -142,8 +142,11 @@
              still to collect, marked as such. The two view buttons above the
              list switch it between the whole set and only what is still to
              collect, so a player working toward a full set can hide what they
-             already have. A list of text, so a sighted player, a screen reader
-             and an agent read the same set. -->
+             already have; the two order buttons read the same cards in the
+             game's own order or cheapest first, so the cheap cards and the big
+             ones land where a player building a deck expects them. A list of
+             text, so a sighted player, a screen reader and an agent read the
+             same set. -->
         <section class="set" aria-labelledby="set-heading">
           <h3 class="set-heading" id="set-heading">The card set</h3>
           <div class="collection-view" role="group" aria-label="Which cards the set lists">
@@ -152,6 +155,14 @@
             </button>
             <button type="button" class="btn btn-secondary" data-collection-view="missing" aria-pressed="false">
               Still to collect
+            </button>
+          </div>
+          <div class="collection-view" role="group" aria-label="Which order the set lists">
+            <button type="button" class="btn btn-secondary" data-collection-order="catalog" aria-pressed="true">
+              Catalog order
+            </button>
+            <button type="button" class="btn btn-secondary" data-collection-order="cost" aria-pressed="false">
+              By cost
             </button>
           </div>
           <ul

@@ -3153,6 +3153,132 @@ export async function checks() {
     }
   }
 
+  // --- The same set can be read cheapest first -------------------------------
+
+  // A player looking for a card to add can read the set from cheapest to
+  // dearest instead of in the game's catalog order. The order is a page choice,
+  // so switching it must leave the collection and the deck exactly as they
+  // were, and both a visitor and an agent can read which order is showing.
+  const setCollectionOrderTool = toolNamed("set-collection-order");
+  const setOrderButtons = [...document.querySelectorAll("[data-collection-order]")];
+  if (!setCollectionOrderTool) {
+    fail('no "set-collection-order" tool is declared, so an agent cannot order the set by cost the way a visitor can');
+  } else if (setList) {
+    if (setOrderButtons.length !== 2) {
+      fail(
+        `the Collection screen offers ${setOrderButtons.length} order control(s) where it should offer two — catalog order and by cost`
+      );
+    }
+
+    const catalogIds = cardCatalog.CARDS.map((card) => card.id);
+    const costById = new Map(cardCatalog.CARDS.map((card) => [card.id, card.cost]));
+    const setRowIds = () => [...setList.querySelectorAll("[data-card-id]")].map((row) => row.dataset.cardId);
+
+    // The default is catalog order, as get-state, list-collection and the page
+    // all agree, and the rows read in the catalog's own order.
+    const beforeOrderState = game.readState();
+    const beforeOrderView = game.readCollection();
+    if (beforeOrderState.collectionOrder !== "catalog") {
+      fail(`the collection opens in the "${beforeOrderState.collectionOrder}" order where "catalog" is expected`);
+    }
+    if (beforeOrderView.order !== beforeOrderState.collectionOrder) {
+      fail(
+        `get-state reports the collection order as "${beforeOrderState.collectionOrder}" while list-collection reports "${beforeOrderView.order}"`
+      );
+    }
+    const catalogRows = setRowIds();
+    if (catalogRows.join(", ") !== catalogIds.join(", ")) {
+      fail(
+        `the collection opens in an order that is not the catalog's: it lists ${catalogRows.slice(0, 4).join(", ")}, … ` +
+          `instead of ${catalogIds.slice(0, 4).join(", ")}, …`
+      );
+    }
+    const pressedCatalog = setOrderButtons
+      .filter((button) => button.getAttribute("aria-pressed") === "true")
+      .map((button) => button.dataset.collectionOrder);
+    if (pressedCatalog.length !== 1 || pressedCatalog[0] !== "catalog") {
+      fail(`the catalog order does not mark its own button pressed (pressed: ${pressedCatalog.join(", ") || "none"})`);
+    }
+
+    // Switching to cost keeps exactly the same cards, cheapest first with ties
+    // in catalog order, and reports the order in both get-state and
+    // list-collection.
+    const switchedOrder = await setCollectionOrderTool.execute({ order: "cost" });
+    if (switchedOrder.collectionOrder !== "cost") {
+      fail(`switching the set to "cost" reports the order as "${switchedOrder.collectionOrder}" instead of "cost"`);
+    }
+    const orderedState = await getState.execute({});
+    if (orderedState.collectionOrder !== "cost") {
+      fail(`get-state reports the collection order as "${orderedState.collectionOrder}" while the "cost" order is showing`);
+    }
+    if (game.readCollection().order !== "cost") {
+      fail(`list-collection reports the collection order as "${game.readCollection().order}" while the "cost" order is showing`);
+    }
+    const costRows = setRowIds();
+    if (costRows.length !== catalogRows.length || [...costRows].sort().join(", ") !== [...catalogRows].sort().join(", ")) {
+      fail(
+        `ordering the set by cost changed which cards are listed: ${costRows.length} row(s) where catalog order lists ${catalogRows.length}`
+      );
+    }
+    const expectedCostRows = [...catalogRows].sort(
+      (a, b) => costById.get(a) - costById.get(b) || catalogIds.indexOf(a) - catalogIds.indexOf(b)
+    );
+    if (costRows.join(", ") !== expectedCostRows.join(", ")) {
+      fail(`the set ordered by cost is not cheapest first with ties in catalog order: it reads ${costRows.join(", ")}`);
+    }
+    const outOfOrder = costRows.filter((id, index) => index > 0 && costById.get(id) < costById.get(costRows[index - 1]));
+    if (outOfOrder.length) {
+      fail(`the cost order steps back down in price at ${outOfOrder.join(", ")}, though it should rise from cheapest to dearest`);
+    }
+    const pressedCost = setOrderButtons
+      .filter((button) => button.getAttribute("aria-pressed") === "true")
+      .map((button) => button.dataset.collectionOrder);
+    if (pressedCost.length !== 1 || pressedCost[0] !== "cost") {
+      fail(`the cost order does not mark its own button pressed (pressed: ${pressedCost.join(", ") || "none"})`);
+    }
+
+    // Ordering touches neither the collection nor the deck.
+    const afterOrderState = game.readState();
+    const afterOrderView = game.readCollection();
+    if (JSON.stringify(asIdCopies(afterOrderView.ownedCards)) !== JSON.stringify(asIdCopies(beforeOrderView.ownedCards))) {
+      fail("ordering the set by cost changed the cards in the collection");
+    }
+    if (JSON.stringify(afterOrderState.deck) !== JSON.stringify(beforeOrderState.deck)) {
+      fail("ordering the set by cost changed the deck");
+    }
+
+    // The order composes with the view: the cost order still lists only the
+    // cards the "missing" view shows, read cheapest first.
+    await setCollectionViewTool.execute({ view: "missing" });
+    const missingCostRows = setRowIds();
+    const heldIds = new Set(beforeOrderView.ownedCards.map((card) => card.id));
+    const expectedMissingCost = expectedCostRows.filter((id) => !heldIds.has(id));
+    if (missingCostRows.join(", ") !== expectedMissingCost.join(", ")) {
+      fail(
+        `the "missing" view in cost order reads ${missingCostRows.slice(0, 4).join(", ")}, … where the uncollected cards cheapest first are expected`
+      );
+    }
+    await setCollectionViewTool.execute({ view: "all" });
+
+    // Switching back restores catalog order and marks "catalog" pressed.
+    const backOrderState = await setCollectionOrderTool.execute({ order: "catalog" });
+    if (backOrderState.collectionOrder !== "catalog") {
+      fail(`switching the set back to "catalog" reports the order as "${backOrderState.collectionOrder}"`);
+    }
+    if (setRowIds().join(", ") !== catalogIds.join(", ")) {
+      fail("the set did not return to catalog order after switching back");
+    }
+
+    // An order the page does not have is refused with a reason, and changes nothing.
+    const refusedOrder = await setCollectionOrderTool.execute({ order: "cheapest" });
+    if (!refusedOrder.error) {
+      fail('setting the collection order to "cheapest" was accepted, though the page has only "catalog" and "cost"');
+    }
+    if (game.readState().collectionOrder !== "catalog") {
+      fail(`a refused order left the collection reading in "${game.readState().collectionOrder}" instead of "catalog"`);
+    }
+  }
+
   const showScreen = toolNamed("show-screen");
   if (!showScreen) {
     fail('no "show-screen" tool is declared, so an agent cannot open a screen the way a visitor can');
