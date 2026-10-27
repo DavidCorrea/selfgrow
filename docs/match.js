@@ -73,7 +73,14 @@
  * card with no fall ability changes nothing beyond the "falls — it leaves …
  * table" line the log already prints, so removing a plain card is still only a
  * body lost, while removing a card that carries the ability hands its owner a
- * card in return.
+ * card in return. A card that mends its owner's hero as it falls pays health back
+ * the same way, and a card that strikes as it falls deals its damage to the
+ * opponent's front card — or its hero, once that table is empty — in the same
+ * words and with the same targeting as a turn's blow, so wiping a table with a
+ * sweeping card costs something. A fall's own blow can fell another card, whose
+ * fall ability then fires in turn: the chain runs until no card is left to fall,
+ * and stops the moment a hero falls, so the blow that ends the match is the last
+ * line logged.
  *
  * The front card is only the default. During their own turn the player may send
  * one of their table cards at a card of their choosing on the opponent's table —
@@ -97,6 +104,7 @@ import {
   MINIMUM_DECK_SIZE,
   OPPONENT_BY_ID,
   OPPONENTS,
+  STRIKE_ON_FALL,
   STRIKE_ON_PLAY,
   STRIKE_ON_PLAY_AMOUNT,
 } from "./cards.js";
@@ -356,9 +364,15 @@ function firePlayAbility(match, side, card, beneficiary) {
  * way. The ability is read from the card as the match holds it, and resolved
  * from the catalog by id when the card was dealt before the field existed, so a
  * match saved before a fall ability was printed still fires it. The fall ability
- * either draws its owner a card or mends that owner's hero as the card leaves the
- * table — the other half of a card's text, answering what happens to a card after
- * it lands rather than only as it is played.
+ * draws its owner a card, mends that owner's hero, or strikes back at the other
+ * side as the card leaves the table — the other half of a card's text, answering
+ * what happens to a card after it lands rather than only as it is played.
+ *
+ * The strike runs through the same `strikeFromPlay` a when-played strike uses, so
+ * a fall lands on the opponent's front card, or on its hero once that table is
+ * empty, and logs the blow in exactly a turn's words. Because that blow can fell
+ * another card — whose own fall ability then fires in turn — the chain of falls
+ * ends only when no card is left to fall or the match is over.
  */
 function fireFallAbility(match, side, card) {
   const fallAbility = card.fallAbility ?? CARD_BY_ID.get(card.id)?.fallAbility ?? null;
@@ -366,6 +380,8 @@ function fireFallAbility(match, side, card) {
     drawFromPlay(match, side, card, side === match.player ? "you" : "the opponent");
   } else if (fallAbility === HEAL_ON_FALL) {
     healFromPlay(match, side, card, side === match.player ? "you" : "the opponent", HEAL_ON_FALL_AMOUNT);
+  } else if (fallAbility === STRIKE_ON_FALL) {
+    strikeFromPlay(match, side, card);
   }
 }
 
@@ -401,13 +417,14 @@ function healFromPlay(match, side, card, beneficiary, amount = HEAL_ON_PLAY_AMOU
 }
 
 /**
- * A card that strikes as it lands deals the damage on its face to the front card
- * of the other table, or to that side's hero once its table is empty. It is one
- * call to the same `landBlow` a turn's blows use, so the damage line, the
- * "falls — it leaves … table" line and the hero-fall line read exactly as they
- * do at the end of a turn, and a strike that ends the match ends it the same way.
- * The damage comes from the constant written into the card's face rather than
- * from its attack, so the number the card promises is the number it deals.
+ * A card that strikes deals the damage on its face to the front card of the other
+ * table, or to that side's hero once its table is empty — the same blow whether it
+ * lands as the card is played or as it falls. It is one call to the same
+ * `landBlow` a turn's blows use, so the damage line, the "falls — it leaves …
+ * table" line and the hero-fall line read exactly as they do at the end of a
+ * turn, and a strike that ends the match ends it the same way. The damage comes
+ * from the constant written into the card's face rather than from its attack, so
+ * the number the card promises is the number it deals.
  */
 function strikeFromPlay(match, side, card) {
   const defender = side === match.player ? match.opponent : match.player;
@@ -442,6 +459,9 @@ function clearFromPlay(match, side, card) {
   const defenderWord = side === match.player ? "the opponent" : "you";
   const healthWord = side === match.player ? "opponent health" : "your health";
   for (const targetCard of [...defender.table]) {
+    // A fall ability that strikes can end the match mid-sweep, so the cards still
+    // waiting for their blow are left standing rather than hit after a hero fell.
+    if (match.over) break;
     landBlow(
       match,
       { name: card.name, attack: CLEAR_ON_PLAY_AMOUNT },
@@ -534,9 +554,12 @@ function landBlow(match, card, defender, attackerWord, defenderWord, healthWord,
     if (!fell) return false;
     defender.table.splice(defender.table.indexOf(targetCard), 1);
     appendLog(match, `${tableOwnerOpening} ${targetCard.name} falls — it leaves ${tableOwner} table.`);
-    // The card is off the table, so whatever it carries for falling now fires.
+    // The card is off the table, so whatever it carries for falling now fires. A
+    // striking fall may fell another card — whose fall fires in turn — and may end
+    // the match on the hero behind an emptied table: that is the turn's last line,
+    // so nothing further may strike or be logged after it.
     fireFallAbility(match, defender, targetCard);
-    return false;
+    return match.over;
   }
 
   defender.health = Math.max(0, defender.health - card.attack);
