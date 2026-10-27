@@ -972,6 +972,36 @@ export async function checks() {
     }
   }
 
+  // --- The card the last win added, told apart from the rest of the set -------
+
+  // A win's reward stops being visible the moment the result is left behind, so
+  // the card a fresh win added is marked where the set is listed. Which card that
+  // is has to be one answer: a win that added a card the player did not own marks
+  // it, and a loss, a win whose only card was a duplicate, and a page with no
+  // result yet all mark nothing.
+  if (typeof game.newlyCollectedId !== "function") {
+    fail(
+      "app.js does not export newlyCollectedId, so the card the last win added cannot be told apart " +
+        "from the rest of the set"
+    );
+  } else {
+    const rewardId = cardCatalog.REWARD_POOL[0];
+    for (const [what, result, expected] of [
+      ["a win that added a card the player did not own", { outcome: "win", awarded: { id: rewardId }, setComplete: false }, rewardId],
+      ["a win whose only card was a duplicate", { outcome: "win", awarded: { id: rewardId }, setComplete: true }, null],
+      ["a loss", { outcome: "loss", awarded: null, setComplete: false }, null],
+      ["a win that awarded nothing", { outcome: "win", awarded: null }, null],
+      ["no result at all", null, null],
+    ]) {
+      const marked = game.newlyCollectedId(result);
+      if (marked !== expected) {
+        fail(
+          `after ${what} the newly collected card reads ${JSON.stringify(marked)} instead of ${JSON.stringify(expected)}`
+        );
+      }
+    }
+  }
+
   // --- The card the next win will add, decided in one place -----------------
 
   // The home screen promises the card the next win will add; a win must award
@@ -4430,6 +4460,15 @@ export async function checks() {
   const endTurnButton = document.getElementById("action-end-turn");
 
   /**
+   * The cards the Collection screen currently marks as newly collected, by id.
+   * The mark is what tells a returning player what the last win added, so it is
+   * read from the page the player actually sees rather than from the state that
+   * draws it.
+   */
+  const markedNewlyCollected = () =>
+    [...document.querySelectorAll("#collection-list .newly-collected")].map((row) => row.dataset.cardId);
+
+  /**
    * Everything a finished match has to show, whichever side won: the state says
    * who won, the health agrees with it, the page says the same in words, the
    * log's last line is the winning play, and the only things left to press are
@@ -4714,6 +4753,43 @@ export async function checks() {
           `a win that awarded "${awarded.id}" is labelled "${textOf(resultReward)}" instead of "${expectedLabel}"`
         );
       }
+
+      // The card the win added stays findable after the result is left behind:
+      // the collection marks it, in a word a screen reader reads as well as in
+      // the styling. A win whose only card was a duplicate has nothing new to
+      // mark, because nothing new was earned.
+      const expectedMark = afterPlay.result?.setComplete ? null : awarded.id;
+      if (afterPlay.newlyCollected !== expectedMark) {
+        fail(
+          `after a win that awarded "${awarded.id}" (set complete ${afterPlay.result?.setComplete}) the state ` +
+            `reports newlyCollected ${JSON.stringify(afterPlay.newlyCollected)} instead of ${JSON.stringify(expectedMark)}`
+        );
+      }
+      const marked = markedNewlyCollected();
+      if (expectedMark === null) {
+        if (marked.length) {
+          fail(
+            `a win that added only a duplicate marked ${marked.join(", ")} as newly collected, though nothing new ` +
+              "was earned"
+          );
+        }
+      } else if (marked.length !== 1 || marked[0] !== expectedMark) {
+        fail(
+          `a win added "${awarded.name}" but the collection marks ${JSON.stringify(marked)} as newly collected ` +
+            `instead of just "${expectedMark}"`
+        );
+      } else {
+        const note = document.querySelector(`#collection-list [data-card-id="${expectedMark}"] .newly-collected-note`);
+        const words = textOf(note);
+        if (!note || !words.toLowerCase().includes("new")) {
+          fail(
+            `the collection marks "${awarded.name}" as newly collected without saying so in words: it reads ` +
+              `"${words || "(nothing)"}"`
+          );
+        } else if (note.getAttribute("aria-hidden") === "true") {
+          fail(`the "Newly collected" mark on "${awarded.name}" is hidden from screen readers`);
+        }
+      }
     }
   }
 
@@ -4815,6 +4891,16 @@ export async function checks() {
       fail(
         `after a loss the page's result reads ${JSON.stringify(afterIdle.result)} instead of a loss that awarded nothing`
       );
+    }
+    if (afterIdle.newlyCollected !== null) {
+      fail(
+        `after a loss the state reports newlyCollected ${JSON.stringify(afterIdle.newlyCollected)} instead of null, ` +
+          "so an agent would read a card as newly earned by a loss"
+      );
+    }
+    const markedAfterIdle = markedNewlyCollected();
+    if (markedAfterIdle.length) {
+      fail(`after a loss the collection still marks ${markedAfterIdle.join(", ")} as newly collected`);
     }
     if (!textOf(resultReward).toLowerCase().includes("no card")) {
       fail(`after a loss the page does not say no card was earned: it reads "${textOf(resultReward) || "(nothing)"}"`);
@@ -7308,6 +7394,49 @@ export async function checks() {
         `a first win against "${firstWinOpponent.name}" is not announced on the result: it reads ` +
           `"${textOf(winLine)}" (hidden ${winLine?.hidden})`
       );
+    }
+
+    // The card the win added is marked where the set is listed, so it is found
+    // again once the result is left behind — with a word a screen reader reads,
+    // not only a look. A win with nothing new left to earn marks nothing.
+    const expectedMark = afterFirstWin.result?.setComplete ? null : (afterFirstWin.result?.awarded?.id ?? null);
+    const markedRows = markedNewlyCollected();
+    if (afterFirstWin.newlyCollected !== expectedMark) {
+      fail(
+        `a win left the state reporting newlyCollected ${JSON.stringify(afterFirstWin.newlyCollected)} instead of ` +
+          `${JSON.stringify(expectedMark)}`
+      );
+    }
+    if (expectedMark === null) {
+      if (markedRows.length) {
+        fail(`a win with nothing new to earn marked ${markedRows.join(", ")} as newly collected`);
+      }
+    } else if (markedRows.length !== 1 || markedRows[0] !== expectedMark) {
+      fail(
+        `a win added "${afterFirstWin.result?.awarded?.name}" but the collection marks ${JSON.stringify(markedRows)} ` +
+          `as newly collected instead of just "${expectedMark}"`
+      );
+    } else {
+      const markText = textOf(
+        document.querySelector(`#collection-list [data-card-id="${expectedMark}"] .newly-collected-note`)
+      );
+      if (!markText.toLowerCase().includes("new")) {
+        fail(
+          `the card a win added is marked "${markText || "(nothing)"}" instead of in words a screen reader reads`
+        );
+      }
+
+      // The mark belongs to the win that earned it: dealing the next match clears
+      // it, so a card is never still advertised as newly collected a match later.
+      game.startMatch();
+      const stillMarked = markedNewlyCollected();
+      if (game.readState().newlyCollected !== null || stillMarked.length) {
+        fail(
+          "starting another match left the last win's card marked as newly collected: the collection still marks " +
+            `${JSON.stringify(stillMarked)} while the state says ` +
+            `${JSON.stringify(game.readState().newlyCollected)}`
+        );
+      }
     }
 
     const afterRecord = afterFirstWin.opponents.find((opponent) => opponent.id === firstWinOpponent.id)?.record;
