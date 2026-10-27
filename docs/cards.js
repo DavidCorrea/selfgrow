@@ -16,6 +16,9 @@
  * `DRAW_ON_PLAY` takes the top card of its owner's deck into that hand as the
  * card lands. `HEAL_ON_PLAY` mends its owner's hero instead — the other half of
  * what a card can do as it lands, and a slow deck's answer to an early rush.
+ * `STRIKE_ON_PLAY` answers the board itself: the card hits the front card of the
+ * opponent's table, or the opponent's hero once that table is empty, on the same
+ * targeting the rest of the game uses when a turn ends.
  */
 export const DRAW_ON_PLAY = "When played: draw a card";
 
@@ -28,6 +31,17 @@ export const HEAL_ON_PLAY_AMOUNT = 2;
  * heals by, so the card can never promise a number the trigger does not pay.
  */
 export const HEAL_ON_PLAY = `When played: heal your hero ${HEAL_ON_PLAY_AMOUNT}`;
+
+/** How much damage a card that strikes as it lands deals to the opponent's front
+ * card, or to the opponent's hero once their table is empty. */
+export const STRIKE_ON_PLAY_AMOUNT = 1;
+
+/**
+ * The ability a card carries when it strikes the board as it lands. The amount is
+ * written into the words on the face from the same constant the match damages by,
+ * so the card can never promise a number the trigger does not deal.
+ */
+export const STRIKE_ON_PLAY = `When played: deal ${STRIKE_ON_PLAY_AMOUNT} damage to the opponent's front card`;
 
 /** Every card in the game: id, name, cost to play, attack, health, and the
  * ability printed on its face (absent on a card with none). */
@@ -55,14 +69,17 @@ export const CARDS = [
   // starter deck and then hunted for in the reward pool.
   { id: "moon-bloom", name: "Moon Bloom", cost: 2, attack: 2, health: 3, ability: DRAW_ON_PLAY },
   { id: "amber-antler", name: "Amber Antler", cost: 4, attack: 4, health: 3 },
-  { id: "cinder-shrike", name: "Cinder Shrike", cost: 3, attack: 4, health: 1 },
+  // Two reward cards read as the aggressive ones — a hooked-beak bird with a
+  // fiery tip and a crested drake — so each carries the strike ability, the one
+  // that answers what is already on the board rather than only adding to it.
+  { id: "cinder-shrike", name: "Cinder Shrike", cost: 3, attack: 4, health: 1, ability: STRIKE_ON_PLAY },
   { id: "dewdrop-nymph", name: "Dewdrop Nymph", cost: 1, attack: 1, health: 3, ability: HEAL_ON_PLAY },
   { id: "twilight-fox", name: "Twilight Fox", cost: 3, attack: 2, health: 2 },
   { id: "bark-sentinel", name: "Bark Sentinel", cost: 5, attack: 3, health: 8 },
   // Six more reward cards, spread across the cost curve so a collection keeps
   // handing back something new at every size of deck.
   { id: "moss-glider", name: "Moss Glider", cost: 1, attack: 2, health: 1 },
-  { id: "fern-drake", name: "Fern Drake", cost: 2, attack: 2, health: 2 },
+  { id: "fern-drake", name: "Fern Drake", cost: 2, attack: 2, health: 2, ability: STRIKE_ON_PLAY },
   { id: "boulder-ram", name: "Boulder Ram", cost: 3, attack: 3, health: 2 },
   { id: "hollow-wisp", name: "Hollow Wisp", cost: 4, attack: 2, health: 5 },
   { id: "granite-warden", name: "Granite Warden", cost: 5, attack: 4, health: 6 },

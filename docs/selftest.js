@@ -6580,6 +6580,293 @@ export async function checks() {
     }
   }
 
+  // --- A card that strikes the board when it is played -----------------------
+
+  // The third when-played ability: a card whose face says so deals its damage to
+  // the opponent's front card as it lands, or to the opponent's hero once that
+  // table is empty — the same targeting and the same fall wording a blow at the
+  // end of a turn uses, because it is the same blow. It is the ability that lets
+  // a card answer what is already on the board instead of only adding to it, and
+  // it is carried by the two reward cards whose art reads as the aggressive ones.
+  const strikeText = cardCatalog.STRIKE_ON_PLAY;
+  const strikeAmount = cardCatalog.STRIKE_ON_PLAY_AMOUNT;
+  const strikerForThornmere = cardCatalog.CARD_BY_ID.get("cinder-shrike");
+  const strikerForMistfen = cardCatalog.CARD_BY_ID.get("fern-drake");
+
+  if (typeof strikeText !== "string" || !strikeText.trim()) {
+    fail("docs/cards.js names no ability for a card that strikes the board when played, so no card can say what it does");
+  } else if (!Number.isInteger(strikeAmount) || strikeAmount < 1) {
+    fail(`the strike ability deals ${JSON.stringify(strikeAmount)} damage, which is not a whole positive number`);
+  } else if (!strikeText.includes(String(strikeAmount))) {
+    fail(
+      `the strike ability reads ${JSON.stringify(strikeText)}, which does not name the ${strikeAmount} it deals by, ` +
+        "so the card's face and the trigger can disagree"
+    );
+  } else {
+    // The ability is on the cards whose art reads as the aggressive ones, so the
+    // card's look and what it does agree.
+    for (const card of [strikerForThornmere, strikerForMistfen]) {
+      if (card?.ability !== strikeText) {
+        fail(
+          `"${card?.name ?? "?"}" carries the ability ${JSON.stringify(card?.ability ?? null)} instead of ` +
+            `${JSON.stringify(strikeText)}, so a card that reads as a striker does not strike when played`
+        );
+      }
+    }
+
+    // The line is on the face wherever the card is shown: the collection, an
+    // opponent's deck fold, and the card a win earns.
+    for (const [where, face] of [
+      ["the collection", document.querySelector('#collection-list [data-card-id="cinder-shrike"]')],
+      [
+        "Thornmere's deck",
+        document.querySelector(
+          '#opponent-options [data-opponent-id="thornmere"] .opponent-deck-cards [data-card-id="cinder-shrike"]'
+        ),
+      ],
+      [
+        "Mistfen's deck",
+        document.querySelector(
+          '#opponent-options [data-opponent-id="mistfen"] .opponent-deck-cards [data-card-id="fern-drake"]'
+        ),
+      ],
+    ]) {
+      if (faceAbility(face) !== strikeText) {
+        fail(
+          `the striker shown in ${where} does not say "${strikeText}" on its face ` +
+            `(it reads ${JSON.stringify(faceAbility(face))})`
+        );
+      }
+    }
+    const rewardStrikeFace = game.awardCardFigure(strikerForThornmere);
+    if (faceAbility(rewardStrikeFace) !== strikeText) {
+      fail(
+        `the earned-card face of Cinder Shrike does not say "${strikeText}" on its face ` +
+          `(it reads ${JSON.stringify(faceAbility(rewardStrikeFace))})`
+      );
+    }
+
+    if (!matchEngine || typeof game.continueMatch !== "function") {
+      fail("the match engine or the continue-match action is missing, so the strike-on-play trigger cannot be checked");
+    } else {
+      // Through the board a player sees: a striker in hand and one card standing
+      // on the opponent's table, loaded the way a saved match is.
+      const savedStrikeBoard = collection.saveMatch({
+        id: "check-strike-on-play",
+        opponentName: cardCatalog.OPPONENT_NAME,
+        turn: "player",
+        over: false,
+        winner: null,
+        outcome: null,
+        recorded: false,
+        player: {
+          health: 20,
+          energy: 3,
+          maxEnergy: 3,
+          turns: 1,
+          hand: [
+            { id: "cinder-shrike", health: 1, hasAttacked: false },
+            { id: "pebble-toad", health: 2, hasAttacked: false },
+          ],
+          table: [],
+          deck: [{ id: "sun-moth", health: 3, hasAttacked: false }],
+        },
+        opponent: {
+          health: 20,
+          energy: 1,
+          maxEnergy: 1,
+          turns: 0,
+          hand: [],
+          table: [{ id: "mudback-turtle", health: 5, hasAttacked: false }],
+          deck: [],
+        },
+        log: ["A match set up to play a card that strikes the board."],
+      });
+      if (!savedStrikeBoard) {
+        fail("a controlled board with a striker in hand could not be saved, so the strike-on-play trigger cannot be checked");
+      } else {
+        game.refreshSavedMatch();
+        let strikeBoard = null;
+        try {
+          strikeBoard = game.continueMatch();
+        } catch (e) {
+          fail(`a controlled board with a striker in hand could not be loaded — ${e.message}`);
+        }
+
+        if (strikeBoard?.match) {
+          const strikerInHand = document.querySelector('#match-hand [data-card-id="cinder-shrike"]');
+          if (faceAbility(strikerInHand) !== strikeText) {
+            fail(
+              `the striker in your hand does not say "${strikeText}" on its face ` +
+                `(it reads ${JSON.stringify(faceAbility(strikerInHand))})`
+            );
+          }
+
+          const beforePlay = game.readState().match;
+          const strikerInState = beforePlay.hand.find((card) => card.id === "cinder-shrike");
+          if (strikerInState?.ability !== strikeText) {
+            fail(
+              `an agent reading your hand sees the striker's ability as ` +
+                `${JSON.stringify(strikerInState?.ability ?? null)} instead of ${JSON.stringify(strikeText)}`
+            );
+          }
+
+          // Played through the tool an agent uses, so the ability is usable by
+          // an agent and not only by a visitor; it falls back to the page action
+          // only so the checks below still run when the tool is missing.
+          const playStrikerTool = toolNamed("play-card");
+          if (!playStrikerTool) {
+            fail('no "play-card" tool is declared, so an agent cannot play the striker a visitor can');
+          }
+          const frontBefore = beforePlay.opponentTable[0];
+          const theirHeroBefore = beforePlay.opponentHealth;
+          const logBefore = beforePlay.log.length;
+          const played = playStrikerTool
+            ? await playStrikerTool.execute({ cardId: "cinder-shrike" })
+            : game.playMatchCard("cinder-shrike");
+          const afterPlay = played.match;
+          const frontAfter = (afterPlay.opponentTable || []).find((card) => card.id === frontBefore.id);
+          const frontExpected = frontBefore.health - strikeAmount;
+
+          if (!frontAfter || frontAfter.health !== frontExpected) {
+            fail(
+              `playing the striker left the opponent's front card "${frontBefore.name}" at ` +
+                `${frontAfter ? frontAfter.health : "(gone)"} health instead of ${frontExpected}`
+            );
+          }
+          if (afterPlay.opponentHealth !== theirHeroBefore) {
+            fail(
+              `playing the striker cut the opponent's hero to ${afterPlay.opponentHealth} while its table still ` +
+                `held "${frontBefore.name}", so the strike went past the card in front of it`
+            );
+          }
+          const strikeLine = afterPlay.log
+            .slice(logBefore)
+            .find((line) => line.includes("Cinder Shrike") && line.includes(frontBefore.name));
+          if (!strikeLine) {
+            fail(
+              `the log does not say the striker hit "${frontBefore.name}": the play added ` +
+                JSON.stringify(afterPlay.log.slice(logBefore))
+            );
+          } else if (!strikeLine.includes(`${frontExpected} health left`)) {
+            fail(`the log line for the strike does not state what "${frontBefore.name}" has left: "${strikeLine}"`);
+          }
+          if (faceAbility(document.querySelector('#match-table [data-card-id="cinder-shrike"]')) !== strikeText) {
+            fail(
+              `the striker on the table does not say "${strikeText}" on its face, so the card reads differently ` +
+                "there than in the collection"
+            );
+          }
+        }
+      }
+
+      // The hero, once the opponent's table is empty: the same strike reaches
+      // past an empty table, and the log states the health it left.
+      const openFieldStrike = matchEngine.createMatch(
+        ["sprout", "pebble-toad", "thornling", "sun-moth", "bramble-hound"],
+        { rng: () => 0 }
+      );
+      openFieldStrike.player.hand = [{ ...strikerForThornmere, hasAttacked: false }];
+      openFieldStrike.player.energy = 3;
+      openFieldStrike.player.maxEnergy = 3;
+      const openHeroBefore = openFieldStrike.opponent.health;
+      const openLogBefore = openFieldStrike.log.length;
+      matchEngine.playCard(openFieldStrike, "cinder-shrike");
+      const openLines = openFieldStrike.log.slice(openLogBefore);
+      if (openFieldStrike.opponent.health !== openHeroBefore - strikeAmount) {
+        fail(
+          `a strike at the empty opponent table left its hero at ${openFieldStrike.opponent.health} instead of ` +
+            `${openHeroBefore - strikeAmount}`
+        );
+      }
+      if (
+        !openLines.some(
+          (line) => line.includes("Cinder Shrike") && line.includes(`opponent health ${openFieldStrike.opponent.health}`)
+        )
+      ) {
+        fail(
+          `the log does not state the opponent's health after a strike at its hero: the play added ` +
+            JSON.stringify(openLines)
+        );
+      }
+
+      // A card worn to zero by the strike leaves the table on the same line a
+      // card killed at the end of a turn does.
+      const fallenStrike = matchEngine.createMatch(
+        ["sprout", "pebble-toad", "thornling", "sun-moth", "bramble-hound"],
+        { rng: () => 0 }
+      );
+      fallenStrike.player.hand = [{ ...strikerForThornmere, hasAttacked: false }];
+      fallenStrike.player.energy = 3;
+      fallenStrike.player.maxEnergy = 3;
+      const doomedFront = { ...cardCatalog.CARD_BY_ID.get("pebble-toad"), health: 1, hasAttacked: false };
+      fallenStrike.opponent.table = [doomedFront];
+      const fallLogBefore = fallenStrike.log.length;
+      matchEngine.playCard(fallenStrike, "cinder-shrike");
+      const strikeFallLines = fallenStrike.log.slice(fallLogBefore);
+      if (fallenStrike.opponent.table.includes(doomedFront)) {
+        fail(`the opponent's "${doomedFront.name}" was worn to 0 by a strike but stayed on the table`);
+      }
+      const strikeFallLine = strikeFallLines.find((line) => line.includes(doomedFront.name) && /falls/i.test(line));
+      if (!strikeFallLine) {
+        fail(
+          `the match log never says the card a strike killed left the table: the play added ` +
+            JSON.stringify(strikeFallLines)
+        );
+      } else if (!/opponent's table/i.test(strikeFallLine)) {
+        fail(`the log says "${doomedFront.name}" fell without saying which table it left: "${strikeFallLine}"`);
+      }
+      if (!strikeFallLines.some((line) => line.includes(doomedFront.name) && line.includes("0 health"))) {
+        fail(
+          `the log never shows "${doomedFront.name}" at 0 health before the strike removed it: ` +
+            JSON.stringify(strikeFallLines)
+        );
+      }
+
+      // The same trigger for the opponent: a striker in its hand hits the front
+      // card of your table as it lands, and the log names what it hit.
+      const opponentStrike = matchEngine.createMatch(
+        ["sprout", "pebble-toad", "thornling", "sun-moth", "bramble-hound"],
+        { rng: () => 0 }
+      );
+      const tooDear = { ...cardCatalog.CARD_BY_ID.get("elder-oak"), hasAttacked: false };
+      opponentStrike.opponent.hand = [{ ...strikerForMistfen, hasAttacked: false }];
+      opponentStrike.opponent.deck = [{ ...tooDear }, { ...tooDear }, { ...tooDear }];
+      opponentStrike.opponent.energy = 2;
+      opponentStrike.opponent.maxEnergy = 2;
+      const yourFront = { ...cardCatalog.CARD_BY_ID.get("mudback-turtle"), hasAttacked: false };
+      opponentStrike.player.table = [yourFront];
+      const yourFrontBefore = yourFront.health;
+      const opponentStrikeLogBefore = opponentStrike.log.length;
+      matchEngine.endTurn(opponentStrike);
+      const opponentStrikeLines = opponentStrike.log.slice(opponentStrikeLogBefore);
+
+      if (!opponentStrike.opponent.table.some((card) => card.id === "fern-drake")) {
+        fail(
+          `the opponent did not play the striker in its hand on its turn ` +
+            `(its table holds ${JSON.stringify(opponentStrike.opponent.table.map((card) => card.id))})`
+        );
+      }
+      // Its table also strikes at the end of its turn, so the front card loses
+      // the strike and every attacker's blow — and the strike is the part the
+      // arithmetic proves: without it the card would stand one health higher.
+      const incoming = opponentStrike.opponent.table.reduce((total, card) => total + card.attack, 0);
+      const yourFrontExpected = Math.max(0, yourFrontBefore - strikeAmount - incoming);
+      if (yourFront.health !== yourFrontExpected) {
+        fail(
+          `the opponent's striker left your front card "${yourFront.name}" at ${yourFront.health} health instead ` +
+            `of ${yourFrontExpected} (${strikeAmount} from the strike plus ${incoming} from its table)`
+        );
+      }
+      if (!opponentStrikeLines.some((line) => line.includes("Fern Drake") && line.includes(yourFront.name))) {
+        fail(
+          `the log does not say the opponent's striker hit your "${yourFront.name}": the turn added ` +
+            JSON.stringify(opponentStrikeLines)
+        );
+      }
+    }
+  }
+
   // --- A blow is shown on the table, not only in the log ---------------------
 
   // A turn's blows land as movement on the cards: the strikers lift, the cards
