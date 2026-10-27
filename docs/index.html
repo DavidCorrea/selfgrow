@@ -137,12 +137,23 @@
           <ul class="deck-list" id="deck-list" aria-label="Cards in your deck"></ul>
         </section>
 
-        <!-- Every card in the game, filled in from what was saved: the ones the
-             player holds with the controls that put a copy in the deck, and the
-             ones still to collect, marked as such. A list of text, so a sighted
-             player, a screen reader and an agent read the same set. -->
+        <!-- The card set, filled in from what was saved: the ones the player
+             holds with the controls that put a copy in the deck, and the ones
+             still to collect, marked as such. The two view buttons above the
+             list switch it between the whole set and only what is still to
+             collect, so a player working toward a full set can hide what they
+             already have. A list of text, so a sighted player, a screen reader
+             and an agent read the same set. -->
         <section class="set" aria-labelledby="set-heading">
-          <h3 class="set-heading" id="set-heading">Every card in the game</h3>
+          <h3 class="set-heading" id="set-heading">The card set</h3>
+          <div class="collection-view" role="group" aria-label="Which cards the set lists">
+            <button type="button" class="btn btn-secondary" data-collection-view="all" aria-pressed="true">
+              All cards
+            </button>
+            <button type="button" class="btn btn-secondary" data-collection-view="missing" aria-pressed="false">
+              Still to collect
+            </button>
+          </div>
           <ul
             class="collection-list"
             id="collection-list"
