@@ -26,6 +26,7 @@ import {
   STRIKE_ON_PLAY,
 } from "./cards.js";
 import {
+  checkSaveCode,
   clearSavedMatch,
   collectionSize,
   listAllCards,
@@ -35,6 +36,7 @@ import {
   nextRewardId,
   readSavedMatch,
   recordResult,
+  restoreSaveCode as restoreGameCode,
   saveCode,
   saveDeck,
   saveMatch,
@@ -174,6 +176,16 @@ const state = {
   // this and fills the box: it reads the save and writes nothing, so the
   // collection, the deck and the record are exactly as they were.
   saveCodeShown: false,
+  // The save code a player has pasted in and is being asked to confirm before it
+  // replaces the game they have — `{ code, summary }` while an answer is waited
+  // on, or null when nothing is waiting. A code only ever arrives here after it
+  // was checked, and the game is not touched until the player answers, so a paste
+  // by accident cannot wipe anything by itself.
+  restorePending: null,
+  // What the restore control last said: why a pasted code was refused, or what a
+  // finished restore replaced. The question a waiting code asks is built from
+  // its own summary, not from here.
+  restoreMessage: "",
 };
 
 const screens = new Map(
@@ -214,6 +226,18 @@ const saveCodeStatus = document.getElementById("save-code-status");
 // the words that say the code is on screen, or that it was copied, or that the
 // clipboard refused and the code is selected to copy by hand.
 let saveCodeMessage = "";
+
+// The Collection screen's restore control: the box a code is pasted into, the
+// button that checks it and asks, the two answers to that question, and the line
+// that says in words what happened. All optional, so a missing one degrades to a
+// missing control rather than a page that will not render.
+const restoreCodeText = document.getElementById("restore-code-text");
+const restoreCodeButton = document.getElementById("action-restore-save-code");
+const restoreConfirm = document.getElementById("restore-confirm");
+const restoreConfirmText = document.getElementById("restore-confirm-text");
+const replaceGameButton = document.getElementById("action-replace-game");
+const cancelRestoreButton = document.getElementById("action-cancel-restore");
+const restoreCodeStatus = document.getElementById("restore-code-status");
 
 // The match board's places, gathered once. Each is optional so a missing one
 // degrades to a missing readout rather than a page that will not render.
@@ -310,6 +334,7 @@ function render() {
   renderContinueOffer();
   renderNextReward();
   renderSaveCode();
+  renderRestore();
 
   screenStatus.textContent = `${SCREEN_LABELS[state.screen]} screen`;
 }
@@ -336,6 +361,38 @@ function renderSaveCode() {
     if (saveCodeText.value !== current) saveCodeText.value = current;
   }
   if (saveCodeStatus) saveCodeStatus.textContent = saveCodeMessage;
+}
+
+/**
+ * Draw the Collection screen's restore control: whether a pasted code is
+ * waiting on the player's answer — and then the two answers, the one that
+ * replaces the game and the one that keeps it — and the words the status line
+ * carries. The question says what the code holds, so the player is answering
+ * about a game rather than about a string, and the status line is where a
+ * refusal says in plain words why nothing was changed.
+ */
+function renderRestore() {
+  if (!restoreConfirm) return;
+  const waiting = state.restorePending;
+  restoreConfirm.hidden = !waiting;
+  if (restoreConfirmText) {
+    restoreConfirmText.textContent = waiting ? restoreQuestion(waiting.summary) : "";
+  }
+  if (restoreCodeStatus) restoreCodeStatus.textContent = state.restoreMessage;
+}
+
+/**
+ * The question a waiting code asks, in the code's own numbers: how much is about
+ * to arrive, and that the game it replaces cannot be brought back. Written from
+ * the summary `checkSaveCode` produced, so the question and the game a
+ * confirmation actually restores are one reading of one code.
+ */
+function restoreQuestion({ cards, distinct, deck, wins, matches }) {
+  return (
+    `This code holds ${cards} ${cards === 1 ? "card" : "cards"} (${distinct} different), ` +
+    `a deck of ${deck}, and ${wins} ${wins === 1 ? "win" : "wins"} in ${matches} ` +
+    `${matches === 1 ? "match" : "matches"}. Replacing your game cannot be undone.`
+  );
 }
 
 /** The home screen's one-line deck summary: its size, then the cards in it. */
@@ -1554,6 +1611,107 @@ async function copySaveCode() {
 }
 
 /**
+ * Read a pasted save code and ask before it replaces anything — what a visitor
+ * does by pasting a code and pressing "Restore save code". A code that is not
+ * ours, or is damaged, is refused here with the reason in the status line and
+ * nothing touched; a code that is ours leaves the game exactly as it was and
+ * puts the question on screen instead, holding `{ code, summary }` until the
+ * player answers. No write of any kind happens on this path, so a paste by
+ * accident cannot wipe a game. Returns whether a question is now on screen.
+ */
+function requestRestoreSaveCode(code) {
+  const checked = checkSaveCode(code);
+  state.restorePending = checked.ok ? { code: code.trim(), summary: checked.summary } : null;
+  state.restoreMessage = checked.ok ? "" : `${checked.reason} Nothing was changed.`;
+  renderRestore();
+  return checked.ok;
+}
+
+/**
+ * Answer no to a waiting restore: the question goes, the pasted code is
+ * forgotten and the game stays exactly as it is.
+ */
+function cancelRestoreSaveCode() {
+  state.restorePending = null;
+  state.restoreMessage = "Nothing was changed — your game is exactly as it was.";
+  renderRestore();
+}
+
+/**
+ * Answer yes: put the game the code carries back, replacing the collection, the
+ * deck and the record as one — what pressing "Replace my game" does, and what
+ * the restore-save-code tool does on a caller's behalf. The code is judged
+ * again here, so a call that skips the question cannot slip a bad code past it.
+ * The restored game is adopted whole — the counts, the deck, the record and the
+ * rules strip, exactly as a freshly opened page would read it — and everything
+ * that belonged to the game being replaced goes with it: the match in progress,
+ * the unfinished match saved beside it, a start waiting on an answer and the
+ * last result. The home and Collection screens are redrawn from the restored
+ * game so both show its cards and numbers. Returns the state afterwards; a
+ * refused code throws the plain reason and leaves storage untouched.
+ */
+export function restoreSaveCode(code) {
+  const result = restoreGameCode(code);
+  if (!result.ok) {
+    state.restorePending = null;
+    state.restoreMessage = `${result.reason} Nothing was changed.`;
+    renderRestore();
+    throw new Error(state.restoreMessage);
+  }
+
+  const opened = loadGame();
+  state.cards = opened.cards;
+  state.cardsOwned = collectionSize(opened.cards);
+  state.distinctCards = opened.cards.length;
+  state.deck = opened.deck;
+  state.saved = opened.saved;
+  state.wins = opened.wins;
+  state.matchesPlayed = opened.matches;
+  state.opponentsRecord = opened.opponents;
+  state.rulesOpen = opened.matches === 0;
+  // The board, the result it left and the unfinished match saved beside it
+  // belonged to the game being replaced, so they go with it rather than sitting
+  // over a record they no longer describe.
+  state.match = null;
+  state.savedMatch = null;
+  state.startPending = false;
+  state.result = null;
+  state.selectedAttacker = null;
+  state.restorePending = null;
+  state.restoreMessage =
+    `Your game was restored: ${result.summary.cards} cards, a deck of ${result.summary.deck}, ` +
+    `${result.summary.wins} ${result.summary.wins === 1 ? "win" : "wins"} in ` +
+    `${result.summary.matches} ${result.summary.matches === 1 ? "match" : "matches"}.`;
+
+  render();
+  renderCollection();
+  return readState();
+}
+
+/**
+ * What pressing "Replace my game" does: apply the code the player was just asked
+ * about. The confirmation only exists while one is waiting, so a press with
+ * nothing pending says so rather than doing nothing at all.
+ */
+function confirmRestoreSaveCode() {
+  const pending = state.restorePending;
+  if (!pending) {
+    state.restoreMessage = 'Paste a save code and press "Restore save code" first.';
+    renderRestore();
+    return;
+  }
+  try {
+    restoreSaveCode(pending.code);
+  } catch {
+    // The refusal is already in the status line, in plain words, so the press
+    // has nothing to add to it.
+  }
+  // The control that was pressed is gone with the question, so the keyboard is
+  // left on the one that is still there.
+  restoreCodeButton?.focus();
+}
+
+/**
  * Pick up the match that was left: set it running again from the saved record —
  * both sides' health, energy, hands, tables, decks and the log exactly as they
  * were, on the same side's turn — open the Play screen and return the state.
@@ -2139,6 +2297,10 @@ function commitDeck() {
  * every reward card is owned), whether the Collection screen's save-code panel
  * is open (`saveCodeShown`, the same fact the "Show save code"/"Hide save code"
  * button carries — the get-save-code tool returns the code itself),
+ * whether the Collection screen is waiting on the player's answer about a pasted
+ * save code before it replaces the game (`restorePending`) and what its restore
+ * status line says (`restoreMessage` — why a code was refused, or what a
+ * finished restore replaced),
  * the four points the Play screen tells a newcomer about a match and
  * whether that strip is showing
  * (`matchRules`), the opponents a match can be fought against (`opponents` — each
@@ -2194,6 +2356,14 @@ export function readState() {
     // caller reads the same fact the "Show save code"/"Hide save code" button's
     // label carries. The get-save-code tool returns the code itself.
     saveCodeShown: state.saveCodeShown,
+    // Whether the Collection screen is waiting on the player's answer about a
+    // pasted save code before it replaces the game, and the words the restore
+    // control's status line carries — the refusal of a code that is not ours, or
+    // what a finished restore replaced. `restorePending` true is what the two
+    // "Replace my game"/"Cancel" buttons are on screen for; the restore-save-code
+    // tool applies a code without waiting on an answer.
+    restorePending: state.restorePending !== null,
+    restoreMessage: state.restoreMessage,
     deckSize: state.deck.length,
     deckLimit: state.deckLimit,
     minimumDeckSize: state.minimumDeckSize,
@@ -2506,6 +2676,14 @@ for (const button of collectionOrderButtons) {
 }
 saveCodeButton?.addEventListener("click", () => setSaveCodeShown(!state.saveCodeShown));
 copySaveCodeButton?.addEventListener("click", () => copySaveCode());
+restoreCodeButton?.addEventListener("click", () => {
+  if (requestRestoreSaveCode(restoreCodeText?.value ?? "")) replaceGameButton?.focus();
+});
+replaceGameButton?.addEventListener("click", () => confirmRestoreSaveCode());
+cancelRestoreButton?.addEventListener("click", () => {
+  cancelRestoreSaveCode();
+  restoreCodeButton?.focus();
+});
 startMatchButton?.addEventListener("click", () => runMatchAction(() => startMatch()));
 continueSavedButton?.addEventListener("click", () => runMatchAction(() => continueMatch()));
 discardSavedButton?.addEventListener("click", () => runMatchAction(() => discardSavedMatch()));

@@ -205,21 +205,28 @@ function normalizeOpponents(saved) {
 }
 
 /**
- * The progress saved beside the cards: how many matches have been finished, how
- * many of them were won, the id of the last result recorded, and the record held
- * against each opponent (`opponents`, keyed by opponent id). The id is what
- * keeps a single match from being counted twice when its result is revisited.
- * A save written before these fields existed reads as a player who has played
- * nothing yet, rather than as a broken save.
+ * The progress carried by a payload — a saved record, or the one inside a save
+ * code. A save written before a field existed reads as a player who has played
+ * nothing yet, rather than as a broken save, and a record naming an opponent
+ * this game does not have is dropped rather than carried.
  */
-export function readProgress(storage = defaultStorage()) {
-  const payload = readPayload(storage);
+function normalizeProgress(payload) {
   return {
     wins: wholeCount(payload?.wins),
     matches: wholeCount(payload?.matches),
     lastMatchId: typeof payload?.lastMatchId === "string" ? payload.lastMatchId : null,
     opponents: normalizeOpponents(payload?.opponents),
   };
+}
+
+/**
+ * The progress saved beside the cards: how many matches have been finished, how
+ * many of them were won, the id of the last result recorded, and the record held
+ * against each opponent (`opponents`, keyed by opponent id). The id is what
+ * keeps a single match from being counted twice when its result is revisited.
+ */
+export function readProgress(storage = defaultStorage()) {
+  return normalizeProgress(readPayload(storage));
 }
 
 /**
@@ -639,6 +646,20 @@ function base64Encode(text) {
 }
 
 /**
+ * The text a base64 string carries, or null when it is not base64 at all — the
+ * other half of `base64Encode`, so a code written here can be read back here.
+ */
+function base64Decode(code) {
+  try {
+    const binary = atob(code);
+    const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
+    return new TextDecoder().decode(bytes);
+  } catch {
+    return null;
+  }
+}
+
+/**
  * The whole saved game as one short text code: the collection with its copy
  * counts, the deck, the wins, the matches, the last match recorded and the
  * record held against each opponent, written as JSON under this game's marker
@@ -666,6 +687,123 @@ export function saveCode(storage = defaultStorage()) {
       opponents: progress.opponents,
     })
   );
+}
+
+/**
+ * A save code read back into the game it carries, or the plain reason it cannot
+ * be read at all. The code is told apart from any other pasted text by the app
+ * marker inside it and then by its version, so a code from another game and a
+ * code from another shape of this one are both refused with their own words
+ * rather than read as if they were the same. Only a code that is ours and this
+ * version comes back as `{ ok: true, payload, cards }`.
+ */
+function decodeSaveCode(code) {
+  if (typeof code !== "string" || code.trim() === "") {
+    return { ok: false, reason: "Paste a save code first — the box is empty." };
+  }
+
+  const text = base64Decode(code.trim());
+  if (text === null) {
+    return {
+      ok: false,
+      reason: "That is not a selfgrow save code — a save code is one block of letters and numbers.",
+    };
+  }
+
+  let payload;
+  try {
+    payload = JSON.parse(text);
+  } catch {
+    return { ok: false, reason: "That is not a selfgrow save code — the text inside it could not be read." };
+  }
+
+  if (!payload || payload.app !== SAVE_CODE_APP) {
+    return { ok: false, reason: "That is not a selfgrow save code — it was not written by this game." };
+  }
+  if (payload.version !== SAVE_CODE_VERSION) {
+    return {
+      ok: false,
+      reason: `That save code was written by another version of selfgrow (${payload.version}), which this game cannot read.`,
+    };
+  }
+
+  const cards = normalizeCollection(payload);
+  if (!cards) {
+    return { ok: false, reason: "That save code is damaged — it does not list any cards this game knows." };
+  }
+
+  return { ok: true, payload, cards };
+}
+
+/**
+ * The numbers a code is read by before and after it is restored: how many cards
+ * it carries (copies counted), how many of them are different, the size of its
+ * deck, and the wins and matches it records. Written once, so the question a
+ * player is asked and the state they read afterwards can never describe
+ * different games.
+ */
+function saveCodeSummary(cards, deck, progress) {
+  return {
+    cards: collectionSize(cards),
+    distinct: cards.length,
+    deck: deck.length,
+    wins: progress.wins,
+    matches: progress.matches,
+  };
+}
+
+/**
+ * What a save code holds, without changing anything: `{ ok: true, summary }`
+ * with how many cards it carries (copies counted), how many of them are
+ * different, the size of its deck, and the wins and matches it records, or
+ * `{ ok: false, reason }` in plain words when it is not a selfgrow save code or
+ * is damaged. A caller asks this before it asks the player to confirm, so the
+ * question can say what the code holds and a code that is not ours never
+ * reaches a confirmation at all. It reads nothing from storage and writes
+ * nothing, so asking is always safe.
+ */
+export function checkSaveCode(code) {
+  const decoded = decodeSaveCode(code);
+  if (!decoded.ok) return { ok: false, reason: decoded.reason };
+
+  const { payload, cards } = decoded;
+  return {
+    ok: true,
+    summary: saveCodeSummary(cards, normalizeDeck(payload, cards), normalizeProgress(payload)),
+  };
+}
+
+/**
+ * Put the game a save code carries back, replacing the collection, the deck and
+ * the record as one. The code is judged exactly as `checkSaveCode` judges it and
+ * a code that is refused leaves storage untouched. A code that is ours is
+ * written through the same normalizers the game reads with and the same
+ * `writeSave` the game writes with, so a code naming a card this game does not
+ * have, or an absurd copy count, is cleaned rather than stored, and the normal
+ * save key keeps its shape.
+ *
+ * Any unfinished match saved beside the old game is cleared in the same breath,
+ * so the restored record and the board on screen cannot disagree about a game
+ * that no longer exists. Returns `{ ok: true, summary, saved }` — the same
+ * `summary` `checkSaveCode` gives, and whether the restored game will still be
+ * here after the page closes.
+ */
+export function restoreSaveCode(code, storage = defaultStorage()) {
+  const decoded = decodeSaveCode(code);
+  if (!decoded.ok) return { ok: false, reason: decoded.reason };
+
+  const { payload, cards } = decoded;
+  const progress = normalizeProgress(payload);
+  const deck = normalizeDeck(payload, cards);
+
+  clearSavedMatch(storage);
+  const wrote = writeSave(cards, deck, storage, progress);
+
+  return {
+    ok: true,
+    summary: saveCodeSummary(cards, deck, progress),
+    saved: wrote && storage?.durable !== false,
+  };
 }
 
 /** How many cards the collection holds, copies counted. */
