@@ -8571,6 +8571,209 @@ export async function checks() {
     }
   }
 
+  // --- A card that mends its owner's hero when it falls ----------------------
+
+  // The second fall ability: a card whose face says so raises its owner's hero by
+  // the amount it prints the moment it leaves the table, from the same one trigger
+  // every removal path reaches — so losing a body a player expected to trade pays
+  // health back, and a slow deck has a reason to keep one just to spend it. The
+  // mend is capped at the health a hero starts a match with, and the log states
+  // the health afterwards in the same words the board prints it, so the number a
+  // reader sees is the number the board shows.
+  const fallHealText = cardCatalog.HEAL_ON_FALL;
+  const fallHealAmount = cardCatalog.HEAL_ON_FALL_AMOUNT;
+  const comfreyRoot = cardCatalog.CARD_BY_ID.get("comfrey-root");
+
+  if (typeof fallHealText !== "string" || !fallHealText.trim()) {
+    fail("docs/cards.js names no ability for a card that heals its hero when it falls, so no card can say what it does");
+  } else if (!Number.isInteger(fallHealAmount) || fallHealAmount < 1) {
+    fail(`the fall heal restores ${JSON.stringify(fallHealAmount)} health, which is not a whole positive number`);
+  } else if (!fallHealText.includes(String(fallHealAmount))) {
+    fail(
+      `the fall heal reads ${JSON.stringify(fallHealText)}, which does not name the ${fallHealAmount} it heals by, ` +
+        "so the card's face and the trigger can disagree"
+    );
+  } else if (!comfreyRoot) {
+    fail('"comfrey-root" is not a card in the game, so the fall heal has no card that carries it');
+  } else {
+    if (comfreyRoot.fallAbility !== fallHealText) {
+      fail(
+        `"${comfreyRoot.name}" carries the fall ability ${JSON.stringify(comfreyRoot.fallAbility ?? null)} instead of ` +
+          `${JSON.stringify(fallHealText)}, so it does not mend its owner's hero when it falls`
+      );
+    }
+    if (comfreyRoot.ability !== undefined) {
+      fail(
+        `"${comfreyRoot.name}" carries a when-played ability ${JSON.stringify(comfreyRoot.ability)}, though the fall ` +
+          "ability belongs in a field of its own so the when-played text keeps its meaning"
+      );
+    }
+    if (!cardCatalog.REWARD_POOL.includes(comfreyRoot.id)) {
+      fail(
+        `"${comfreyRoot.name}" carries the fall heal but is not in the reward pool, so a win can never add it ` +
+          "to a collection"
+      );
+    }
+
+    // The root is a real card: it has its own described picture, and it can be
+    // played like any other card.
+    const rootArt = cardArt?.cardArt(comfreyRoot.id);
+    if (!rootArt || !(rootArt.inner || "").trim()) {
+      fail(`"${comfreyRoot.name}" has no picture, so the card that carries the fall heal cannot be known by sight`);
+    } else if (!rootArt.description?.trim()) {
+      fail(`"${comfreyRoot.name}"'s picture is not described, so it cannot be checked against the style`);
+    }
+    if (matchEngine) {
+      const playRoot = matchEngine.createMatch(
+        ["sprout", "pebble-toad", "thornling", "sun-moth", "bramble-hound"],
+        { rng: () => 0 }
+      );
+      playRoot.player.hand = [{ ...comfreyRoot, hasAttacked: false }];
+      playRoot.player.deck = [];
+      playRoot.player.energy = comfreyRoot.cost;
+      playRoot.player.maxEnergy = comfreyRoot.cost;
+      matchEngine.playCard(playRoot, "comfrey-root");
+      if (!playRoot.player.table.some((card) => card.id === "comfrey-root")) {
+        fail(`playing "${comfreyRoot.name}" did not put it on the table, so it is not a card a deck can play`);
+      }
+    }
+
+    // The line is on the face wherever the card is shown: the collection, and the
+    // card a win earns.
+    const collectionRootFace = document.querySelector('#collection-list [data-card-id="comfrey-root"]');
+    if (faceAbility(collectionRootFace) !== fallHealText) {
+      fail(
+        `the root shown in the collection does not say ${JSON.stringify(fallHealText)} on its face ` +
+          `(it reads ${JSON.stringify(faceAbility(collectionRootFace))})`
+      );
+    }
+    const rewardRootFace = game.awardCardFigure(comfreyRoot);
+    if (faceAbility(rewardRootFace) !== fallHealText) {
+      fail(
+        `the earned-card face of the root does not say ${JSON.stringify(fallHealText)} ` +
+          `(it reads ${JSON.stringify(faceAbility(rewardRootFace))})`
+      );
+    }
+
+    // An agent that lists the set reads the fall heal in the field written for it,
+    // so the word on the card and the field a caller reads are one answer.
+    if (listCollection) {
+      const rootEntry = (await listCollection.execute()).cards.find((card) => card.id === "comfrey-root");
+      if (rootEntry?.fallAbility !== fallHealText) {
+        fail(
+          `list-collection returns the root with fallAbility ${JSON.stringify(rootEntry?.fallAbility ?? null)} ` +
+            `instead of ${JSON.stringify(fallHealText)}`
+        );
+      }
+    }
+
+    // The trigger itself, through the engine the board runs on.
+    if (!matchEngine) {
+      fail("docs/match.js could not be imported, so the fall heal cannot be checked");
+    } else {
+      const fallDeck = ["sprout", "pebble-toad", "thornling", "sun-moth", "bramble-hound"];
+      // The player's own root, felled by the opponent's turn: the hero it leaves
+      // behind stands higher by the amount the face prints. A fresh board per
+      // starting health, so the raise and the cap are told apart.
+      const playerRootFalls = (startHealth) => {
+        const board = matchEngine.createMatch(fallDeck, { rng: () => 0 });
+        board.player.health = startHealth;
+        board.player.table = [{ ...comfreyRoot, hasAttacked: false }];
+        board.player.hand = [];
+        board.player.deck = [];
+        // Enough health to survive the root's own blow and then strike it down.
+        board.opponent.table = [
+          { ...cardCatalog.CARD_BY_ID.get("bramble-hound"), health: 4, hasAttacked: false },
+        ];
+        board.opponent.hand = [];
+        board.opponent.deck = [];
+        const before = board.log.length;
+        matchEngine.endTurn(board);
+        return { board, lines: board.log.slice(before) };
+      };
+
+      // (1) The raise: a hero at 10 stands at 12 after its root falls, and the
+      // log states the health in the board's words.
+      const raised = playerRootFalls(10);
+      if (raised.board.player.table.some((card) => card.id === "comfrey-root")) {
+        fail("a turn's blows left the root on the table, so the fall heal was never reached");
+      }
+      if (raised.board.player.health !== 12) {
+        fail(
+          `the fallen root left its owner's hero at ${raised.board.player.health} health instead of 12 ` +
+            `(10 plus the ${fallHealAmount} it heals for)`
+        );
+      }
+      const raiseLine = raised.lines.find((line) => line.includes(comfreyRoot.name) && /heals/i.test(line));
+      if (!raiseLine) {
+        fail(`the log does not say the fallen root healed its owner: ${JSON.stringify(raised.lines)}`);
+      } else if (!raiseLine.includes(`your health ${raised.board.player.health}`)) {
+        fail(
+          `the log line for the root's fall heal does not state the health the board shows: "${raiseLine}"`
+        );
+      }
+
+      // (2) The cap: a mend can undo damage but cannot make a hero tougher than
+      // new, so a root falling for a hero already at its starting health pays
+      // nothing above it.
+      const capped = playerRootFalls(matchEngine.HERO_HEALTH);
+      if (capped.board.player.health !== matchEngine.HERO_HEALTH) {
+        fail(
+          `a fall heal pushed a hero to ${capped.board.player.health} health, past the ${matchEngine.HERO_HEALTH} ` +
+            "a hero starts a match with, so a mend can make a hero tougher than new"
+        );
+      }
+
+      // (3) The opponent's copy mends the opponent's hero, and the log names that
+      // side's health — the ability is symmetric, not the player's alone.
+      const foeBoard = matchEngine.createMatch(fallDeck, { rng: () => 0 });
+      foeBoard.player.table = [{ ...cardCatalog.CARD_BY_ID.get("sprout"), health: 1, hasAttacked: false }];
+      foeBoard.player.hand = [];
+      foeBoard.player.deck = [];
+      foeBoard.opponent.health = 8;
+      foeBoard.opponent.table = [{ ...comfreyRoot, health: 1, hasAttacked: false }];
+      foeBoard.opponent.hand = [];
+      const foeLogBefore = foeBoard.log.length;
+      matchEngine.attack(foeBoard, "sprout", "comfrey-root");
+      const foeLines = foeBoard.log.slice(foeLogBefore);
+      if (foeBoard.opponent.health !== 10) {
+        fail(
+          `the opponent's fallen root left its hero at ${foeBoard.opponent.health} health instead of 10 ` +
+            `(8 plus the ${fallHealAmount} it heals for)`
+        );
+      }
+      const foeLine = foeLines.find((line) => line.includes(comfreyRoot.name) && /heals/i.test(line));
+      if (!foeLine || !foeLine.includes(`opponent health ${foeBoard.opponent.health}`)) {
+        fail(
+          `the log line for the opponent's fall heal does not state the health the board shows: ` +
+            `${JSON.stringify(foeLines)}`
+        );
+      }
+
+      // (4) A card with no fall ability changes nothing: no heal, and no extra
+      // line beyond the fall the log already prints.
+      const plainBoard = matchEngine.createMatch(fallDeck, { rng: () => 0 });
+      plainBoard.player.health = 10;
+      plainBoard.player.table = [{ ...cardCatalog.CARD_BY_ID.get("sprout"), health: 1, hasAttacked: false }];
+      plainBoard.player.hand = [];
+      plainBoard.player.deck = [];
+      plainBoard.opponent.table = [{ ...cardCatalog.CARD_BY_ID.get("pebble-toad"), health: 1, hasAttacked: false }];
+      plainBoard.opponent.hand = [];
+      const plainLogBefore = plainBoard.log.length;
+      matchEngine.attack(plainBoard, "sprout", "pebble-toad");
+      const plainLines = plainBoard.log.slice(plainLogBefore);
+      if (plainBoard.player.health !== 10) {
+        fail(
+          `killing a card with no fall ability changed its owner's health to ${plainBoard.player.health} ` +
+            "instead of 10"
+        );
+      }
+      if (plainLines.some((line) => /heals/i.test(line))) {
+        fail(`killing a card with no fall ability healed a hero: ${JSON.stringify(plainLines)}`);
+      }
+    }
+  }
+
   // --- A first win is announced where the win happens -----------------------
 
   // The result screen is where a win lands, so that is where a first against an
