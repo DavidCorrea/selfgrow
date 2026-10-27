@@ -20,7 +20,7 @@
  *     than smudged over it. A creature with no eye is drawn in --foil alone.
  *   - Shape language. Bodies are circles, ellipses and tapered wedges; a limb, a
  *     wing or a thorn is a wedge, never a stroke. Every creature is centred on
- *     the same ground line at y=54 and stays inside x=8..88, so all eighteen sit
+ *     the same ground line at y=54 and stays inside x=8..88, so every card sits
  *     the same way in the frame.
  *   - Framing. One 96x64 viewBox with a rounded frame inset 1.5 units. The frame
  *     is drawn once, by cardArtSvg, and each card's `inner` markup is only the
@@ -50,8 +50,8 @@ export const ART_STYLE = {
     "circles, ellipses and tapered wedges centred on a shared ground line at y=54, inside one 96x64 rounded frame",
 };
 
-// The frame every card is drawn inside, so all eighteen are framed by one shape
-// rather than by eighteen similar ones. It is the only stroke in a picture.
+// The frame every card is drawn inside, so the whole set is framed by one shape
+// rather than by one similar shape per card. It is the only stroke in a picture.
 const FRAME = '<rect class="art-frame" x="1.5" y="1.5" width="93" height="61" rx="12"/>';
 
 // What is printed on the back of a card: the shared frame around the game's own
@@ -334,6 +334,97 @@ const CARD_ART = new Map([
         <circle class="art-accent" cx="43" cy="26" r="2.4" />
         <circle class="art-accent" cx="53" cy="26" r="2.4" />
         <circle class="art-accent" cx="48" cy="41" r="3" />
+      `,
+    },
+  ],
+  [
+    "moss-glider",
+    {
+      description: "A gliding seed: a pointed kernel between two broad swept wings",
+      inner: `
+        <ellipse class="art-body" cx="48" cy="42" rx="7" ry="12" />
+        <path class="art-body" d="M42 36 C28 20 12 14 8 20 C14 30 26 40 40 46 Z" />
+        <path class="art-body" d="M54 36 C68 20 84 14 88 20 C82 30 70 40 56 46 Z" />
+        <circle class="art-accent" cx="46" cy="38" r="2.2" />
+      `,
+    },
+  ],
+  [
+    "fern-drake",
+    {
+      description: "A small drake: a low body, a crested frill, a snout and a curling tail",
+      inner: `
+        <path class="art-body" d="M20 46 C10 44 6 36 8 30 C14 36 20 40 28 42 Z" />
+        <ellipse class="art-body" cx="40" cy="44" rx="16" ry="10" />
+        <rect class="art-body" x="28" y="50" width="7" height="6" rx="3" />
+        <rect class="art-body" x="46" y="50" width="7" height="6" rx="3" />
+        <circle class="art-body" cx="62" cy="30" r="10" />
+        <path class="art-body" d="M70 26 L86 30 L70 36 Z" />
+        <path class="art-body" d="M52 24 L56 10 L62 22 Z" />
+        <path class="art-body" d="M62 18 L66 8 L72 20 Z" />
+        <path class="art-body" d="M70 22 L82 14 L76 26 Z" />
+        <circle class="art-accent" cx="64" cy="28" r="2.2" />
+      `,
+    },
+  ],
+  [
+    "boulder-ram",
+    {
+      description: "A ram: a heavy four-legged body, a blunt snout and two curled horns",
+      inner: `
+        <ellipse class="art-body" cx="48" cy="40" rx="20" ry="12" />
+        <rect class="art-body" x="30" y="46" width="7" height="10" rx="3.5" />
+        <rect class="art-body" x="46" y="46" width="7" height="10" rx="3.5" />
+        <rect class="art-body" x="60" y="46" width="7" height="10" rx="3.5" />
+        <circle class="art-body" cx="66" cy="28" r="10" />
+        <path class="art-body" d="M72 26 L86 30 L73 34 Z" />
+        <path class="art-body" d="M66 18 C76 8 86 12 84 20 C83 26 74 24 73 19 Z" />
+        <path class="art-body" d="M54 18 C52 8 42 6 38 13 C36 19 42 23 48 22 Z" />
+        <circle class="art-accent" cx="68" cy="26" r="2.2" />
+      `,
+    },
+  ],
+  [
+    "hollow-wisp",
+    {
+      description: "A lantern wisp: a glowing orb above a narrowed lantern on three dangling tendrils",
+      inner: `
+        <circle class="art-body" cx="48" cy="20" r="12" />
+        <path class="art-body" d="M36 32 L60 32 L55 50 L41 50 Z" />
+        <path class="art-body" d="M41 50 L36 62 L44 52 Z" />
+        <path class="art-body" d="M55 50 L60 62 L52 52 Z" />
+        <path class="art-body" d="M48 56 L48 62 L52 56 Z" />
+        <circle class="art-accent" cx="48" cy="20" r="3" />
+      `,
+    },
+  ],
+  [
+    "granite-warden",
+    {
+      description: "A squat standing stone split by a cleft, set on a wide base",
+      inner: `
+        <path class="art-body" d="M32 50 L30 22 L42 12 L46 22 L54 22 L58 12 L70 22 L68 50 Z" />
+        <path class="art-body" d="M26 50 L70 50 L68 58 L28 58 Z" />
+        <circle class="art-accent" cx="42" cy="34" r="2.6" />
+        <circle class="art-accent" cx="55" cy="34" r="2.6" />
+      `,
+    },
+  ],
+  [
+    "ironbark-titan",
+    {
+      description: "A broad-trunked titan with a spiked branch crown, two limbs and splayed roots",
+      inner: `
+        <path class="art-body" d="M40 54 L36 62 L44 58 Z" />
+        <path class="art-body" d="M56 54 L60 62 L52 58 Z" />
+        <path class="art-body" d="M34 54 L30 26 C30 19 36 15 48 15 C60 15 66 19 66 26 L62 54 Z" />
+        <path class="art-body" d="M40 15 L38 4 L45 12 Z" />
+        <path class="art-body" d="M48 15 L48 2 L53 12 Z" />
+        <path class="art-body" d="M56 15 L61 4 L58 13 Z" />
+        <path class="art-body" d="M32 30 L14 19 L12 27 L30 38 Z" />
+        <path class="art-body" d="M64 30 L82 19 L84 27 L66 38 Z" />
+        <circle class="art-accent" cx="43" cy="30" r="2.6" />
+        <circle class="art-accent" cx="53" cy="30" r="2.6" />
       `,
     },
   ],
