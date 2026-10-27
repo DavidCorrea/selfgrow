@@ -529,6 +529,43 @@ const CARD_ART = new Map([
       `,
     },
   ],
+  [
+    "lantern-bough",
+    {
+      description:
+        "A lit bough: a thick branch reaching up to the right with two leaves, a cord hanging from its tip, and a lantern with a glowing seed inside",
+      inner: `
+        <path class="art-body" d="M8 52 C24 50 40 44 54 33 C63 26 69 22 76 20 L76 27 C70 29 64 32 57 38 C44 48 28 55 10 57 Z" />
+        <path class="art-body" d="M40 40 C33 31 39 20 52 16 C56 27 50 37 40 40 Z" />
+        <path class="art-body" d="M28 48 C22 40 26 30 36 25 C41 35 36 45 28 48 Z" />
+        <rect class="art-body" x="72.5" y="20" width="3" height="9" rx="1.5" />
+        <path class="art-body" d="M68 27 L80 27 L78 32 L70 32 Z" />
+        <path class="art-body" d="M67 31 L81 31 L77 49 L71 49 Z" />
+        <path class="art-body" d="M69 49 L79 49 L78 53 L70 53 Z" />
+        <circle class="art-accent" cx="74" cy="40" r="4.2" />
+      `,
+    },
+  ],
+  [
+    "thornback-behemoth",
+    {
+      description:
+        "A massive thorn-backed beast: a broad low body ridged with three thorns, four stubby legs, a heavy tail and a horned head with one eye",
+      inner: `
+        <path class="art-body" d="M11 38 L3 33 L5 45 L13 47 Z" />
+        <ellipse class="art-body" cx="47" cy="42" rx="34" ry="13" />
+        <path class="art-body" d="M23 31 L20 17 L32 29 Z" />
+        <path class="art-body" d="M38 29 L41 13 L49 27 Z" />
+        <path class="art-body" d="M55 29 L61 16 L65 29 Z" />
+        <path class="art-body" d="M70 33 C82 31 90 37 90 45 L85 52 L68 50 Z" />
+        <path class="art-body" d="M83 33 L90 22 L87 35 Z" />
+        <path class="art-body" d="M25 48 L34 48 L34 55 L26 55 Z" />
+        <path class="art-body" d="M42 48 L51 48 L51 55 L43 55 Z" />
+        <path class="art-body" d="M58 48 L66 48 L67 55 L59 55 Z" />
+        <circle class="art-accent" cx="80" cy="39" r="2.6" />
+      `,
+    },
+  ],
 ]);
 
 /**

@@ -9320,6 +9320,142 @@ export async function checks() {
     }
   }
 
+  // --- Two cards that answer their removal, higher on the cost curve --------
+
+  // Every card that does something as it falls used to be cheap, so a deck built
+  // around trading cards away had nothing to spend a late turn on. These two put
+  // the same abilities on bigger bodies — a mid-cost one that draws its owner a
+  // card as it goes and a heavy one that strikes the opponent's front card as it
+  // goes — so the fall ability is a strategy a deck can grow into rather than
+  // only an early trick. Both are reward cards, so neither is dealt to a new
+  // player, and both print the words the match prints.
+  const higherFallCards = [
+    { id: "lantern-bough", fallAbility: cardCatalog.DRAW_ON_FALL },
+    { id: "thornback-behemoth", fallAbility: cardCatalog.STRIKE_ON_FALL },
+  ];
+  const higherFallIds = new Set(higherFallCards.map(({ id }) => id));
+  const olderFallCosts = cardCatalog.CARDS
+    .filter((card) => card.fallAbility && !higherFallIds.has(card.id))
+    .map((card) => card.cost);
+  const dearestOlderFallCard = Math.max(...olderFallCosts);
+
+  for (const { id, fallAbility } of higherFallCards) {
+    const card = cardCatalog.CARD_BY_ID.get(id);
+    if (!card) {
+      fail(`"${id}" is not a card in the game, so the dearest fall card is missing from the set`);
+      continue;
+    }
+    if (card.fallAbility !== fallAbility) {
+      fail(
+        `"${card.name}" carries the fall ability ${JSON.stringify(card.fallAbility ?? null)} instead of ` +
+          `${JSON.stringify(fallAbility)}, so it does not act when it falls`
+      );
+    }
+    if (card.ability !== undefined) {
+      fail(
+        `"${card.name}" carries a when-played ability ${JSON.stringify(card.ability)}, though these are the cards ` +
+          "that act only as they fall"
+      );
+    }
+    if (!(card.cost > dearestOlderFallCard)) {
+      fail(
+        `"${card.name}" costs ${card.cost} where the fall cards that came before cost ${dearestOlderFallCard} at ` +
+          "most, so the dearest fall card is no higher on the cost curve than the cheap ones"
+      );
+    }
+    if (!cardCatalog.REWARD_POOL.includes(card.id)) {
+      fail(
+        `"${card.name}" carries a fall ability but is not in the reward pool, so a win can never add it to a ` +
+          "collection"
+      );
+    }
+    if (cardCatalog.STARTER_COLLECTION.some((entry) => entry.id === card.id)) {
+      fail(`"${card.name}" is a reward card but is also dealt at the start, so a new player already owns it`);
+    }
+
+    // A described picture in the shared style, so the dearest fall card is known
+    // by sight like every other card.
+    const art = cardArt?.cardArt(card.id);
+    if (!art || !(art.inner || "").trim()) {
+      fail(`"${card.name}" has no picture, so the card that carries a fall ability cannot be known by sight`);
+    } else if (!art.description?.trim()) {
+      fail(`"${card.name}"'s picture is not described, so it cannot be checked against the style`);
+    } else if (!/art-body/.test(art.inner)) {
+      fail(`"${card.name}" is drawn without a creature in the foil the whole set is drawn in`);
+    }
+
+    // The fall line is printed on the face wherever the card is shown — in the
+    // collection, and on the card a win earns — in the words the match uses.
+    const collectionFace = document.querySelector(`#collection-list [data-card-id="${card.id}"]`);
+    if (faceAbility(collectionFace) !== fallAbility) {
+      fail(
+        `"${card.name}" shown in the collection does not say ${JSON.stringify(fallAbility)} on its face ` +
+          `(it reads ${JSON.stringify(faceAbility(collectionFace))})`
+      );
+    }
+    const awardedFace = game.awardCardFigure(card);
+    if (faceAbility(awardedFace) !== fallAbility) {
+      fail(
+        `the earned-card face of "${card.name}" does not say ${JSON.stringify(fallAbility)} ` +
+          `(it reads ${JSON.stringify(faceAbility(awardedFace))})`
+      );
+    }
+
+    // An agent that lists the set reads the fall ability in the field written for
+    // it, so the word on the card and the field a caller reads are one answer.
+    if (listCollection) {
+      const entry = (await listCollection.execute()).cards.find((listed) => listed.id === card.id);
+      if (entry?.fallAbility !== fallAbility) {
+        fail(
+          `list-collection returns "${card.name}" with fallAbility ${JSON.stringify(entry?.fallAbility ?? null)} ` +
+            `instead of ${JSON.stringify(fallAbility)}`
+        );
+      }
+    }
+  }
+
+  // Both are earned by winning, and neither disturbs the order a save made
+  // before they existed already had: the reward pool keeps its earlier cards
+  // where they were and appends these two behind them, so a win still awards the
+  // card it promised and these are reached once the older rewards are held.
+  if (typeof collection.nextRewardId !== "function") {
+    fail("collection.js does not export nextRewardId, so the dearest fall cards cannot be checked as winnable");
+  } else {
+    const pool = cardCatalog.REWARD_POOL;
+    const olderRewards = pool.filter((id) => !higherFallIds.has(id));
+    if (pool.join(",") !== olderRewards.concat([...higherFallIds]).join(",")) {
+      fail(
+        `the reward pool reads ${JSON.stringify(pool)} instead of the cards that were already there followed by ` +
+          `${JSON.stringify([...higherFallIds])}, so a save made before these cards existed would be handed a ` +
+          "different reward than the one it was promised"
+      );
+    }
+
+    const starters = cardCatalog.STARTER_COLLECTION.map(({ id, copies }) => ({ id, copies }));
+    const fallStore = stubStorage();
+    collection.saveCollection(starters, fallStore);
+    for (const { id } of higherFallCards) {
+      const held = starters.concat(pool.slice(0, pool.indexOf(id)).map((poolId) => ({ id: poolId, copies: 1 })));
+      const promised = collection.nextRewardId(held);
+      if (promised !== id) {
+        fail(
+          `with every reward card before it held the next-win card is "${promised}" instead of "${id}", so the ` +
+            "dearest fall card cannot be earned"
+        );
+        continue;
+      }
+      collection.saveCollection(held, fallStore);
+      const won = collection.recordResult("win", `match-${id}`, fallStore);
+      if (won.awarded?.id !== id) {
+        fail(`a win that should add "${id}" awarded "${won.awarded?.id}" instead`);
+      }
+      const following = collection.nextRewardId(won.cards);
+      if (following === id) {
+        fail(`after winning "${id}" the next-win card is still "${following}", so the goal never moves on`);
+      }
+    }
+  }
+
   // --- A first win is announced where the win happens -----------------------
 
   // The result screen is where a win lands, so that is where a first against an
