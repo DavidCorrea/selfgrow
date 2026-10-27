@@ -73,8 +73,10 @@
             <dd class="standing-value"><span data-field="cardsOwned">0</span></dd>
           </div>
           <div class="standing">
-            <dt class="standing-label">Different cards</dt>
-            <dd class="standing-value"><span data-field="distinctCards">0</span></dd>
+            <dt class="standing-label">Cards collected</dt>
+            <dd class="standing-value">
+              <span data-field="distinctCards">0</span><span class="standing-of"> of </span><span data-field="setTotal">0</span>
+            </dd>
           </div>
           <div class="standing">
             <dt class="standing-label">Deck size</dt>
@@ -95,9 +97,18 @@
           <ul class="deck-list" id="deck-list" aria-label="Cards in your deck"></ul>
         </section>
 
-        <!-- Every owned card, filled in from what was saved. A list of text, so a
-             sighted player, a screen reader and an agent read the same cards. -->
-        <ul class="collection-list" id="collection-list" aria-label="Cards you own"></ul>
+        <!-- Every card in the game, filled in from what was saved: the ones the
+             player holds with the controls that put a copy in the deck, and the
+             ones still to collect, marked as such. A list of text, so a sighted
+             player, a screen reader and an agent read the same set. -->
+        <section class="set" aria-labelledby="set-heading">
+          <h3 class="set-heading" id="set-heading">Every card in the game</h3>
+          <ul
+            class="collection-list"
+            id="collection-list"
+            aria-label="Every card in the game, with the cards in your collection marked"
+          ></ul>
+        </section>
 
         <!-- What just happened to the deck, and why an add was refused. Always
              present, so the reason is reachable instead of hidden behind a

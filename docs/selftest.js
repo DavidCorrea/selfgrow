@@ -61,7 +61,12 @@ export async function checks() {
   }
 
   const state = game.readState();
-  const owned = game.readCollection();
+  const cardCatalog = await import("./cards.js");
+  const snapshot = game.readCollection();
+  // The Collection screen now shows the whole card set, so `snapshot.cards` is
+  // every card in the game. The checks that speak of what the player holds read
+  // `ownedCards`; `owned` keeps the shape they were written against.
+  const owned = { ...snapshot, cards: snapshot.ownedCards };
 
   // --- What a visitor meets first -------------------------------------------
 
@@ -224,7 +229,7 @@ export async function checks() {
     }
   }
 
-  // --- The Collection screen prints every card it owns -----------------------
+  // --- The Collection screen prints the whole set, owned and not --------------
 
   const collectionScreen = screen("collection");
   const list = document.getElementById("collection-list");
@@ -244,21 +249,21 @@ export async function checks() {
   }
 
   if (list) {
-    const rows = [...list.querySelectorAll(".owned-card")];
-    if (rows.length !== owned.distinctCards) {
+    const ownedRows = [...list.querySelectorAll(".owned-card")];
+    if (ownedRows.length !== owned.distinctCards) {
       fail(
-        `the collection screen shows ${rows.length} card(s) while the player owns ${owned.distinctCards} different one(s)`
+        `the collection screen marks ${ownedRows.length} card(s) as owned while the player owns ${owned.distinctCards} different one(s)`
       );
     }
 
-    const rowsById = new Map(rows.map((row) => [row.dataset.cardId, row]));
+    const rowsById = new Map(ownedRows.map((row) => [row.dataset.cardId, row]));
     for (const card of owned.cards) {
       const row = rowsById.get(card.id);
       if (!row) {
-        fail(`the collection screen does not list "${card.name}", which the player owns`);
+        fail(`the collection screen does not mark "${card.name}" as owned, though the player holds it`);
         continue;
       }
-      const name = textOf(row.querySelector(".owned-name"));
+      const name = textOf(row.querySelector(".card-face-name"));
       if (name !== card.name) {
         fail(`the collection screen lists "${name}" where the collection holds "${card.name}"`);
       }
@@ -280,9 +285,9 @@ export async function checks() {
       }
     }
 
-    const firstRow = rows[0];
+    const firstRow = ownedRows[0];
     if (firstRow) {
-      const labels = [...firstRow.querySelectorAll(".owned-stat dt")].map(textOf);
+      const labels = [...firstRow.querySelectorAll(".card-face-stat dt")].map(textOf);
       for (const label of ["Cost", "Attack", "Health"]) {
         if (!labels.includes(label)) {
           fail(`an owned card's numbers are not labelled: expected a "${label}" label, found ${labels.join(", ") || "none"}`);
@@ -290,14 +295,71 @@ export async function checks() {
       }
     }
 
-    if (list.querySelector(".collection-empty") && owned.distinctCards > 0) {
-      fail("the collection screen shows its empty message even though the player owns cards");
+    // --- The whole set, not only what is owned -------------------------------
+
+    // Every card in the game appears exactly once, so a player sees the set they
+    // are collecting toward and not only the cards they already hold.
+    const setIds = cardCatalog.CARDS.map((card) => card.id);
+    const rowIds = [...list.querySelectorAll("[data-card-id]")].map((row) => row.dataset.cardId);
+    const missingFromSet = setIds.filter((id) => !rowIds.includes(id));
+    const notInGame = rowIds.filter((id) => !setIds.includes(id));
+    if (missingFromSet.length) {
+      fail(
+        `the collection screen does not show ${missingFromSet.join(", ")}, so the set a player is collecting toward is incomplete`
+      );
+    }
+    if (notInGame.length) {
+      fail(`the collection screen lists ${notInGame.join(", ")} — not cards in the game`);
+    }
+    if (new Set(rowIds).size !== rowIds.length) {
+      fail(`the collection screen shows the same card more than once: ${rowIds.join(", ")}`);
+    }
+
+    // A card the player does not hold is marked as not collected and offers no
+    // way into a deck; a card they do hold carries the deck controls.
+    const heldIds = new Set(owned.cards.map((card) => card.id));
+    for (const row of list.querySelectorAll("[data-card-id]")) {
+      const id = row.dataset.cardId;
+      const name = cardCatalog.CARD_BY_ID.get(id)?.name ?? id;
+      const held = heldIds.has(id);
+      if (held && !row.classList.contains("owned-card")) {
+        fail(`the collection screen does not mark "${name}" as owned, though the player holds it (class "${row.className}")`);
+      }
+      if (!held && !row.classList.contains("unowned-card")) {
+        fail(`the collection screen does not mark "${name}" as not yet collected (class "${row.className}")`);
+      }
+      if (!held && row.querySelector(".deck-add, .deck-remove")) {
+        fail(`"${name}" is not collected yet, but the collection screen offers a deck control for it`);
+      }
+      if (!held && !textOf(row).includes("Not yet collected")) {
+        fail(`"${name}" is not collected yet but the screen does not say so: it reads "${textOf(row)}"`);
+      }
+    }
+
+    // How much of the set is collected, as a labelled number out of the total.
+    const collectedStanding = document
+      .querySelector('#screen-collection [data-field="distinctCards"]')
+      ?.closest(".standing");
+    if (!collectedStanding) {
+      fail("the collection screen does not state how many different cards of the game you have collected");
+    } else {
+      const collectedValue = textOf(collectedStanding.querySelector(".standing-value"));
+      const collectedLabel = textOf(collectedStanding.querySelector(".standing-label"));
+      const expectedCollected = `${owned.distinctCards} of ${cardCatalog.CARDS.length}`;
+      if (collectedValue !== expectedCollected) {
+        fail(
+          `the collection screen says "${collectedValue || "(nothing)"}" where the player has collected ` +
+            `${expectedCollected} different cards`
+        );
+      }
+      if (!collectedLabel.toLowerCase().includes("collect")) {
+        fail(`the count of cards collected is labelled "${collectedLabel || "(nothing)"}", which does not say what it counts`);
+      }
     }
   }
 
   // --- Every card has its own picture, in the one shared style ----------------
 
-  const cardCatalog = await import("./cards.js");
   let cardArt;
   try {
     cardArt = await import("./cardart.js");
@@ -402,8 +464,8 @@ export async function checks() {
     const foil = getComputedStyle(probe).color;
     probe.remove();
 
-    for (const row of document.querySelectorAll("#collection-list .owned-card")) {
-      const name = textOf(row.querySelector(".owned-name")) || row.dataset.cardId;
+    for (const row of document.querySelectorAll("#collection-list .owned-card, #collection-list .unowned-card")) {
+      const name = textOf(row.querySelector(".card-face-name")) || row.dataset.cardId;
       const picture = row.querySelector("svg.card-art");
       if (!picture) {
         fail(`the card "${name}" is shown with no picture, so it cannot be learned by sight`);
@@ -1857,6 +1919,7 @@ export async function checks() {
     for (const [field, label] of [
       ["cardsOwned", "cards owned"],
       ["distinctCards", "different cards"],
+      ["setTotal", "cards in the set"],
       ["deckSize", "deck size"],
       ["wins", "wins"],
       ["matchesPlayed", "matches played"],
@@ -1893,25 +1956,37 @@ export async function checks() {
 
   const listCollection = toolNamed("list-collection");
   if (!listCollection) {
-    fail('no "list-collection" tool is declared, so an agent cannot read the cards the player owns');
+    fail('no "list-collection" tool is declared, so an agent cannot read the cards in the game');
   } else {
     if (!listCollection.annotations || listCollection.annotations.readOnlyHint !== true) {
       fail('"list-collection" does not declare itself read-only, though it changes nothing');
     }
     const listed = await listCollection.execute({});
     const listedCards = Array.isArray(listed.cards) ? listed.cards : [];
-    if (listedCards.length !== owned.distinctCards) {
+
+    // The tool returns the whole set, so what an agent reads is what the screen
+    // shows: every card, each saying whether it is owned and how many copies.
+    const setIds = cardCatalog.CARDS.map((card) => card.id);
+    const listedIds = listedCards.map((card) => card.id);
+    const missingFromSet = setIds.filter((id) => !listedIds.includes(id));
+    if (listedIds.length !== setIds.length || missingFromSet.length) {
       fail(
-        `list-collection returns ${listedCards.length} card(s) while the player owns ${owned.distinctCards} different one(s)`
+        `list-collection returns ${listedIds.length} card(s) instead of the whole set of ${setIds.length}, ` +
+          `missing ${missingFromSet.join(", ") || "none"}`
       );
     }
-    if (!sameCards(listedCards, owned.cards)) {
-      fail(
-        `list-collection returns different cards from the page: ${JSON.stringify(asIdCopies(listedCards))} ` +
-          `instead of ${JSON.stringify(asIdCopies(owned.cards))}`
-      );
+    if (new Set(listedIds).size !== listedIds.length) {
+      fail(`list-collection lists a card more than once: ${listedIds.join(", ")}`);
     }
+    const heldCopies = new Map(owned.cards.map((card) => [card.id, card.copies]));
     for (const card of listedCards) {
+      const copies = heldCopies.get(card.id) ?? 0;
+      if (card.copies !== copies) {
+        fail(`list-collection says "${card.name}" is held in ${card.copies} copies while the player holds ${copies}`);
+      }
+      if (card.owned !== copies > 0) {
+        fail(`list-collection says "${card.name}" is owned ${card.owned} while the player holds ${copies} copies`);
+      }
       for (const stat of ["cost", "attack", "health"]) {
         if (!Number.isInteger(card[stat])) {
           fail(`list-collection returns "${card.name}" with no ${stat}, so an agent cannot judge the card`);
@@ -1920,6 +1995,9 @@ export async function checks() {
     }
     if (listed.distinctCards !== owned.distinctCards) {
       fail(`list-collection reports ${listed.distinctCards} different cards while the page says ${owned.distinctCards}`);
+    }
+    if (listed.setTotal !== cardCatalog.CARDS.length) {
+      fail(`list-collection reports a set of ${listed.setTotal} cards while the game has ${cardCatalog.CARDS.length}`);
     }
   }
 
@@ -2659,10 +2737,10 @@ export async function checks() {
     }
   }
 
-  const cardsHeldBefore = collection.collectionSize(game.readCollection().cards);
+  const cardsHeldBefore = collection.collectionSize(game.readCollection().ownedCards);
   // What the player owned before the match, so the reward can be told apart from
   // a card they already held — which is what decides how the result reads.
-  const ownedIdsBeforeMatch = game.readCollection().cards.map((card) => card.id);
+  const ownedIdsBeforeMatch = game.readCollection().ownedCards.map((card) => card.id);
   game.startMatch();
   const playedOut = playToResult();
   checkResult("playing the strongest card your energy covers, turn after turn", playedOut);
@@ -2671,7 +2749,7 @@ export async function checks() {
   // none. Which side wins a real match is the shuffle's choice, so each branch
   // is checked for what it must do when it happens.
   const afterPlay = game.readState();
-  const cardsHeldAfter = collection.collectionSize(game.readCollection().cards);
+  const cardsHeldAfter = collection.collectionSize(game.readCollection().ownedCards);
   if (playedOut?.outcome === "win") {
     const awarded = afterPlay.result?.awarded;
     if (!awarded) {
@@ -2703,7 +2781,7 @@ export async function checks() {
       if (figure.querySelector(".award-card-stats")?.textContent !== numbers) {
         fail(`the card shown in the result reads "${figure.querySelector(".award-card-stats")?.textContent}" instead of the awarded "${numbers}"`);
       }
-      const ownedIds = (game.readCollection().cards || []).map((card) => card.id);
+      const ownedIds = (game.readCollection().ownedCards || []).map((card) => card.id);
       if (!ownedIds.includes(awarded.id)) {
         fail(`the result shows "${awarded.id}", which is not a card the win added to the collection`);
       }
