@@ -221,14 +221,18 @@ function withExtraCopy(cards, cardId) {
 
 /**
  * Record a finished match. The match counts toward the matches played; a win
- * adds exactly one reward card to the collection, and a loss adds none. The
- * reward cycles through `REWARD_POOL` by how many matches have been won, so the
- * first win gives the first card and the next gives the next.
+ * adds exactly one reward card to the collection, and a loss adds none. A win
+ * earns the first reward card the player does not hold yet, so each win keeps
+ * the collection growing; only once every reward card is held does it fall back
+ * to the cycle of `REWARD_POOL` by wins — a duplicate — and report the set as
+ * complete.
  *
  * `matchId` is remembered so that recording the same match again — a result
  * screen asked for twice — does nothing instead of awarding a second card.
- * Returns the collection this produced, the new totals, the card that was
- * added (or null), and whether it will survive closing the page.
+ * Returns the collection this produced, the new totals, the card that was added
+ * (or null), whether the set was already complete (`setComplete`, true only when
+ * the reward was a duplicate because nothing was left to earn), and whether the
+ * save will survive closing the page.
  */
 export function recordResult(outcome, matchId, storage = defaultStorage()) {
   const cards = readCollection(storage) ?? starterCards();
@@ -240,13 +244,22 @@ export function recordResult(outcome, matchId, storage = defaultStorage()) {
       wins: progress.wins,
       matches: progress.matches,
       awarded: null,
+      setComplete: false,
       recorded: false,
       saved: storage?.durable !== false,
     };
   }
 
   const won = outcome === "win";
-  const awardedId = won ? REWARD_POOL[progress.wins % REWARD_POOL.length] : null;
+  // The starter collection owns every non-reward card, so a reward card the
+  // player does not hold is simply a card they do not own — and none left to
+  // earn means the whole game's set is already held.
+  const owned = new Set(cards.map((card) => card.id));
+  const unownedRewardId = REWARD_POOL.find((id) => !owned.has(id));
+  const setComplete = won && unownedRewardId === undefined;
+  const awardedId = won
+    ? (unownedRewardId ?? REWARD_POOL[progress.wins % REWARD_POOL.length])
+    : null;
   const nextCards = awardedId ? withExtraCopy(cards, awardedId) : cards;
   const wins = progress.wins + (won ? 1 : 0);
   const matches = progress.matches + 1;
@@ -261,6 +274,7 @@ export function recordResult(outcome, matchId, storage = defaultStorage()) {
     wins,
     matches,
     awarded: awardedId ? { ...CARD_BY_ID.get(awardedId) } : null,
+    setComplete,
     recorded: true,
     saved: wrote && storage?.durable !== false,
   };
