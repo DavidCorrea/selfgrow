@@ -1517,13 +1517,25 @@ export async function checks() {
   // an agent asks for, and as the labelled totals a visitor sees.
   const attackValue = () => document.getElementById("deck-total-attack");
   const healthValue = () => document.getElementById("deck-total-health");
+  // How many of the deck's cards act when played or when they fall, read the
+  // same two ways: from the state an agent asks for, and from the labelled
+  // counts a visitor sees beside the totals.
+  const whenPlayedValue = () => document.getElementById("deck-total-when-played");
+  const whenFallsValue = () => document.getElementById("deck-total-when-falls");
   // The sum over the deck the state holds, derived here so a wrong total on the
   // page or in the state fails rather than agreeing with itself.
   const deckSum = (field) => game.readState().deck.reduce((total, card) => total + card[field], 0);
+  const abilityCount = (field) => game.readState().deck.filter((card) => card[field]).length;
   const shownTotal = (element) => (element ? Number(textOf(element)) : NaN);
 
   if (!curveBlock()) {
     fail("the collection screen has no cost curve under the deck (#deck-curve), so the deck's shape cannot be read");
+  }
+  if (!whenPlayedValue() || !whenFallsValue()) {
+    fail(
+      "the deck panel shows no counts of its when-played and when-falls cards " +
+        "(#deck-total-when-played / #deck-total-when-falls), so a player building around either ability cannot read them"
+    );
   }
   if (!attackValue() || !healthValue()) {
     fail(
@@ -1666,6 +1678,22 @@ export async function checks() {
         "instead of only its own empty note"
     );
   }
+  // An empty deck has no cards to count either: both ability counts are null in
+  // the state and blank on the page, so zero is never printed where there is
+  // nothing to count.
+  if (game.readState().deckWhenPlayed !== null || game.readState().deckWhenFalls !== null) {
+    fail(
+      "an empty deck reports ability counts instead of null: " +
+        `deckWhenPlayed ${JSON.stringify(game.readState().deckWhenPlayed)}, ` +
+        `deckWhenFalls ${JSON.stringify(game.readState().deckWhenFalls)}`
+    );
+  }
+  if (textOf(whenPlayedValue()) || textOf(whenFallsValue())) {
+    fail(
+      `an empty deck still shows ability counts ("${textOf(whenPlayedValue())}" played, "${textOf(whenFallsValue())}" falls) ` +
+        "instead of only its own empty note"
+    );
+  }
 
   // One card in the deck puts exactly one row on the curve, at that card's cost
   // and counting one — the curve follows the deck the moment it changes.
@@ -1712,6 +1740,22 @@ export async function checks() {
   if (shownTotal(healthValue()) !== loneHealth) {
     fail(`a one-card deck shows a total health of ${textOf(healthValue())} instead of the summed ${loneHealth}`);
   }
+  // A one-card deck's ability counts are that card's own: one for a face it
+  // carries, zero for the one it does not, both in the state and on the page.
+  const lonePlayed = abilityCount("ability");
+  const loneFalls = abilityCount("fallAbility");
+  if (game.readState().deckWhenPlayed !== lonePlayed || game.readState().deckWhenFalls !== loneFalls) {
+    fail(
+      `a one-card deck reports ${JSON.stringify(game.readState().deckWhenPlayed)}/${JSON.stringify(game.readState().deckWhenFalls)} ` +
+        `when-played/when-falls instead of the counted ${lonePlayed}/${loneFalls}`
+    );
+  }
+  if (shownTotal(whenPlayedValue()) !== lonePlayed) {
+    fail(`a one-card deck shows ${textOf(whenPlayedValue())} when-played card(s) instead of the counted ${lonePlayed}`);
+  }
+  if (shownTotal(whenFallsValue()) !== loneFalls) {
+    fail(`a one-card deck shows ${textOf(whenFallsValue())} when-falls card(s) instead of the counted ${loneFalls}`);
+  }
 
   // Taking that card back out returns the deck to empty: the block hides again.
   game.removeCardFromDeck(loneId);
@@ -1731,6 +1775,14 @@ export async function checks() {
   }
   if (textOf(attackValue()) || textOf(healthValue())) {
     fail("emptying the deck again left its totals printed on the page");
+  }
+  // Emptying the deck again takes its ability counts with it too: back to null
+  // in the state and blank on the page, matching the totals beside them.
+  if (game.readState().deckWhenPlayed !== null || game.readState().deckWhenFalls !== null) {
+    fail("emptying the deck again left ability counts on the state instead of null");
+  }
+  if (textOf(whenPlayedValue()) || textOf(whenFallsValue())) {
+    fail("emptying the deck again left its ability counts printed on the page");
   }
 
   // A card owned in several copies can be put in the deck that many times, so a
@@ -1852,6 +1904,23 @@ export async function checks() {
   }
   if (shownTotal(healthValue()) !== fullHealth) {
     fail(`the deck panel shows a total health of ${textOf(healthValue())} instead of the summed ${fullHealth}`);
+  }
+  // The ability counts stand beside the totals: how many of the ten cards carry
+  // a when-played face and how many carry a when-falls one, each the count over
+  // the deck the state holds and printed the same on the page.
+  const fullPlayed = abilityCount("ability");
+  const fullFalls = abilityCount("fallAbility");
+  if (game.readState().deckWhenPlayed !== fullPlayed || game.readState().deckWhenFalls !== fullFalls) {
+    fail(
+      `a ten-card deck reports ${JSON.stringify(game.readState().deckWhenPlayed)}/${JSON.stringify(game.readState().deckWhenFalls)} ` +
+        `when-played/when-falls instead of the counted ${fullPlayed}/${fullFalls}`
+    );
+  }
+  if (shownTotal(whenPlayedValue()) !== fullPlayed) {
+    fail(`the deck panel shows ${textOf(whenPlayedValue())} when-played card(s) instead of the counted ${fullPlayed}`);
+  }
+  if (shownTotal(whenFallsValue()) !== fullFalls) {
+    fail(`the deck panel shows ${textOf(whenFallsValue())} when-falls card(s) instead of the counted ${fullFalls}`);
   }
 
   // Each card in the deck is shown as its picture — the same name as its text
@@ -3463,6 +3532,25 @@ export async function checks() {
       fail(
         `get-state reports ${JSON.stringify(reported.deckAttack)}/${JSON.stringify(reported.deckHealth)} deck attack/health ` +
           `instead of the summed ${liveAttackSum}/${liveHealthSum}`
+      );
+    }
+
+    // How many of the deck's cards act when played or when they fall is part of
+    // what the panel shows, so it is part of what get-state returns: the counts
+    // over the deck the page holds.
+    const livePlayedCount = live.deck.filter((card) => card.ability).length;
+    const liveFallsCount = live.deck.filter((card) => card.fallAbility).length;
+    if (reported.deckWhenPlayed !== live.deckWhenPlayed || reported.deckWhenFalls !== live.deckWhenFalls) {
+      fail(
+        `get-state reports ${JSON.stringify(reported.deckWhenPlayed)}/${JSON.stringify(reported.deckWhenFalls)} ` +
+          `when-played/when-falls counts while the page says ` +
+          `${JSON.stringify(live.deckWhenPlayed)}/${JSON.stringify(live.deckWhenFalls)}`
+      );
+    }
+    if (reported.deckWhenPlayed !== livePlayedCount || reported.deckWhenFalls !== liveFallsCount) {
+      fail(
+        `get-state reports ${JSON.stringify(reported.deckWhenPlayed)}/${JSON.stringify(reported.deckWhenFalls)} ` +
+          `when-played/when-falls counts instead of the counted ${livePlayedCount}/${liveFallsCount}`
       );
     }
 
