@@ -1035,6 +1035,76 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
+/* A blow landing on the table: the card that struck lifts into it, the card it
+   hit shakes under the blow, and a card worn out fades and drops off the row.
+   All three are decoration — the health figure and the log carry the same fact
+   to a screen reader and an agent — and they are turned off wholesale for a
+   visitor who asked for less motion. */
+.match-card.is-striking {
+  animation: card-strike 340ms var(--ease-out);
+}
+
+.match-card.is-hit {
+  animation: card-hit 340ms var(--ease-out);
+}
+
+/* The card that has just left the table, still shown at the spot it stood. It
+   takes no pointer and carries no card identity, and the log is what names the
+   fall, so the marker never announces the blow a second time. */
+.match-card-falling {
+  border-style: dashed;
+  background-color: rgba(34, 42, 69, 0.4);
+  pointer-events: none;
+  animation: card-fall 420ms var(--ease-out) both;
+}
+
+.match-card-falling-caption {
+  color: var(--ink-muted);
+  font-size: 0.8rem;
+}
+
+@keyframes card-strike {
+  0% {
+    transform: none;
+  }
+  35% {
+    transform: translateY(-6px) scale(1.02);
+  }
+  100% {
+    transform: none;
+  }
+}
+
+@keyframes card-hit {
+  0%,
+  100% {
+    transform: none;
+  }
+  20% {
+    transform: translateX(-3px);
+  }
+  40% {
+    transform: translateX(3px);
+  }
+  60% {
+    transform: translateX(-2px);
+  }
+  80% {
+    transform: translateX(2px);
+  }
+}
+
+@keyframes card-fall {
+  from {
+    opacity: 1;
+    transform: none;
+  }
+  to {
+    opacity: 0.3;
+    transform: translateY(10px) rotate(3deg);
+  }
+}
+
 /* The control that plays a hand card, or attacks with a table card, sits under
    the face at the face's own width rather than beside it. */
 .match-card-playable .match-play,
@@ -1607,6 +1677,18 @@ body {
   #screen-play,
   .match-result {
     animation: none;
+  }
+
+  /* A blow is told by the health numbers and the log when motion is unwanted:
+     nothing lifts, shakes or fades, and the leaving card is not drawn at all. */
+  .match-card.is-striking,
+  .match-card.is-hit,
+  .match-card-falling {
+    animation: none;
+  }
+
+  .match-card-falling {
+    display: none;
   }
 
   .btn {

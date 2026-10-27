@@ -134,6 +134,12 @@ const continueOpponentHealth = document.getElementById("continue-opponent-health
 const continueTurn = document.getElementById("continue-turn");
 const continueButton = document.getElementById("action-continue-match");
 
+// The board the page last drew, or null when none was drawn. The next draw is
+// diffed against it, so a blow that has just landed can be shown on the cards
+// rather than only read in the log. It is cleared with the match it belongs to,
+// so nothing is ever reacted to across two different games.
+let shownBoard = null;
+
 /**
  * The counts the page prints, with the deck size derived from the deck itself so
  * the number can never drift from the cards it counts.
@@ -297,26 +303,124 @@ function emptyTableItem(sentence) {
 }
 
 /**
+ * The stable name of one copy of a card on a table: its id, and how many copies
+ * of that same id already stood before it. Two identical cards on one table are
+ * told apart this way, so a hit on one is never read as a hit on the other.
+ */
+function tableOccurrenceKey(seen, cardId) {
+  const copies = seen.get(cardId) ?? 0;
+  seen.set(cardId, copies + 1);
+  return `${cardId}#${copies}`;
+}
+
+/**
+ * What changed on the board since it was last drawn: for each side, which of its
+ * cards have just been struck or have just struck, and which cards have left the
+ * table. Empty when this is a different match than the one drawn last — a new,
+ * continued or replaced game has no blow to show.
+ */
+function reactionsToShow(board, match) {
+  const reactions = { player: {}, opponent: {}, fallen: { player: [], opponent: [] } };
+  if (!board || board.id !== match.id) return reactions;
+
+  // Who struck is read from the blows the turn just added to the log. A card's
+  // `hasAttacked` cannot be used for it: the turn ends by freshening every card
+  // on the surviving side's table, so by the time the board is drawn a card that
+  // struck and has attacked again reads as unspent. The log keeps the blow.
+  const strikers = { player: new Set(), opponent: new Set() };
+  for (const line of match.log.slice(board.logLength)) {
+    const blow = /^(Your|Opponent's) (.+?) deals \d+ to /.exec(line);
+    if (blow) strikers[blow[1] === "Your" ? "player" : "opponent"].add(blow[2]);
+  }
+
+  for (const side of ["player", "opponent"]) {
+    const before = new Map(board[side].map((entry) => [entry.key, entry]));
+    const now = snapshotTable(match[side].table);
+    const standing = new Set(now.map((entry) => entry.key));
+    const struck = strikers[side];
+
+    for (const entry of now) {
+      const was = before.get(entry.key);
+      const reaction = {};
+      if (was && entry.health < was.health) reaction.hit = true;
+      if (struck.has(entry.name)) reaction.striking = true;
+      if (reaction.hit || reaction.striking) reactions[side][entry.key] = reaction;
+    }
+    reactions.fallen[side] = board[side].filter((entry) => !standing.has(entry.key));
+  }
+  return reactions;
+}
+
+/** The board as it is now, for the next draw to be diffed against. */
+function snapshotBoard(match) {
+  return {
+    id: match.id,
+    logLength: match.log.length,
+    player: snapshotTable(match.player.table),
+    opponent: snapshotTable(match.opponent.table),
+  };
+}
+
+/** One side's table, each card by its copy, its id, name and current health. */
+function snapshotTable(table) {
+  const seen = new Map();
+  return table.map((card) => ({
+    key: tableOccurrenceKey(seen, card.id),
+    id: card.id,
+    name: card.name,
+    health: card.health,
+  }));
+}
+
+/** Mark a freshly drawn card with the classes of the blow it just took or struck. */
+function markCardReaction(item, reaction) {
+  if (!reaction) return;
+  if (reaction.hit) item.classList.add("is-hit");
+  if (reaction.striking) item.classList.add("is-striking");
+}
+
+/**
+ * A card that has just left a table, drawn leaving it: the card's own art and a
+ * caption, faded and lowered off the row. It is decoration only — the match log
+ * already names the fall — so it is hidden from assistive technology and takes
+ * no pointer, and it carries no `data-card-id`, so it never reads as a card
+ * still standing on the table.
+ */
+function fallingCardItem(card) {
+  const item = document.createElement("li");
+  item.className = "match-card match-card-falling";
+  item.setAttribute("aria-hidden", "true");
+  const art = cardArtSvg(card.id, card.name);
+  if (art) item.append(art);
+  const caption = document.createElement("span");
+  caption.className = "match-card-falling-caption";
+  caption.textContent = "falls";
+  item.append(caption);
+  return item;
+}
+
+/**
  * The player's table, each card with the control that picks it to strike with.
  * The controls appear only on the player's own turn in a live match, so a
- * finished match or the opponent's turn offers no move nobody can make.
+ * finished match or the opponent's turn offers no move nobody can make. A blow
+ * the last draw missed is marked on the card here, and a card that fell since
+ * then is drawn leaving the row.
  */
-function renderPlayerTable(match, canAttack) {
+function renderPlayerTable(match, canAttack, reactions) {
   if (!matchTableList) return;
-  if (!match.player.table.length) {
-    matchTableList.replaceChildren(emptyTableItem("Your table is empty."));
-    return;
-  }
-  matchTableList.replaceChildren(
-    ...match.player.table.map((card) => {
-      const item = matchCardItem(card);
-      if (!canAttack) return item;
-      item.classList.add("match-card-action");
-      if (card.hasAttacked) item.classList.add("is-spent");
-      item.append(attackSelectControl(card));
-      return item;
-    })
-  );
+  const seen = new Map();
+  const children = match.player.table.map((card) => {
+    const item = matchCardItem(card);
+    markCardReaction(item, reactions.player[tableOccurrenceKey(seen, card.id)]);
+    if (!canAttack) return item;
+    item.classList.add("match-card-action");
+    if (card.hasAttacked) item.classList.add("is-spent");
+    item.append(attackSelectControl(card));
+    return item;
+  });
+  if (!children.length) children.push(emptyTableItem("Your table is empty."));
+  children.push(...reactions.fallen.player.map(fallingCardItem));
+  matchTableList.replaceChildren(...children);
 }
 
 /**
@@ -325,10 +429,19 @@ function renderPlayerTable(match, canAttack) {
  * behind. Like the player's own controls, these appear only on the player's own
  * turn in a live match.
  */
-function renderOpponentTable(match, canAttack) {
+function renderOpponentTable(match, canAttack, reactions) {
   if (!matchOpponentTableList) return;
+  const seen = new Map();
+  const children = match.opponent.table.map((card) => {
+    const item = matchCardItem(card);
+    markCardReaction(item, reactions.opponent[tableOccurrenceKey(seen, card.id)]);
+    if (!canAttack) return item;
+    item.classList.add("match-card-action");
+    item.append(attackTargetControl(card));
+    return item;
+  });
   if (!match.opponent.table.length) {
-    const children = [emptyTableItem(`${match.opponentName}'s table is empty.`)];
+    children.push(emptyTableItem(`${match.opponentName}'s table is empty.`));
     if (canAttack) {
       const item = document.createElement("li");
       item.className = "match-card match-card-action match-attack-hero-item";
@@ -345,18 +458,9 @@ function renderOpponentTable(match, canAttack) {
       item.append(control);
       children.push(item);
     }
-    matchOpponentTableList.replaceChildren(...children);
-    return;
   }
-  matchOpponentTableList.replaceChildren(
-    ...match.opponent.table.map((card) => {
-      const item = matchCardItem(card);
-      if (!canAttack) return item;
-      item.classList.add("match-card-action");
-      item.append(attackTargetControl(card));
-      return item;
-    })
-  );
+  children.push(...reactions.fallen.opponent.map(fallingCardItem));
+  matchOpponentTableList.replaceChildren(...children);
 }
 
 /**
@@ -622,7 +726,10 @@ function renderMatch() {
   // record honest; once there is nothing left to give up, it goes with the hand.
   if (concedeButton) concedeButton.hidden = !match || match.over;
   renderMatchResult(match);
-  if (!match) return;
+  if (!match) {
+    shownBoard = null;
+    return;
+  }
 
   if (matchOpponentName) matchOpponentName.textContent = `Opponent: ${match.opponentName}`;
   if (matchOpponentHealthLabel) matchOpponentHealthLabel.textContent = `${match.opponentName} health`;
@@ -636,12 +743,17 @@ function renderMatch() {
   if (matchFields.deckRemaining) matchFields.deckRemaining.textContent = String(match.player.deck.length);
 
   const canAttack = !match.over && match.turn === "player";
+  // The blow this draw is showing is whatever changed since the last one, read
+  // before the board is rebuilt so the fresh cards can carry it. The snapshot of
+  // the board now drawn is kept for the next comparison.
+  const reactions = reactionsToShow(shownBoard, match);
   renderMatchHand(match);
   renderCardPile(matchOpponentHandBacks, match.opponent.hand.length, "No cards in hand");
   renderCardPile(matchDeckStack, match.player.deck.length, "Deck empty");
-  renderPlayerTable(match, canAttack);
-  renderOpponentTable(match, canAttack);
+  renderPlayerTable(match, canAttack, reactions);
+  renderOpponentTable(match, canAttack, reactions);
   renderMatchLog(match);
+  shownBoard = snapshotBoard(match);
 }
 
 /** Put the refusal or confirmation in the match's always-present status line. */
