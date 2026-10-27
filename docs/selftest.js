@@ -969,6 +969,116 @@ export async function checks() {
       }
     }
 
+    // Every pile in a match holds the same kind of card: the deck is dealt as
+    // complete card objects, like the hand and the table, so a card drawn from
+    // it arrives with its real name and numbers instead of a raw id that has
+    // none. A wrong shape — a bare id string, a name of "undefined" — is what
+    // these checks are written to catch.
+    const cardShapeProblem = (where, card, { canBeDamaged = false } = {}) => {
+      if (!card || typeof card !== "object") {
+        return `${where} holds ${JSON.stringify(card)} instead of a card object, so it has no name`;
+      }
+      if (typeof card.name !== "string" || card.name.trim() === "" || card.name === "undefined") {
+        return `${where} holds a card with no real name (id "${card.id}", name ${JSON.stringify(card.name)})`;
+      }
+      const catalogCard = cardCatalog.CARD_BY_ID.get(card.id);
+      if (!catalogCard) {
+        return `${where} holds "${card.name}" with id "${card.id}", which is not in the card catalog`;
+      }
+      for (const field of ["name", "cost", "attack"]) {
+        if (card[field] !== catalogCard[field]) {
+          return (
+            `${where} holds "${card.name}" with ${field} ${JSON.stringify(card[field])} ` +
+              `instead of the catalog's ${JSON.stringify(catalogCard[field])}`
+          );
+        }
+      }
+      // A card on a table may have been worn down in a fight, so it reads
+      // between one and its printed health; a card in a hand or a deck is
+      // always at its printed health.
+      if (canBeDamaged) {
+        const fought = typeof card.health === "number" && card.health > 0 && card.health <= catalogCard.health;
+        if (!fought) {
+          return (
+            `${where} holds "${card.name}" at ${JSON.stringify(card.health)} health, which is neither the ` +
+              `${catalogCard.health} it was printed at nor a value a fight could have left it with`
+          );
+        }
+      } else if (card.health !== catalogCard.health) {
+        return (
+          `${where} holds "${card.name}" at ${JSON.stringify(card.health)} health instead of the ` +
+            `${catalogCard.health} the catalog prints`
+        );
+      }
+      return null;
+    };
+
+    const shapeDeck = ["sprout", "pebble-toad", "thornling", "sun-moth", "bramble-hound"];
+    const shape = matchEngine.createMatch(shapeDeck, { rng: fixedRng });
+
+    // A freshly dealt deck holds complete cards, not ids.
+    for (const [who, side] of [
+      ["player", shape.player],
+      ["opponent", shape.opponent],
+    ]) {
+      if (side.deck.length === 0) {
+        fail(`a match dealt the ${who} no card left in its deck, so nothing about a deck's cards can be checked`);
+      }
+      for (const card of side.deck) {
+        const problem = cardShapeProblem(`the ${who}'s deck after dealing`, card);
+        if (problem) fail(problem);
+      }
+      for (const card of side.hand) {
+        const problem = cardShapeProblem(`the ${who}'s hand after dealing`, card);
+        if (problem) fail(problem);
+      }
+    }
+
+    // The card a turn draws lands in the hand complete, under the name the log
+    // says was drawn — never blank, never "undefined".
+    const shapeLogBefore = shape.log.length;
+    const shapeDeckBefore = shape.player.deck.length;
+    matchEngine.endTurn(shape);
+    const shapeDrawLine = shape.log.slice(shapeLogBefore).find((line) => /^You draw /.test(line));
+    if (shapeDeckBefore > 0 && !shapeDrawLine) {
+      fail(`a turn began with ${shapeDeckBefore} cards left in the deck but the log never says a card was drawn`);
+    } else if (shapeDrawLine) {
+      const drawnName = shapeDrawLine.slice("You draw ".length).split(" — ")[0];
+      const drawnCard = shape.player.hand.find((card) => card.name === drawnName);
+      if (!drawnCard) {
+        fail(
+          `the log says you drew "${drawnName}" but no card with that name is in the hand — ` +
+            `the hand holds ${JSON.stringify(shape.player.hand.map((card) => card.name))}`
+        );
+      } else {
+        const problem = cardShapeProblem(`the card drawn ("${drawnName}") onto the hand`, drawnCard);
+        if (problem) fail(problem);
+      }
+    }
+
+    // Played to the bottom of the deck: with the deck spent, every card the
+    // match still shows — in hand or on either table — is complete and agrees
+    // with the catalog. A hand holding a raw id would trip this.
+    for (let turn = 0; turn < 10 && shape.player.deck.length > 0 && !shape.over; turn += 1) {
+      matchEngine.endTurn(shape);
+    }
+    if (!shape.over && shape.player.deck.length !== 0) {
+      fail(`ten turns left ${shape.player.deck.length} cards in the player's deck, so a spent deck cannot be checked`);
+    }
+    for (const [who, side] of [
+      ["player", shape.player],
+      ["opponent", shape.opponent],
+    ]) {
+      for (const card of side.hand) {
+        const problem = cardShapeProblem(`the ${who}'s hand at the bottom of the deck`, card);
+        if (problem) fail(problem);
+      }
+      for (const card of side.table) {
+        const problem = cardShapeProblem(`the ${who}'s table at the bottom of the deck`, card, { canBeDamaged: true });
+        if (problem) fail(problem);
+      }
+    }
+
     // A table is fought over. A known board — one card each side, taken from the
     // hands the fixed shuffle deals — makes the arithmetic exact: your card hits
     // the front card of the opponent's table, the hero behind it is untouched,

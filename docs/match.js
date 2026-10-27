@@ -83,15 +83,21 @@ function shuffled(ids, rng) {
   return copy;
 }
 
-/** One side of the match: full health, full energy, a dealt hand and a deck. */
+/**
+ * One side of the match: full health, full energy, a dealt hand and a deck.
+ *
+ * Every pile — hand, table and deck — holds card objects made by `cardOf`, so a
+ * card drawn from the deck is already complete and needs no conversion: a side
+ * holds one kind of card everywhere.
+ */
 function createSide(deckIds, rng) {
-  const order = shuffled(deckIds, rng);
+  const order = shuffled(deckIds, rng).map(cardOf);
   return {
     health: HERO_HEALTH,
     energy: MAX_ENERGY,
     maxEnergy: MAX_ENERGY,
     turns: 0,
-    hand: order.slice(0, STARTING_HAND).map(cardOf),
+    hand: order.slice(0, STARTING_HAND),
     table: [],
     deck: order.slice(STARTING_HAND),
   };
@@ -102,14 +108,15 @@ function createSide(deckIds, rng) {
  * first turn (never past ENERGY_CAP), refill its energy to its maximum, and draw
  * the top card of its deck while there is one. Returns the card drawn, or null
  * when the deck is spent — so the caller can say in the match log what happened,
- * in the words of the side whose turn it is.
+ * in the words of the side whose turn it is. The deck already holds complete
+ * cards, so the card drawn is pushed into the hand exactly as it came.
  */
 function beginTurn(side) {
   side.turns += 1;
   if (side.turns > 1) side.maxEnergy = Math.min(ENERGY_CAP, side.maxEnergy + 1);
   side.energy = side.maxEnergy;
   if (side.deck.length === 0) return null;
-  const card = cardOf(side.deck.shift());
+  const card = side.deck.shift();
   side.hand.push(card);
   return card;
 }
