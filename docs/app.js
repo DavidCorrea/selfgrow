@@ -13,6 +13,7 @@ import { cardArtSvg, cardBackSvg, opponentPortraitSvg } from "./cardart.js";
 import {
   CARDS,
   CARD_BY_ID,
+  CLEAR_ON_PLAY,
   DECK_LIMIT,
   DEFAULT_OPPONENT,
   DRAW_ON_PLAY,
@@ -55,12 +56,12 @@ const COLLECTION_VIEWS = ["all", "missing", "abilities"];
 // against, so a caller cannot ask for an order the page does not show.
 const COLLECTION_ORDERS = ["catalog", "cost"];
 
-// The three things a card can do the moment it is played, in the very words its
+// The four things a card can do the moment it is played, in the very words its
 // face prints them. Each ability is written once in docs/cards.js; the shared
 // "When played:" prefix is dropped here because the rule's own label already
 // says a card acts as it lands. So the rule a newcomer reads and the ability a
 // card prints are one list and cannot say different things.
-const whenPlayedEffects = [DRAW_ON_PLAY, HEAL_ON_PLAY, STRIKE_ON_PLAY].map((ability) =>
+const whenPlayedEffects = [DRAW_ON_PLAY, HEAL_ON_PLAY, STRIKE_ON_PLAY, CLEAR_ON_PLAY].map((ability) =>
   ability.replace(/^When played:\s*/, "")
 );
 

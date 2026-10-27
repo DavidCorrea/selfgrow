@@ -3909,6 +3909,7 @@ export async function checks() {
           [cardCatalog.DRAW_ON_PLAY, "draw you a card"],
           [cardCatalog.HEAL_ON_PLAY, "heal your hero"],
           [cardCatalog.STRIKE_ON_PLAY, "strike the opponent's front card"],
+          [cardCatalog.CLEAR_ON_PLAY, "sweep every card on the opponent's table"],
         ]) {
           // The rule drops the shared "When played:" prefix its own label stands
           // in for, so the rest of the ability is what must appear.
@@ -7616,6 +7617,209 @@ export async function checks() {
           `the log does not say the opponent's striker hit your "${yourFront.name}": the turn added ` +
             JSON.stringify(opponentStrikeLines)
         );
+      }
+    }
+  }
+
+  // --- A card that clears the opponent's table when it is played -------------
+
+  // The fourth when-played ability: a card whose face says so deals its damage to
+  // every card on the opponent's table at once, each on the same blow line and the
+  // same "falls — it leaves … table" line a turn's blows use — the answer to a
+  // table that has out-numbered one card's single strike. It is carried by a
+  // reward card whose art reads as a sweeping gale.
+  const clearText = cardCatalog.CLEAR_ON_PLAY;
+  const clearAmount = cardCatalog.CLEAR_ON_PLAY_AMOUNT;
+  const clearer = cardCatalog.CARD_BY_ID.get("thorn-gale");
+
+  if (typeof clearText !== "string" || !clearText.trim()) {
+    fail("docs/cards.js names no ability for a card that clears the opponent's table when played, so no card can say what it does");
+  } else if (!Number.isInteger(clearAmount) || clearAmount < 1) {
+    fail(`the clear ability deals ${JSON.stringify(clearAmount)} damage, which is not a whole positive number`);
+  } else if (!clearText.includes(String(clearAmount))) {
+    fail(
+      `the clear ability reads ${JSON.stringify(clearText)}, which does not name the ${clearAmount} it deals by, ` +
+        "so the card's face and the trigger can disagree"
+    );
+  } else if (clearer?.ability !== clearText) {
+    fail(
+      `"${clearer?.name ?? "?"}" carries the ability ${JSON.stringify(clearer?.ability ?? null)} instead of ` +
+        `${JSON.stringify(clearText)}, so the card that reads as a sweep does not clear the table when played`
+    );
+  } else if (!cardCatalog.REWARD_POOL.includes(clearer.id)) {
+    fail(
+      `"${clearer.name}" carries the clear ability but is not in the reward pool, so a win can never add it ` +
+        "to a collection"
+    );
+  } else {
+    // The line is on the face wherever the card is shown: the collection, and the
+    // card a win earns.
+    const collectionClearFace = document.querySelector('#collection-list [data-card-id="thorn-gale"]');
+    if (faceAbility(collectionClearFace) !== clearText) {
+      fail(
+        `the clearer shown in the collection does not say "${clearText}" on its face ` +
+          `(it reads ${JSON.stringify(faceAbility(collectionClearFace))})`
+      );
+    }
+    const rewardClearFace = game.awardCardFigure(clearer);
+    if (faceAbility(rewardClearFace) !== clearText) {
+      fail(
+        `the earned-card face of Thorn Gale does not say "${clearText}" on its face ` +
+          `(it reads ${JSON.stringify(faceAbility(rewardClearFace))})`
+      );
+    }
+
+    if (!matchEngine || typeof game.continueMatch !== "function") {
+      fail("the match engine or the continue-match action is missing, so the clear-on-play trigger cannot be checked");
+    } else {
+      // Through the board a player sees: a clearer in hand and a mixed opposing
+      // table — two cards the sweep should kill, one healthy card it should only
+      // wound, and the hero behind them all it must never touch.
+      const savedClearBoard = collection.saveMatch({
+        id: "check-clear-on-play",
+        opponentName: cardCatalog.OPPONENT_NAME,
+        turn: "player",
+        over: false,
+        winner: null,
+        outcome: null,
+        recorded: false,
+        player: {
+          health: 20,
+          energy: 5,
+          maxEnergy: 5,
+          turns: 1,
+          hand: [
+            { id: "thorn-gale", health: 4, hasAttacked: false },
+            { id: "pebble-toad", health: 2, hasAttacked: false },
+          ],
+          table: [],
+          deck: [{ id: "sun-moth", health: 3, hasAttacked: false }],
+        },
+        opponent: {
+          health: 20,
+          energy: 1,
+          maxEnergy: 1,
+          turns: 0,
+          hand: [],
+          table: [
+            { id: "pebble-toad", health: 1, hasAttacked: false },
+            { id: "thornling", health: 1, hasAttacked: false },
+            { id: "mudback-turtle", health: 5, hasAttacked: false },
+          ],
+          deck: [],
+        },
+        log: ["A match set up to play a card that clears the opponent's table."],
+      });
+      if (!savedClearBoard) {
+        fail("a controlled board with a clearer in hand could not be saved, so the clear-on-play trigger cannot be checked");
+      } else {
+        game.refreshSavedMatch();
+        let clearBoard = null;
+        try {
+          clearBoard = game.continueMatch();
+        } catch (e) {
+          fail(`a controlled board with a clearer in hand could not be loaded — ${e.message}`);
+        }
+
+        if (clearBoard?.match) {
+          const clearerInHand = document.querySelector('#match-hand [data-card-id="thorn-gale"]');
+          if (faceAbility(clearerInHand) !== clearText) {
+            fail(
+              `the clearer in your hand does not say "${clearText}" on its face ` +
+                `(it reads ${JSON.stringify(faceAbility(clearerInHand))})`
+            );
+          }
+
+          const beforePlay = game.readState().match;
+          const clearerInState = beforePlay.hand.find((card) => card.id === "thorn-gale");
+          if (clearerInState?.ability !== clearText) {
+            fail(
+              `an agent reading your hand sees the clearer's ability as ` +
+                `${JSON.stringify(clearerInState?.ability ?? null)} instead of ${JSON.stringify(clearText)}`
+            );
+          }
+
+          // Played through the tool an agent uses, so the ability is usable by an
+          // agent and not only by a visitor; it falls back to the page action
+          // only so the checks below still run when the tool is missing.
+          const playClearTool = toolNamed("play-card");
+          if (!playClearTool) {
+            fail('no "play-card" tool is declared, so an agent cannot play the clearer a visitor can');
+          }
+          const tableBefore = beforePlay.opponentTable.map((card) => ({ id: card.id, health: card.health }));
+          const theirHeroBefore = beforePlay.opponentHealth;
+          const logBefore = beforePlay.log.length;
+          const played = playClearTool
+            ? await playClearTool.execute({ cardId: "thorn-gale" })
+            : game.playMatchCard("thorn-gale");
+          const afterPlay = played.match;
+          const tableAfter = afterPlay.opponentTable || [];
+          const clearLines = afterPlay.log.slice(logBefore);
+
+          if (afterPlay.opponentHealth !== theirHeroBefore) {
+            fail(
+              `clearing the opponent's table left its hero at ${afterPlay.opponentHealth} instead of ` +
+                `${theirHeroBefore}, so the sweep went past the cards in front of it`
+            );
+          }
+
+          // Every card taken loses exactly the amount on the face, and a card worn
+          // to 0 leaves the table with the usual fall line behind it.
+          for (const card of tableBefore) {
+            const name = cardCatalog.CARD_BY_ID.get(card.id)?.name ?? card.id;
+            const expected = Math.max(0, card.health - clearAmount);
+            const survivor = tableAfter.find((entry) => entry.id === card.id);
+            if (expected === 0) {
+              if (survivor) {
+                fail(
+                  `the "${name}" was worn to 0 by the sweep but stayed on the table at ${survivor.health} health`
+                );
+                continue;
+              }
+              const fallLine = clearLines.find((line) => line.includes(name) && /falls/i.test(line));
+              if (!fallLine) {
+                fail(
+                  `the match log never says "${name}", worn to 0 by the sweep, left the table: the play added ` +
+                    JSON.stringify(clearLines)
+                );
+              } else if (!/opponent's table/i.test(fallLine)) {
+                fail(`the log says "${name}" fell without saying which table it left: "${fallLine}"`);
+              }
+            } else if (!survivor || survivor.health !== expected) {
+              fail(
+                `the sweep left the opponent's "${name}" at ` +
+                  `${survivor ? survivor.health : "(gone)"} health instead of ${expected}`
+              );
+            }
+          }
+
+          // One blow line per card the sweep crossed, each naming the card and what
+          // it has left — the way the log already reports a single blow.
+          const sweptBlows = clearLines.filter((line) => line.includes("Thorn Gale") && line.includes("deals"));
+          if (sweptBlows.length !== tableBefore.length) {
+            fail(
+              `the sweep logged ${sweptBlows.length} blow(s) for a table of ${tableBefore.length} card(s): ` +
+                JSON.stringify(clearLines)
+            );
+          }
+          for (const card of tableBefore) {
+            const name = cardCatalog.CARD_BY_ID.get(card.id)?.name ?? card.id;
+            const expected = Math.max(0, card.health - clearAmount);
+            if (!clearLines.some((line) => line.includes(name) && line.includes(`${expected} health left`))) {
+              fail(
+                `the log never shows the swept "${name}" at ${expected} health left: ` +
+                  JSON.stringify(clearLines)
+              );
+            }
+          }
+
+          if (faceAbility(document.querySelector('#match-table [data-card-id="thorn-gale"]')) !== clearText) {
+            fail(
+              `the clearer on the table does not say "${clearText}" on its face, so the card reads differently ` +
+                "there than in the collection"
+            );
+          }
+        }
       }
     }
   }
