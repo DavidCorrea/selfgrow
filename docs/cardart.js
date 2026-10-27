@@ -455,6 +455,34 @@ const CARD_ART = new Map([
       `,
     },
   ],
+  [
+    "gustling",
+    {
+      description: "A small whirl: a rounded gust with two leaf-wings and a seed at its centre",
+      inner: `
+        <path class="art-body" d="M48 22 C57 23 64 31 64 41 C64 49 57 54 48 54 C39 54 32 49 32 41 C32 31 39 23 48 22 Z" />
+        <path class="art-body" d="M33 33 C24 22 13 25 9 35 C17 44 28 44 34 38 Z" />
+        <path class="art-body" d="M63 33 C72 22 83 25 87 35 C79 44 68 44 62 38 Z" />
+        <circle class="art-accent" cx="48" cy="40" r="4.5" />
+      `,
+    },
+  ],
+  [
+    "storm-roc",
+    {
+      description: "A broad-winged bird: spread wings, a beaked head and a forked tail",
+      inner: `
+        <path class="art-body" d="M38 28 C28 20 13 23 9 33 C17 40 28 42 38 38 Z" />
+        <path class="art-body" d="M58 28 C68 20 83 23 87 33 C79 40 68 42 58 38 Z" />
+        <path class="art-body" d="M48 20 C54 20 58 25 58 31 L58 44 C58 50 54 54 48 54 C42 54 38 50 38 44 L38 31 C38 25 42 20 48 20 Z" />
+        <circle class="art-body" cx="48" cy="17" r="7" />
+        <path class="art-body" d="M52 13 L62 17 L52 21 Z" />
+        <path class="art-body" d="M42 52 L35 62 L47 56 Z" />
+        <path class="art-body" d="M54 52 L61 62 L49 56 Z" />
+        <circle class="art-accent" cx="49" cy="16" r="2" />
+      `,
+    },
+  ],
 ]);
 
 /**

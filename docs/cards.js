@@ -103,6 +103,13 @@ export const CARDS = [
   // ability, the one that answers a table of cheap cards at once rather than one
   // card at a time.
   { id: "thorn-gale", name: "Thorn Gale", cost: 5, attack: 3, health: 4, ability: CLEAR_ON_PLAY },
+  // Two more sweeping cards, spread across the cost curve so the clear ability
+  // is a tool a deck can be built around rather than a single lucky reward: a
+  // cheap body a player can hold for the early turns, and a heavy one for a deck
+  // that has survived into the late game. Both read as gusts that cross a whole
+  // table and both print the clear ability in the same words as Thorn Gale.
+  { id: "gustling", name: "Gustling", cost: 3, attack: 2, health: 2, ability: CLEAR_ON_PLAY },
+  { id: "storm-roc", name: "Storm Roc", cost: 6, attack: 5, health: 6, ability: CLEAR_ON_PLAY },
 ];
 
 /** Lookup by id — the shape the saved collection speaks in. */
@@ -161,6 +168,8 @@ export const REWARD_POOL = [
   "granite-warden",
   "ironbark-titan",
   "thorn-gale",
+  "gustling",
+  "storm-roc",
 ];
 
 /**
