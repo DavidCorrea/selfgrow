@@ -181,6 +181,18 @@ export const CARDS = [
   // reason to leave one standing. It is a reward card, like the other two, so the
   // ability is met by collecting toward it and can then be built around.
   { id: "whipthorn", name: "Whipthorn", cost: 2, attack: 2, health: 2, fallAbility: STRIKE_ON_FALL },
+  // Two fall cards higher on the cost curve, so a deck built around trading cards
+  // away has something to spend a late turn on rather than only an early trick.
+  // Lantern Bough is the first fall card that is not cheap: a lit bough whose
+  // lantern hands its owner a card as the branch is cut down, on a body big
+  // enough to be played on turn four. It carries the draw the Seed Pod carries
+  // and no when-played ability, so the card does one thing and does it as it goes.
+  { id: "lantern-bough", name: "Lantern Bough", cost: 4, attack: 3, health: 4, fallAbility: DRAW_ON_FALL },
+  // Thornback Behemoth is the heavy end of the same idea: a thorn-ridged beast
+  // that strikes the opponent's front card as it falls. It is the biggest card
+  // that answers its own removal, so clearing it is a real cost in the late
+  // game instead of a free sweep, and a fall deck has a threat worth building to.
+  { id: "thornback-behemoth", name: "Thornback Behemoth", cost: 6, attack: 7, health: 6, fallAbility: STRIKE_ON_FALL },
 ];
 
 /** Lookup by id — the shape the saved collection speaks in. */
@@ -248,6 +260,10 @@ export const REWARD_POOL = [
   // Appended for the same reason: a save written before the whip existed keeps
   // the next-reward order it already had.
   "whipthorn",
+  // Appended again, so a save written before these two existed keeps its next
+  // reward and its place in the queue untouched.
+  "lantern-bough",
+  "thornback-behemoth",
 ];
 
 /**
