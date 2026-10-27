@@ -160,8 +160,11 @@ export const REWARD_POOL = [
  * spends its turn: `"dearest"` plays the biggest body it can afford, `"cheapest"`
  * plays its smallest cards first so its table fills with several at once — the
  * choice that makes the kind of deck its `description` promises the kind of match
- * it plays. The first entry is the opponent a match is against unless the player
- * picks another.
+ * it plays. Each deck also brings a card that does something as it lands, chosen
+ * to suit that same promise — the slow, wearing character mends, the fast ones
+ * strike — so a player meets the ability inside a match and learns to watch for
+ * it on the opponent's turn. The first entry is the opponent a match is against
+ * unless the player picks another.
  */
 export const OPPONENTS = [
   {
@@ -176,7 +179,7 @@ export const OPPONENTS = [
       "mudback-turtle",
       "thornling",
       "glowcap",
-      "bramble-hound",
+      "dewdrop-nymph",
       "moon-bloom",
       "cinder-shrike",
       "sun-moth",
