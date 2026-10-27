@@ -73,6 +73,26 @@ function starterCards() {
 }
 
 /**
+ * A ready-to-play deck built from what a player owns: the catalog walked in
+ * order, taking one entry per owned copy of each card until `DECK_LIMIT` is
+ * reached. Every id is one the collection holds, no id appears more times than
+ * its copies, and the result is derived from the collection alone — so it is the
+ * same deck every time and can be checked.
+ */
+function starterDeck(cards) {
+  const owned = new Map(cards.map((card) => [card.id, card.copies]));
+  const deck = [];
+  for (const card of CARDS) {
+    const copies = owned.get(card.id) ?? 0;
+    for (let copy = 0; copy < copies && deck.length < DECK_LIMIT; copy += 1) {
+      deck.push(card.id);
+    }
+    if (deck.length === DECK_LIMIT) break;
+  }
+  return deck;
+}
+
+/**
  * Read a raw saved payload into a collection, or null when there is nothing
  * usable in it. Entries that name an unknown card or a nonsense copy count are
  * dropped; duplicate ids are added together. The result is in catalog order, so
@@ -452,8 +472,14 @@ export function recordResult(outcome, matchId, storage = defaultStorage()) {
 
 /**
  * The game to open with: the saved collection and deck when there is a usable
- * save, otherwise the starter collection and an empty deck, saved so the next
- * visit finds them.
+ * save, otherwise the starter collection and a ready-to-play deck built from it,
+ * saved so the next visit finds them.
+ *
+ * A deck is dealt rather than left empty so a first visit opens with a game in
+ * hand: a saved deck is always returned untouched, but a save with no deck — or
+ * none at all — is given the same default, built from the cards the player owns.
+ * A card once placed can still be taken out on the Collection screen, so the
+ * default is a starting point rather than a locked deck.
  *
  * `saved` says whether the player's cards and deck will still be here after they
  * close the page — false when storage is blocked or the write failed, which the
@@ -463,18 +489,25 @@ export function loadGame(storage = defaultStorage()) {
   const progress = readProgress(storage);
   const cards = readCollection(storage);
   if (cards) {
-    return {
-      cards,
-      deck: readDeck(storage),
-      wins: progress.wins,
-      matches: progress.matches,
-      saved: storage?.durable !== false,
-    };
+    const saved = readDeck(storage);
+    if (saved.length > 0) {
+      return {
+        cards,
+        deck: saved,
+        wins: progress.wins,
+        matches: progress.matches,
+        saved: storage?.durable !== false,
+      };
+    }
+    const deck = starterDeck(cards);
+    const wrote = saveDeck(cards, deck, storage);
+    return { cards, deck, wins: progress.wins, matches: progress.matches, saved: wrote && storage?.durable !== false };
   }
 
   const starter = starterCards();
-  const wrote = saveDeck(starter, [], storage);
-  return { cards: starter, deck: [], wins: 0, matches: 0, saved: wrote && storage?.durable !== false };
+  const deck = starterDeck(starter);
+  const wrote = saveDeck(starter, deck, storage);
+  return { cards: starter, deck, wins: 0, matches: 0, saved: wrote && storage?.durable !== false };
 }
 
 /** How many cards the collection holds, copies counted. */

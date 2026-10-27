@@ -129,8 +129,16 @@ export async function checks() {
     }
   }
 
-  if (state.deckSize !== 0) {
-    fail(`a first visit has no deck yet, but the page reports ${state.deckSize} card(s) in it`);
+  // A first visit is dealt a ready-to-play deck built from the starter
+  // collection, so Play and Start match work without a trip to the Collection.
+  if (state.deckSize !== 10) {
+    fail(`a first visit should open with a ready-to-play deck of ten cards, but the page reports ${state.deckSize}`);
+  }
+  if (state.deckSize < state.minimumDeckSize) {
+    fail(
+      `a first visit's deck holds ${state.deckSize} card(s), fewer than the ${state.minimumDeckSize} a match needs, ` +
+        "so a new player could not start a match"
+    );
   }
   if (state.cardsOwned < 10) {
     fail(
@@ -870,14 +878,109 @@ export async function checks() {
   const addControl = (id) => document.querySelector(`[data-deck-add="${id}"]`);
   const removeControl = (id) => document.querySelector(`[data-deck-remove="${id}"]`);
 
-  // A visit with no save at all is dealt the starter collection and starts with
-  // an empty deck — the state a reload builds from nothing.
+  // A visit with no save at all is dealt the starter collection and a
+  // ready-to-play deck built from it — the state a reload builds from nothing.
   const fresh = collection.loadGame(stubStorage());
   if (fresh.cards.length < 10) {
     fail(`a first visit with no save should be dealt the starter collection, but loadGame gave ${fresh.cards.length} card(s)`);
   }
-  if (fresh.deck.length !== 0) {
-    fail(`a first visit should start with an empty deck, but loadGame gave ${fresh.deck.length} card(s) in it`);
+  if (fresh.deck.length !== cardCatalog.DECK_LIMIT) {
+    fail(
+      `a first visit with no save should be dealt a ready-to-play deck of ${cardCatalog.DECK_LIMIT} cards, ` +
+        `but loadGame gave ${fresh.deck.length}`
+    );
+  }
+  // The deck is derivable: the catalog walked in order, one entry per owned copy,
+  // stopping at the limit. So every id is owned, no id appears more times than
+  // the player owns it, and the deck never breaks its own limit.
+  const freshOwnedCopies = new Map(fresh.cards.map((card) => [card.id, card.copies]));
+  const catalogOrder = cardCatalog.CARDS.map((card) => card.id);
+  const freshInCatalogOrder = [...fresh.deck].sort(
+    (a, b) => catalogOrder.indexOf(a) - catalogOrder.indexOf(b)
+  );
+  if (JSON.stringify(fresh.deck) !== JSON.stringify(freshInCatalogOrder)) {
+    fail(
+      `the starter deck is not in catalog order, so it cannot be derived: it reads ${JSON.stringify(fresh.deck)}`
+    );
+  }
+  for (const id of new Set(fresh.deck)) {
+    const held = fresh.deck.filter((inDeck) => inDeck === id).length;
+    const ownedOf = freshOwnedCopies.get(id) ?? 0;
+    if (held > ownedOf) {
+      fail(
+        `the starter deck holds "${id}" ${held} times although the player owns ${ownedOf} — ` +
+          "a deck may never hold more copies of a card than are owned"
+      );
+    }
+  }
+  if (fresh.deck.some((id) => !freshOwnedCopies.has(id))) {
+    fail(`the starter deck names a card the player does not own: ${JSON.stringify(fresh.deck)}`);
+  }
+
+  // A saved collection whose deck was saved empty is dealt the starter deck too,
+  // so a player who cleared their deck is not locked out of playing; a saved deck
+  // that holds cards is returned exactly as it was saved.
+  const savedEmptyDeck = collection.loadGame(
+    stubStorage({
+      [collection.STORAGE_KEY]: JSON.stringify({
+        version: 1,
+        cards: owned.cards.map(({ id, copies }) => ({ id, copies })),
+        deck: [],
+      }),
+    })
+  );
+  if (savedEmptyDeck.deck.length !== cardCatalog.DECK_LIMIT) {
+    fail(
+      `a saved empty deck was not replaced by a ready-to-play deck: loadGame gave ${savedEmptyDeck.deck.length} card(s)`
+    );
+  } else if (!sameCards(savedEmptyDeck.cards, owned.cards)) {
+    fail("dealing a starter deck for an empty saved deck changed the cards the player owns");
+  }
+
+  // A returning player with a deck of their own keeps exactly that deck: the
+  // default is only ever supplied when no deck was saved.
+  const customDeck = [ownedIds[1], ownedIds[0], ownedIds[0]];
+  const savedCustomDeck = collection.loadGame(
+    stubStorage({
+      [collection.STORAGE_KEY]: JSON.stringify({
+        version: 1,
+        cards: owned.cards.map(({ id, copies }) => ({ id, copies })),
+        deck: customDeck,
+      }),
+    })
+  );
+  if (JSON.stringify(savedCustomDeck.deck) !== JSON.stringify(customDeck)) {
+    fail(
+      `a returning player's saved deck was changed: read ${JSON.stringify(savedCustomDeck.deck)} ` +
+        `instead of ${JSON.stringify(customDeck)}`
+    );
+  }
+
+  // The live page opened on the starter deck. Clearing it here proves every card
+  // in the dealt deck can be taken back out — the default is a starting point,
+  // not a locked deck — and leaves the state the rest of these checks build from.
+  const dealtDeck = deckIds();
+  if (dealtDeck.length === 0) {
+    fail("the page opened with no deck, though a first visit should be dealt a ready-to-play one");
+  }
+  for (let guard = 0; deckIds().length > 0 && guard < 30; guard += 1) {
+    const id = deckIds()[0];
+    const before = heldCopies(id);
+    const button = removeControl(id);
+    if (!button) {
+      fail(`the dealt deck holds "${id}" but the collection screen offers no way to remove it`);
+      break;
+    }
+    button.click();
+    if (heldCopies(id) !== before - 1) {
+      fail(
+        `removing "${id}" from the dealt deck left ${heldCopies(id)} of its ${before} copies instead of ${before - 1}`
+      );
+      break;
+    }
+  }
+  if (deckIds().length !== 0) {
+    fail(`the dealt deck could not be emptied on the collection screen: ${deckIds().length} card(s) remain`);
   }
 
   // A card owned in several copies can be put in the deck that many times, so a
