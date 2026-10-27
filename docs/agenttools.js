@@ -64,28 +64,10 @@ export function tools() {
         return readCollection();
       },
     },
-    {
-      name: "add-card-to-deck",
-      title: "Add an owned card to your deck",
-      description:
-        "Adds one owned copy of a card to your deck, exactly as pressing its \"Add … to deck\" button on the Collection screen does. A card owned in three copies can go in the deck three times, each call adding one more, up to the deck's limit of ten. Refused, with the reason, when the card is not owned, when every copy you own is already in the deck (the reason names how many you own), or when the deck is already at its limit of ten. Returns the state afterwards so you can see the deck it changed.",
-      inputSchema: {
-        type: "object",
-        properties: {
-          cardId: {
-            type: "string",
-            description: "The id of the owned card to add, as list-collection reports it.",
-          },
-        },
-        required: ["cardId"],
-        additionalProperties: false,
-      },
-      annotations: { readOnlyHint: false, consequentialHint: false },
-      example: { cardId: "sprout" },
-      async execute(input = {}) {
-        return addCardToDeck(input.cardId);
-      },
-    },
+    // A first visit opens with a full ten-card deck, so removal is declared
+    // before addition: each tool's example must be a move that really works on
+    // the page the visitor is actually looking at, and on a full deck an add can
+    // only follow a remove.
     {
       name: "remove-card-to-deck",
       title: "Remove a card from your deck",
@@ -106,6 +88,28 @@ export function tools() {
       example: { cardId: "sprout" },
       async execute(input = {}) {
         return removeCardFromDeck(input.cardId);
+      },
+    },
+    {
+      name: "add-card-to-deck",
+      title: "Add an owned card to your deck",
+      description:
+        "Adds one owned copy of a card to your deck, exactly as pressing its \"Add … to deck\" button on the Collection screen does. A card owned in three copies can go in the deck three times, each call adding one more, up to the deck's limit of ten. Refused, with the reason, when the card is not owned, when every copy you own is already in the deck (the reason names how many you own), or when the deck is already at its limit of ten. Returns the state afterwards so you can see the deck it changed.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          cardId: {
+            type: "string",
+            description: "The id of the owned card to add, as list-collection reports it.",
+          },
+        },
+        required: ["cardId"],
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: false, consequentialHint: false },
+      example: { cardId: "sprout" },
+      async execute(input = {}) {
+        return addCardToDeck(input.cardId);
       },
     },
     {
