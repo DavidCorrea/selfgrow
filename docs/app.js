@@ -1906,6 +1906,24 @@ function deckCostCurve() {
     .map(([cost, count]) => ({ cost, count }));
 }
 
+/**
+ * The deck's strength as two sums: the attack it brings and the health it can
+ * absorb, over the same cards the deck panel draws, so the totals and the deck
+ * can never disagree. Null for an empty deck, so nothing is shown where there
+ * is nothing to total.
+ */
+function deckTotals() {
+  const cards = listDeckCards(state.deck);
+  if (!cards.length) return null;
+  return cards.reduce(
+    (totals, card) => ({
+      attack: totals.attack + card.attack,
+      health: totals.health + card.health,
+    }),
+    { attack: 0, health: 0 }
+  );
+}
+
 /** One row of the cost curve: the cost it is at, and how many of the deck's cards have it. */
 function deckCurveRow({ cost, count }) {
   const item = document.createElement("li");
@@ -1937,10 +1955,18 @@ function renderDeckCurve() {
   if (!block) return;
 
   const rows = deckCostCurve();
+  const totals = deckTotals();
   block.hidden = rows.length === 0;
 
   const list = document.getElementById("deck-curve-list");
   if (list) list.replaceChildren(...rows.map(deckCurveRow));
+
+  // The totals are shown beside the curve, in the same block that hides for an
+  // empty deck, so an empty deck still reads only its own empty note.
+  const attack = document.getElementById("deck-total-attack");
+  const health = document.getElementById("deck-total-health");
+  if (attack) attack.textContent = totals ? String(totals.attack) : "";
+  if (health) health.textContent = totals ? String(totals.health) : "";
 }
 
 /** Draw the whole Collection screen: the card set, which view it is in, and the deck beside it. */
@@ -1998,10 +2024,11 @@ function commitDeck() {
 /**
  * Everything the page currently shows: the screen that is open, how many cards
  * the player owns and how many are different out of the whole set, the deck — its
- * size, its limit, the fewest cards a match needs, the cards themselves, and its
- * `deckCurve` shape (one `{ cost, count }` per energy cost the deck holds) —
- * whether it will survive closing the page, how many matches have been played and
- * won, the result of the last finished match (whether it was a win or a loss, the
+ * size, its limit, the fewest cards a match needs, the cards themselves, its
+ * `deckCurve` shape (one `{ cost, count }` per energy cost the deck holds) and
+ * its strength as two sums (`deckAttack` and `deckHealth`, both null for an
+ * empty deck) — whether it will survive closing the page, how many matches have
+ * been played and won, the result of the last finished match (whether it was a win or a loss, the
  * card a win awarded, whether that completed the set, and `firstWin` — whether
  * that win was the player's first against that opponent), which card the
  * Collection screen marks as newly collected (`newlyCollected` — the id of the
@@ -2026,6 +2053,7 @@ function commitDeck() {
  */
 export function readState() {
   const nextReward = nextRewardCard();
+  const deckTotal = deckTotals();
 
   // Only the actions a visitor can actually reach: a control this screen hides
   // — on its own or inside a hidden section — is not something they can press,
@@ -2067,6 +2095,12 @@ export function readState() {
     // — the same rows the Collection screen draws under the deck. Empty for an
     // empty deck, matching the note the screen shows instead of a curve.
     deckCurve: deckCostCurve(),
+    // The deck's strength as two sums: the attack it brings (`deckAttack`) and
+    // the health it can absorb (`deckHealth`), over the same cards the deck panel
+    // draws and shown beside its cost curve. Null for an empty deck, matching
+    // the note the screen shows instead of totals of zero.
+    deckAttack: deckTotal ? deckTotal.attack : null,
+    deckHealth: deckTotal ? deckTotal.health : null,
     wins: state.wins,
     matchesPlayed: state.matchesPlayed,
     // What the Play screen tells a newcomer about a match, and whether that strip

@@ -142,6 +142,20 @@
                after losing. Hidden for an empty deck, which shows only its own
                empty note above. -->
           <div class="deck-curve" id="deck-curve" hidden>
+            <!-- The deck's strength beside its shape: what it hits for and what
+                 it can absorb, each a labelled value, so a change to the deck
+                 shows what it did to the deck. Hidden with the curve for an
+                 empty deck, which shows only its own empty note. -->
+            <dl class="deck-totals" id="deck-totals">
+              <div class="deck-total-row">
+                <dt class="deck-total-label">Total attack</dt>
+                <dd class="deck-total-value"><span id="deck-total-attack"></span></dd>
+              </div>
+              <div class="deck-total-row">
+                <dt class="deck-total-label">Total health</dt>
+                <dd class="deck-total-value"><span id="deck-total-health"></span></dd>
+              </div>
+            </dl>
             <h4 class="deck-curve-heading" id="deck-curve-heading">Cost curve</h4>
             <ul
               class="deck-curve-list"

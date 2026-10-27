@@ -603,6 +603,36 @@ body {
   border-top: 1px solid var(--edge);
 }
 
+/* The deck's strength beside its curve: total attack and total health as a
+   labelled row each, so what a change to the deck did to the deck is read the
+   moment the deck changes. */
+.deck-totals {
+  display: grid;
+  gap: 0.2rem;
+  margin: 0;
+  padding-top: 0.45rem;
+}
+
+.deck-total-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.deck-total-label {
+  color: var(--ink-muted);
+  font-weight: 600;
+}
+
+.deck-total-value {
+  margin: 0;
+  color: var(--foil);
+  font-weight: 700;
+}
+
 .deck-curve-heading {
   margin: 0;
   padding-top: 0.45rem;
