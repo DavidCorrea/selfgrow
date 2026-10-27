@@ -613,6 +613,61 @@ export function loadGame(storage = defaultStorage()) {
   };
 }
 
+// --------------------------------------------------------------------------
+// The save code
+// --------------------------------------------------------------------------
+
+/**
+ * The marker every save code carries inside its JSON, so a code written by this
+ * game can be told apart from any other text a player pastes back in. It is the
+ * same word for every version, so a future restore reads the app first and the
+ * version second.
+ */
+export const SAVE_CODE_APP = "selfgrow";
+
+// The version stamped into a save code, kept apart from the storage version: a
+// code written to an older shape is refused by its own number rather than being
+// read as if it were the same.
+const SAVE_CODE_VERSION = 1;
+
+/** Base64 of the UTF-8 bytes of `text`, so the code survives being pasted between apps. */
+function base64Encode(text) {
+  const bytes = new TextEncoder().encode(text);
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary);
+}
+
+/**
+ * The whole saved game as one short text code: the collection with its copy
+ * counts, the deck, the wins, the matches, the last match recorded and the
+ * record held against each opponent, written as JSON under this game's marker
+ * and version and then base64-encoded.
+ *
+ * It is read-only — it is derived from what is already saved and writes nothing
+ * — and it is normalized through the same readers the game uses, so a save that
+ * is missing a field still produces a valid code rather than a broken one. The
+ * same game always produces the same code, so a caller can compare one against
+ * another.
+ */
+export function saveCode(storage = defaultStorage()) {
+  const payload = readPayload(storage);
+  const cards = normalizeCollection(payload) ?? starterCards();
+  const progress = readProgress(storage);
+  return base64Encode(
+    JSON.stringify({
+      app: SAVE_CODE_APP,
+      version: SAVE_CODE_VERSION,
+      cards,
+      deck: normalizeDeck(payload, cards),
+      wins: progress.wins,
+      matches: progress.matches,
+      lastMatchId: progress.lastMatchId,
+      opponents: progress.opponents,
+    })
+  );
+}
+
 /** How many cards the collection holds, copies counted. */
 export function collectionSize(cards) {
   return cards.reduce((total, card) => total + card.copies, 0);

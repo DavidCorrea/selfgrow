@@ -254,7 +254,8 @@ body {
 #screen-collection .deck,
 #screen-collection .set,
 #screen-collection .deck-message,
-#screen-collection .storage-note {
+#screen-collection .storage-note,
+#screen-collection .save-code {
   grid-column: 1 / -1;
 }
 
@@ -770,6 +771,76 @@ body {
   border-radius: var(--radius-control);
   color: var(--ink);
   font-size: 0.9rem;
+}
+
+/* The whole game as one save code: a heading, a line about what it is for, and
+   the one control that reveals it. The panel and the code box only draw once
+   the code is on screen. */
+.save-code {
+  display: grid;
+  gap: 0.6rem;
+  justify-items: start;
+}
+
+.save-code-heading {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+/* The revealed code: a labelled box a player can read, select by hand or copy
+   in one press, beside the button that copies it. */
+.save-code-panel {
+  display: grid;
+  gap: 0.5rem;
+  width: 100%;
+  min-width: 0;
+}
+
+.save-code-panel[hidden] {
+  display: none;
+}
+
+.save-code-label {
+  color: var(--ink-muted);
+  font-size: 0.9rem;
+  letter-spacing: 0.02em;
+}
+
+/* Monospace, because a save code is a string to copy rather than prose to read,
+   and wrapping, because a phone has no room for one long line — the whole code
+   must be reachable rather than scrolled off the edge. */
+.save-code-text {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  padding: 0.6rem 0.7rem;
+  border: 1px solid var(--edge);
+  border-radius: var(--radius-control);
+  background: var(--card);
+  color: var(--ink);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  resize: vertical;
+}
+
+/* The words that say whether the code is on screen or was copied, in the same
+   live-region frame as the deck message. Always in the page, never displayed
+   away, so a screen reader hears the change. */
+.save-code-status {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.save-code-status:not(:empty) {
+  padding: 0.7rem 0.9rem;
+  border: 1px solid var(--edge);
+  border-left: 3px solid var(--foil);
+  border-radius: var(--radius-control);
 }
 
 /* --------------------------------------------------------------------------

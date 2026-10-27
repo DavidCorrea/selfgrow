@@ -9699,6 +9699,207 @@ export async function checks() {
     fail("a controlled match could not be saved, so what a first win says cannot be checked");
   }
 
+  // --- A save code that carries the whole game ------------------------------
+
+  // The whole game as one text code, so a player can keep their cards, deck and
+  // record somewhere safe instead of losing them when site data is cleared or
+  // the game moves to another browser. The code is derived from the saved
+  // payload, so it is read-only and the same game always gives the same code.
+  const decodeSaveCode = (code) => {
+    const binary = atob(code);
+    const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
+    return JSON.parse(new TextDecoder().decode(bytes));
+  };
+
+  const codeOnce = collection.saveCode();
+  const codeTwice = collection.saveCode();
+  if (typeof codeOnce !== "string" || codeOnce.length === 0) {
+    fail("collection.saveCode() returned no code, so a player has nothing to keep");
+  } else if (codeOnce !== codeTwice) {
+    fail("collection.saveCode() returned two different codes for the same game, so a saved code cannot be trusted");
+  } else {
+    let decoded = null;
+    try {
+      decoded = decodeSaveCode(codeOnce);
+    } catch (error) {
+      fail(`the save code does not decode back to JSON, so it cannot be restored: ${error.message}`);
+    }
+    if (decoded) {
+      if (decoded.app !== collection.SAVE_CODE_APP) {
+        fail(
+          `the save code is marked app ${JSON.stringify(decoded.app)} instead of ` +
+            `${JSON.stringify(collection.SAVE_CODE_APP)}, so a code from this game cannot be told from a foreign one`
+        );
+      }
+      if (!Number.isInteger(decoded.version) || decoded.version < 1) {
+        fail(`the save code carries version ${JSON.stringify(decoded.version)}, which a restore cannot read`);
+      }
+
+      const heldCards = game.readCollection().ownedCards;
+      if (!sameCards(decoded.cards ?? [], heldCards)) {
+        fail(
+          `the save code's cards ${JSON.stringify(decoded.cards)} do not match the collection the page shows ` +
+            `${JSON.stringify(asIdCopies(heldCards))}`
+        );
+      }
+
+      const liveDeck = game.readState().deck.map((card) => card.id);
+      if (JSON.stringify(decoded.deck) !== JSON.stringify(liveDeck)) {
+        fail(
+          `the save code's deck ${JSON.stringify(decoded.deck)} does not match the deck the page holds ` +
+            `${JSON.stringify(liveDeck)}`
+        );
+      }
+
+      const progress = collection.readProgress();
+      if (decoded.wins !== progress.wins || decoded.matches !== progress.matches) {
+        fail(
+          `the save code reports ${decoded.wins} win(s) and ${decoded.matches} match(es) instead of ` +
+            `${progress.wins} and ${progress.matches}`
+        );
+      }
+      if (JSON.stringify(decoded.opponents ?? {}) !== JSON.stringify(progress.opponents)) {
+        fail(
+          `the save code's record against opponents ${JSON.stringify(decoded.opponents)} does not match the saved ` +
+            `record ${JSON.stringify(progress.opponents)}`
+        );
+      }
+      if (decoded.lastMatchId !== progress.lastMatchId) {
+        fail(
+          `the save code carries lastMatchId ${JSON.stringify(decoded.lastMatchId)} instead of ` +
+            `${JSON.stringify(progress.lastMatchId)}`
+        );
+      }
+    }
+  }
+
+  // The one control on the Collection screen: revealing the code shows it, says
+  // so in words, and changes nothing about the collection, the deck or the
+  // record; hiding it puts the panel away again.
+  game.showScreen("collection");
+  const saveCodeButtonEl = document.getElementById("action-save-code");
+  const saveCodePanelEl = document.getElementById("save-code-panel");
+  const saveCodeTextEl = document.getElementById("save-code-text");
+  const copySaveCodeButtonEl = document.getElementById("action-copy-save-code");
+  const saveCodeStatusEl = document.getElementById("save-code-status");
+
+  if (!saveCodeButtonEl || !saveCodePanelEl || !saveCodeTextEl || !copySaveCodeButtonEl || !saveCodeStatusEl) {
+    fail(
+      "the Collection screen has no save-code control — the reveal button, its panel, the code box, the copy " +
+        "control and the status line must all be present"
+    );
+  } else {
+    const heldBefore = JSON.stringify(asIdCopies(game.readCollection().ownedCards));
+    const collectionBefore = JSON.stringify(game.readCollection());
+    const progressBefore = JSON.stringify(collection.readProgress());
+    const deckBefore = JSON.stringify(game.readState().deck);
+
+    if (!saveCodePanelEl.hidden) {
+      fail("the save-code panel is open before anything was pressed, so the code is shown without being asked for");
+    }
+
+    saveCodeButtonEl.click();
+
+    if (saveCodePanelEl.hidden) {
+      fail('pressing "Show save code" left the save-code panel hidden, so a player never sees the code');
+    }
+    if (saveCodeButtonEl.getAttribute("aria-expanded") !== "true") {
+      fail("the save-code button does not say it is expanded after the code is revealed");
+    }
+    if (!/hide/i.test(textOf(saveCodeButtonEl))) {
+      fail(
+        `the save-code button reads "${textOf(saveCodeButtonEl)}" after the code is revealed instead of offering to hide it`
+      );
+    }
+    const shownCode = collection.saveCode();
+    if (saveCodeTextEl.value !== shownCode) {
+      fail(
+        `the save-code box holds a different code than the game produces, so a player would copy the wrong game: ` +
+          `box ${JSON.stringify(saveCodeTextEl.value)} vs code ${JSON.stringify(shownCode)}`
+      );
+    }
+    if (!saveCodeTextEl.readOnly) {
+      fail("the save-code box is editable, so a player could change the code by typing in it");
+    }
+    if (textOf(saveCodeStatusEl).length === 0) {
+      fail("revealing the save code says nothing about the code being on screen");
+    }
+    if (game.readState().saveCodeShown !== true) {
+      fail("get-state does not report the save code as shown after it was revealed");
+    }
+    if (!/copy/i.test(textOf(copySaveCodeButtonEl))) {
+      fail(
+        `the copy control reads "${textOf(copySaveCodeButtonEl)}" instead of naming that it copies the code`
+      );
+    }
+
+    if (JSON.stringify(asIdCopies(game.readCollection().ownedCards)) !== heldBefore) {
+      fail("revealing the save code changed the cards the player owns");
+    }
+    if (JSON.stringify(game.readCollection()) !== collectionBefore) {
+      fail("revealing the save code changed the collection the page reports");
+    }
+    if (JSON.stringify(game.readState().deck) !== deckBefore) {
+      fail("revealing the save code changed the deck");
+    }
+    if (JSON.stringify(collection.readProgress()) !== progressBefore) {
+      fail("revealing the save code changed the recorded wins, matches or opponent record");
+    }
+
+    saveCodeButtonEl.click();
+    if (!saveCodePanelEl.hidden) {
+      fail('pressing "Hide save code" left the panel on screen');
+    }
+    if (saveCodeButtonEl.getAttribute("aria-expanded") !== "false") {
+      fail("the save-code button does not say it is collapsed after the code is hidden");
+    }
+    if (game.readState().saveCodeShown !== false) {
+      fail("get-state still reports the save code as shown after it was hidden");
+    }
+  }
+
+  // An agent reads the same code through a tool, without opening a screen.
+  const getSaveCode = toolNamed("get-save-code");
+  if (!getSaveCode) {
+    fail('no "get-save-code" tool is declared, so an agent cannot read the save code without opening a screen');
+  } else {
+    if (getSaveCode.annotations?.readOnlyHint !== true) {
+      fail('the "get-save-code" tool is not marked readOnlyHint, so an agent cannot tell that reading it changes nothing');
+    }
+    const readCode = await getSaveCode.execute({});
+    if (readCode?.code !== collection.saveCode()) {
+      fail("get-save-code returns a different code than the page's own save code, so a caller would keep the wrong game");
+    }
+    if (typeof readCode?.shown !== "boolean") {
+      fail(`get-save-code does not say whether the code is on screen: it returned ${JSON.stringify(readCode)}`);
+    }
+  }
+
+  // The reveal a visitor can press is also reachable by an agent, and it leaves
+  // the game exactly as it was.
+  const setSaveCodeShownTool = toolNamed("set-save-code-shown");
+  if (!setSaveCodeShownTool) {
+    fail('no "set-save-code-shown" tool is declared, so an agent cannot put the save code on a player\'s screen');
+  } else if (setSaveCodeShownTool.annotations?.readOnlyHint !== false) {
+    fail('"set-save-code-shown" shows the panel but is not marked as changing the page (readOnlyHint: false)');
+  } else {
+    const progressBeforeTool = JSON.stringify(collection.readProgress());
+    const shown = await setSaveCodeShownTool.execute({ shown: true });
+    if (shown?.code !== collection.saveCode() || shown?.shown !== true) {
+      fail(`set-save-code-shown returned ${JSON.stringify(shown)} instead of the code and shown:true`);
+    }
+    if (game.readState().saveCodeShown !== true) {
+      fail("set-save-code-shown did not open the save-code panel");
+    }
+    if (JSON.stringify(collection.readProgress()) !== progressBeforeTool) {
+      fail("set-save-code-shown changed the recorded wins, matches or opponent record");
+    }
+    await setSaveCodeShownTool.execute({ shown: false });
+    if (game.readState().saveCodeShown !== false) {
+      fail("set-save-code-shown did not close the save-code panel again");
+    }
+  }
+
   // Last, because it opens the page a second time in a narrow frame: the build
   // runs this suite at a desktop width, where the phone layout is inert.
   problems.push(...(await collectionCardPhoneProblems()));

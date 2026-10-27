@@ -124,6 +124,49 @@
           </div>
         </dl>
 
+        <!-- The whole game as one save code, so a player's cards, deck and
+             record can be kept somewhere safe instead of being lost when site
+             data is cleared or the game moves to another device. It stands near
+             the top of the screen, before the deck and the card set, so it is
+             reached without scrolling past every card. The button is the one
+             control: it reveals the code below and hides it again, the box
+             holds the code as selectable text (read-only, so it cannot be
+             edited by hand), and the copy button puts the whole code on the
+             clipboard in one press. The code is only ever read — revealing it
+             changes nothing about the collection, the deck or the record — and
+             the status line says in words when the code is on screen and when
+             it has been copied. -->
+        <section class="save-code" aria-labelledby="save-code-heading">
+          <h3 class="save-code-heading" id="save-code-heading">Save code</h3>
+          <p class="screen-note">
+            Keep your whole game — every card and copy you own, your deck, your wins and your record
+            against each opponent — as one code you can store somewhere safe.
+          </p>
+          <button
+            type="button"
+            class="btn btn-secondary"
+            id="action-save-code"
+            aria-expanded="false"
+            aria-controls="save-code-panel"
+          >
+            Show save code
+          </button>
+          <div class="save-code-panel" id="save-code-panel" hidden>
+            <label class="save-code-label" for="save-code-text">Your save code</label>
+            <textarea
+              class="save-code-text"
+              id="save-code-text"
+              readonly
+              rows="4"
+              spellcheck="false"
+            ></textarea>
+            <button type="button" class="btn btn-secondary" id="action-copy-save-code">
+              Copy save code
+            </button>
+          </div>
+          <p class="save-code-status" id="save-code-status" role="status" aria-live="polite"></p>
+        </section>
+
         <!-- The deck being built: its size, the rules it is built to, and its
              cards as a list of faces that show each card's picture and read its
              name and numbers. Every card is still text under the picture, so a
