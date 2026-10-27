@@ -264,22 +264,59 @@ function renderMatchResult(match) {
     matchFinalHealth.textContent =
       `Final health: your hero ${match.player.health}, the opponent hero ${match.opponent.health}.`;
   }
-  if (resultReward) resultReward.textContent = rewardText(won);
+  if (resultReward) {
+    const awarded = state.result?.awarded;
+    if (awarded) {
+      const label = document.createElement("span");
+      label.className = "award-card-label";
+      label.textContent = "New card — added to your collection:";
+      resultReward.replaceChildren(label, awardCardFigure(awarded));
+    } else {
+      resultReward.textContent = rewardText(won);
+    }
+  }
 }
 
 /**
- * What a finished match added, in words: the card a win earned, or plainly that
- * nothing was earned. Read from the result the match was recorded with, so what
- * the page says and what the save holds are the same thing.
+ * The card a win earned, shown as the card itself: its picture, then its name
+ * and its three numbers, built from the same card data and the same art as the
+ * collection and the match. A win is the only way to grow the collection, so the
+ * reward is shown as the card a player will then look for among their own.
+ */
+export function awardCardFigure(card) {
+  const figure = document.createElement("figure");
+  figure.className = "award-card";
+  figure.dataset.cardId = card.id;
+
+  // The card's picture, so the reward is recognised by sight. A card the art
+  // module does not know yet gets no picture rather than an empty frame, and the
+  // name beside it is what stands in for it.
+  const art = cardArtSvg(card.id, card.name);
+  if (art) figure.append(art);
+
+  const caption = document.createElement("figcaption");
+  caption.className = "award-card-caption";
+
+  const name = document.createElement("span");
+  name.className = "award-card-name";
+  name.textContent = card.name;
+
+  const stats = document.createElement("span");
+  stats.className = "award-card-stats";
+  stats.setAttribute("aria-label", `cost ${card.cost}, attack ${card.attack}, health ${card.health}`);
+  stats.textContent = `${card.cost}/${card.attack}/${card.health}`;
+
+  caption.append(name, stats);
+  figure.append(caption);
+  return figure;
+}
+
+/**
+ * What a finished match added, in words, when no card was earned: a win that
+ * awarded nothing, or a loss. Read from the result the match was recorded with,
+ * so what the page says and what the save holds are the same thing.
  */
 function rewardText(won) {
-  const awarded = state.result?.awarded;
-  if (awarded) {
-    return (
-      `New card: ${awarded.name} — cost ${awarded.cost}, attack ${awarded.attack}, ` +
-      `health ${awarded.health} — was added to your collection.`
-    );
-  }
   return won
     ? "No new card this time."
     : "A loss records the match but earns no card — win a match to grow your collection.";
