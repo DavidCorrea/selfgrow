@@ -3839,6 +3839,14 @@ export async function checks() {
 
   // --- A match on the page: dealt, played and turned over -------------------
 
+  // How many of one card's copies on a table can still strike this turn. An
+  // attack's spent copy is read this way rather than by finding the first card
+  // bearing its id: a table can hold two copies, and the copy that struck may
+  // have fallen to a when-this-falls blow in the same exchange, so the first
+  // copy by id can be an untouched twin of the one that was sent.
+  const readyCopiesOf = (table, cardId) =>
+    (table || []).filter((card) => card.id === cardId && !card.hasAttacked).length;
+
   // Before a match begins, the Play screen names who the player is about to
   // face, and the state an agent reads names the same character — the opponent
   // is a character rather than a copy of the player.
@@ -5279,9 +5287,13 @@ export async function checks() {
           if (afterAttack.selectedAttacker !== null) {
             fail(`the pick was not cleared after an attack: it still names ${JSON.stringify(afterAttack.selectedAttacker)}`);
           }
-          const spent = afterAttack.table.find((card) => card.id === attackerCard.id);
-          if (spent && !spent.hasAttacked) {
-            fail(`"${attackerCard.name}" was not marked spent after attacking`);
+          const readyBefore = readyCopiesOf(live.table, attackerCard.id);
+          const readyAfter = readyCopiesOf(afterAttack.table, attackerCard.id);
+          if (readyAfter !== readyBefore - 1) {
+            fail(
+              `"${attackerCard.name}" was not marked spent after attacking: ${readyAfter} of its copies ` +
+                `can still strike instead of ${readyBefore - 1}`
+            );
           }
         }
       }
@@ -5418,9 +5430,13 @@ export async function checks() {
             "but it stayed on the table"
         );
       }
-      const struck = (afterAttack.match.table || []).find((card) => card.id === attacker.id);
-      if (!struck || !struck.hasAttacked) {
-        fail(`the attack tool did not mark "${attacker.name}" spent for the rest of the turn`);
+      const readyBefore = readyCopiesOf(beforeAttack.table, attacker.id);
+      const readyAfter = readyCopiesOf(afterAttack.match.table, attacker.id);
+      if (readyAfter !== readyBefore - 1) {
+        fail(
+          `the attack tool did not mark "${attacker.name}" spent for the rest of the turn: ` +
+            `${readyAfter} of its copies can still strike instead of ${readyBefore - 1}`
+        );
       }
       if (!(afterAttack.match.log || []).some((line) => line.includes(attacker.name) && line.includes(target.name))) {
         fail(`the attack tool's blow on "${target.name}" was not logged by name`);
@@ -5588,6 +5604,12 @@ export async function checks() {
     }
     return game.readState().match;
   };
+
+  // A fixed shuffle for the play-out matches: the checks below drive a whole
+  // match to its end, and a real random deal can legitimately still be running
+  // at the move bound. A constant rng makes the deal — and so the ending — the
+  // same on every run, which is what lets an unfinished match mean a defect.
+  const playoutRng = () => 0;
 
   // These checks play from a known deck a match can always play out of: every
   // card but the two dearest is one the opening energy covers, and a side draws
@@ -5787,7 +5809,21 @@ export async function checks() {
   // And what each opponent's record held before it, so the match's own effect on
   // it can be told from a record that was already there.
   const recordsBeforeMatch = opponentRecordsNow();
-  game.startMatch();
+  game.startMatch(undefined, { rng: playoutRng });
+  // The seeded shuffle must actually reach the engine: the dealt hand is the
+  // one createMatch deals from the same deck and rng, so an edit that stops
+  // startMatch forwarding its rng is caught here rather than left to chance.
+  if (matchEngine) {
+    const dealt = game.readState().match;
+    const expected = matchEngine.createMatch(deckIds(), { rng: playoutRng, opponentId: dealt.opponentId });
+    const handIds = (hand) => hand.map((card) => card.id).sort();
+    if (JSON.stringify(handIds(dealt.hand)) !== JSON.stringify(handIds(expected.player.hand))) {
+      fail(
+        `the seeded match dealt ${JSON.stringify(handIds(dealt.hand))} where the same deck and rng deal ` +
+          `${JSON.stringify(handIds(expected.player.hand))}, so startMatch is not passing its rng through`
+      );
+    }
+  }
   const playedOut = playToResult();
   checkResult("playing the strongest card your energy covers, turn after turn", playedOut);
 
@@ -6529,7 +6565,7 @@ export async function checks() {
     // Starting a new match replaces whatever was saved, and a match left in
     // progress is not offered once it is the one already on the board.
     const leftId = left.id;
-    game.startMatch();
+    game.startMatch(undefined, { rng: playoutRng });
     const replaced = collection.readSavedMatch();
     if (!replaced || replaced.id === leftId) {
       fail("starting a new match did not replace the match saved in the browser");

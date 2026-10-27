@@ -1533,14 +1533,17 @@ function askToReplaceSavedMatch(waiting) {
  * `discardSaved: true` — what Discard and start new does — deals and saves the
  * new match in its place. Opens the Play screen and returns the state.
  */
-export function startMatch(opponentId = state.opponentId, { discardSaved = false } = {}) {
+export function startMatch(opponentId = state.opponentId, { discardSaved = false, rng } = {}) {
   const waiting = offerableSavedMatch();
   if (waiting && !discardSaved) {
     return askToReplaceSavedMatch(waiting);
   }
 
   state.startPending = false;
-  state.match = createMatch(state.deck, { opponentId });
+  // `rng` is for the product's own self-checks, which deal a known match from a
+  // fixed shuffle; a visitor's match leaves it undefined and the engine uses
+  // Math.random as it always has.
+  state.match = createMatch(state.deck, { opponentId, rng });
   // The picker follows the match that was actually dealt, so a refused start
   // leaves the choice where it was.
   state.opponentId = state.match.opponentId;
