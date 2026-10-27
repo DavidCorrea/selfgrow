@@ -23,7 +23,7 @@ import {
   saveDeck,
   saveMatch,
 } from "./collection.js";
-import { attack, createMatch, endTurn, HERO_TARGET, playCard } from "./match.js";
+import { attack, concede, createMatch, endTurn, HERO_TARGET, playCard } from "./match.js";
 
 // The screens the page has, and the word each is announced by. A screen name is
 // also the value an agent passes to the show-screen tool.
@@ -104,6 +104,7 @@ const matchOpponentTableHeading = document.getElementById("match-opponent-table-
 const matchMessage = document.getElementById("match-message");
 const startMatchButton = document.getElementById("action-start-match");
 const endTurnButton = document.getElementById("action-end-turn");
+const concedeButton = document.getElementById("action-concede");
 const matchFields = {
   playerHealth: document.getElementById("match-player-health"),
   opponentHealth: document.getElementById("match-opponent-health"),
@@ -430,10 +431,11 @@ function renderMatchLog(match) {
 }
 
 /**
- * The result of a finished match, said once: who won, both heroes' final health,
- * how many matches the player has now finished and won, and the one card a win
- * added. Shown only once a hero has fallen, in the same board the match was
- * played on, so a result is a state of the match rather than a second screen.
+ * The result of a finished match, said once: whether the player won, lost or gave
+ * the match up, both heroes' final health, how many matches the player has now
+ * finished and won, and the one card a win added. Shown only once the match is
+ * over — a hero fallen or a match conceded — in the same board it was played on,
+ * so a result is a state of the match rather than a second screen.
  */
 function renderMatchResult(match) {
   const finished = Boolean(match?.over);
@@ -443,10 +445,16 @@ function renderMatchResult(match) {
   if (!finished) return;
 
   const won = match.winner === "player";
-  if (matchResultHeading) matchResultHeading.textContent = won ? "You won" : "You lost";
+  if (matchResultHeading) {
+    matchResultHeading.textContent = match.conceded ? "You conceded" : won ? "You won" : "You lost";
+  }
   if (matchFinalHealth) {
-    matchFinalHealth.textContent =
-      `Final health: your hero ${match.player.health}, ${match.opponentName} ${match.opponent.health}.`;
+    // A conceded match has no final blow, so it says the standing the player
+    // walked away from rather than claiming a hero fell at the numbers shown.
+    const standing = `your hero ${match.player.health}, ${match.opponentName} ${match.opponent.health}`;
+    matchFinalHealth.textContent = match.conceded
+      ? `Conceded with no hero fallen: ${standing}.`
+      : `Final health: ${standing}.`;
   }
   if (resultReward) {
     const awarded = state.result?.awarded;
@@ -596,8 +604,8 @@ function renderOpponentChoice() {
  * sighted player, a screen reader and an agent read the same match. With no
  * match in progress the board is hidden and the opponent picker, the note about
  * the deck, the opponent it names and the Start match button stand in its place.
- * Once a hero has fallen the hand and the End turn button go with it and the
- * result stands in their place, so there is nothing left to press.
+ * Once the match is over the hand, the End turn button and the Concede button go
+ * with it and the result stands in their place, so there is nothing left to press.
  */
 function renderMatch() {
   const match = state.match;
@@ -609,6 +617,10 @@ function renderMatch() {
   renderOpponentChoice();
   if (startMatchButton) startMatchButton.hidden = Boolean(match);
   if (endTurnButton) endTurnButton.hidden = !match || match.over || match.turn !== "player";
+  // Giving up is offered right up until a match is over, so a player who is
+  // losing, or who picked the wrong deck, always has a way out that keeps the
+  // record honest; once there is nothing left to give up, it goes with the hand.
+  if (concedeButton) concedeButton.hidden = !match || match.over;
   renderMatchResult(match);
   if (!match) return;
 
@@ -865,6 +877,25 @@ export function attackMatch(attackerId, target) {
   if (!state.match) throw new Error("no match is in progress — start one first");
   if (!attackerId) throw new Error("pick one of your table cards to attack with first");
   attack(state.match, attackerId, target);
+  state.selectedAttacker = null;
+  finishMatch();
+  persistMatch();
+  render();
+  return readState();
+}
+
+/**
+ * Give up the match in front of you — what a visitor does by pressing Concede,
+ * and what the concede-match tool does on their behalf. The match ends at once
+ * as a loss, recorded through the same path a finished one takes, so it counts
+ * as a match played, not a win, and earns no card; the saved match is cleared
+ * with it, so the abandoned game is never offered to continue, and the result
+ * stays on the board with Play again beside it. Refused, with the reason, when
+ * no match is in progress or it is already over. Returns the state afterwards.
+ */
+export function concedeMatch() {
+  if (!state.match) throw new Error("no match is in progress — start one first");
+  concede(state.match);
   state.selectedAttacker = null;
   finishMatch();
   persistMatch();
@@ -1180,15 +1211,17 @@ function describeMatchCard(card) {
  * saying whether it has already attacked this turn (`hasAttacked`) — how many
  * cards the opponent holds (`opponentHand`, the face-down backs the board shows)
  * and how many are left to draw, the ordered log of what happened — its last line the
- * final blow — and the moves
- * available now, of which a finished match offers none. `opponentId` and
+ * final blow, or the concession when the match was given up — and the moves
+ * available now — a live match always offers Concede beside its other moves, and
+ * a finished one offers none. `opponentId` and
  * `opponentName` name the character being faced, whose deck is its own rather
  * than a copy of the player's. With no match it says so — `active` false, and
  * `opponentId`/`opponentName` the character the picker has chosen, the name the
  * Play screen prints before one starts — so a reader can tell the difference
  * between "nothing has happened yet" and "a match with an empty hand". A
  * finished match also carries its `outcome` — "win" or "loss" from the player's
- * side — and whether it has been recorded to the save yet.
+ * side — whether the player gave it up rather than losing a hero (`conceded`),
+ * and whether it has been recorded to the save yet.
  */
 export function readMatch() {
   const match = state.match;
@@ -1200,6 +1233,7 @@ export function readMatch() {
       over: false,
       winner: null,
       outcome: null,
+      conceded: false,
       recorded: false,
       turn: null,
       selectedAttacker: null,
@@ -1224,6 +1258,7 @@ export function readMatch() {
     over: match.over,
     winner: match.winner,
     outcome: match.outcome,
+    conceded: Boolean(match.conceded),
     recorded: match.recorded,
     turn: match.turn,
     selectedAttacker: state.selectedAttacker,
@@ -1237,10 +1272,16 @@ export function readMatch() {
     opponentHand: match.opponent.hand.length,
     deckRemaining: match.player.deck.length,
     log: [...match.log],
-    actions:
-      !match.over && match.turn === "player"
-        ? [...match.player.hand.map((card) => `Play ${card.name} (cost ${card.cost})`), "End turn"]
-        : [],
+    // Giving up is a move a live match always offers, whichever side is taking
+    // its turn; everything else needs the player's own turn and a match to play.
+    actions: !match.over
+      ? [
+          ...(match.turn === "player"
+            ? [...match.player.hand.map((card) => `Play ${card.name} (cost ${card.cost})`), "End turn"]
+            : []),
+          "Concede",
+        ]
+      : [],
   };
 }
 
@@ -1352,6 +1393,7 @@ startMatchButton?.addEventListener("click", () => runMatchAction(() => startMatc
 continueButton?.addEventListener("click", () => runMatchAction(() => continueMatch()));
 playAgainButton?.addEventListener("click", () => runMatchAction(() => playAgain()));
 endTurnButton?.addEventListener("click", () => runMatchAction(() => endMatchTurn()));
+concedeButton?.addEventListener("click", () => runMatchAction(() => concedeMatch()));
 
 render();
 renderCollection();

@@ -7,6 +7,7 @@
 import {
   addCardToDeck,
   attackMatch,
+  concedeMatch,
   continueMatch,
   endMatchTurn,
   playAgain,
@@ -220,10 +221,22 @@ export function tools() {
       },
     },
     {
+      name: "concede-match",
+      title: "Give up the match in progress",
+      description:
+        "Gives up the match being played, exactly as pressing \"Concede\" on the Play screen does: the match ends at once as a loss — it counts as a match played and not a win, and earns no card — and the result stays on the board with \"Play again\" beside it. The closing log line says the match was conceded, the match reports `over` true with `winner` \"opponent\", `outcome` \"loss\" and `conceded` true, and the saved match is cleared so the abandoned game is not offered to continue. Use it when a game is going badly or began against the wrong deck and a fresh one is wanted; play-again or start-match then deals the next. Returns the state afterwards, or an `error` field saying why when no match is in progress or the match is already over.",
+      inputSchema: { type: "object", properties: {}, additionalProperties: false },
+      annotations: { readOnlyHint: false, consequentialHint: true },
+      example: {},
+      async execute() {
+        return attempted(concedeMatch);
+      },
+    },
+    {
       name: "get-match",
       title: "Read the match on the Play screen",
       description:
-        "Returns the match on its own, without the rest of the page. `opponentName` always names the character being faced, whose fixed deck is their own rather than a copy of yours — before a match starts it is who one would be against. `active` is false when no match has been started. While a match is running `over` is false and `turn` says whose move it is, with both heroes' health, your energy and its maximum, your hand (with the ids play-card wants), both tables — each card with the health it has left, which drops as the tables fight, and whether it has already attacked this turn (`hasAttacked`) — how many cards the opponent holds (`opponentHand`, shown on the board as one face-down card back per card) and how many you have left to draw, the ordered log, including a line each time a side draws a card at the start of its own turn and a line naming each card that fell off a table — and the moves available now. Once a hero has fallen `over` is true, `winner` is \"player\" or \"opponent\", `outcome` says \"win\" or \"loss\" from your side, `recorded` says whether the result has already been saved, the loser's health is 0, the log's last line is the final blow, and `actions` is empty because a finished match accepts no more moves — so this is the tool to ask whether the match is still going and who won.",
+        "Returns the match on its own, without the rest of the page. `opponentName` always names the character being faced, whose fixed deck is their own rather than a copy of yours — before a match starts it is who one would be against. `active` is false when no match has been started. While a match is running `over` is false and `turn` says whose move it is, with both heroes' health, your energy and its maximum, your hand (with the ids play-card wants), both tables — each card with the health it has left, which drops as the tables fight, and whether it has already attacked this turn (`hasAttacked`) — how many cards the opponent holds (`opponentHand`, shown on the board as one face-down card back per card) and how many you have left to draw, the ordered log, including a line each time a side draws a card at the start of its own turn and a line naming each card that fell off a table — and the moves available now, which always include \"Concede\" while the match can still be given up. Once the match has ended — a hero fallen or the match conceded — `over` is true, `winner` is \"player\" or \"opponent\", `outcome` says \"win\" or \"loss\" from your side, `conceded` says whether you gave the match up rather than losing your hero, `recorded` says whether the result has already been saved, the log's last line is the final blow that ended it — or the concession, in which case `conceded` is true and no hero fell, and `actions` is empty because a finished match accepts no more moves — so this is the tool to ask whether the match is still going and who won.",
       inputSchema: { type: "object", properties: {}, additionalProperties: false },
       annotations: { readOnlyHint: true },
       example: {},

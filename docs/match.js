@@ -34,6 +34,11 @@
  * number on the board and the number here never disagree. `recorded` is false
  * until the result has been saved, so a finished match is never counted twice.
  *
+ * A player who no longer wants the match in front of them can give it up with
+ * `concede`: the match ends at once as a loss for the player, with a closing log
+ * line that says so, so the record stays honest and the same board can offer a
+ * fresh game instead of a half-played one nobody wants to finish.
+ *
  * A table is fought over. When a side ends its turn, each of its cards deals its
  * attack to the front card of the other table while that table has one: the
  * front card's health drops, and at zero it leaves the table with a line naming
@@ -187,6 +192,9 @@ export function createMatch(deckIds, { rng = Math.random, opponentId = DEFAULT_O
     winner: null,
     outcome: null,
     recorded: false,
+    // Whether the player gave the match up rather than losing a hero, so the
+    // result can say "You conceded" instead of pretending a hero fell.
+    conceded: false,
     player: createSide(deckIds, rng),
     opponent: createSide(opponent.deck, rng),
     log: [],
@@ -464,5 +472,27 @@ export function endTurn(match) {
     `Your turn — energy refreshed to ${match.player.energy} of ${match.player.maxEnergy}.`
   );
   if (drawn) appendLog(match, `You draw ${drawn.name} — ${match.player.deck.length} left in deck.`);
+  return match;
+}
+
+/**
+ * Give up the match in front of you: the player concedes, so the match ends at
+ * once as a loss — the opponent is its winner, the outcome is "loss" from the
+ * player's side, no side is taking turns any more, and `conceded` is true so a
+ * result can say the player gave up rather than that a hero fell. One closing
+ * line is logged, so the log still explains how the match finished. Refused,
+ * with a reason and without changing anything, once the match is already over.
+ */
+export function concede(match) {
+  if (match.over) {
+    throw new Error("the match is over — press Play again");
+  }
+
+  match.over = true;
+  match.winner = "opponent";
+  match.outcome = "loss";
+  match.turn = null;
+  match.conceded = true;
+  appendLog(match, "You concede the match — you lost.");
   return match;
 }

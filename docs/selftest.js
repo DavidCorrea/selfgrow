@@ -3824,6 +3824,191 @@ export async function checks() {
     game.startMatch();
   }
 
+  // --- A player can give a match up and start another -----------------------
+
+  // A match a player no longer wants — because they are losing, or because they
+  // picked the wrong deck — can be given up at any moment before it is over. It
+  // ends at once as a loss, is counted exactly once and earns no card, the saved
+  // match is cleared so it is never offered again, and the same result offers a
+  // fresh game. An agent gets the same move as a tool.
+  if (matchEngine) {
+    /**
+     * Deal a match, give it up with `giveUp`, and check the result both a player
+     * and an agent read: the match says it was conceded, the record counts one
+     * more match and no win, no card was earned, and nothing is left saved to
+     * continue. Returns the state the move reported, or null when it never ran.
+     */
+    const concedeFrom = async (what, giveUp) => {
+      game.startMatch();
+      const before = game.readState();
+      if (!before.match?.active || before.match.over) {
+        fail(`no live match could be dealt, so ${what} cannot be checked`);
+        return null;
+      }
+
+      const winsBefore = before.wins;
+      const playedBefore = before.matchesPlayed;
+      const cardsBefore = collection.collectionSize(game.readCollection().ownedCards);
+
+      let after;
+      try {
+        after = await giveUp();
+      } catch (error) {
+        fail(`${what} was refused — ${error.message}`);
+        return null;
+      }
+
+      const ended = after?.match;
+      if (!ended?.over) {
+        fail(`${what} left the match running: it reports over ${JSON.stringify(ended?.over)}`);
+        return null;
+      }
+      if (!ended.active) {
+        fail(`${what} left the page with no match on the board to show the result`);
+      }
+      for (const [subject, expected, found] of [
+        ["the winner", "opponent", ended.winner],
+        ["the outcome", "loss", ended.outcome],
+        ["whether it was conceded", true, ended.conceded],
+        ["whose turn it is", null, ended.turn],
+      ]) {
+        if (found !== expected) {
+          fail(
+            `after ${what} the match reports ${subject} as ${JSON.stringify(found)} instead of ` +
+              `${JSON.stringify(expected)}`
+          );
+        }
+      }
+
+      const finalLine = ended.log[ended.log.length - 1] ?? "";
+      if (!finalLine.toLowerCase().includes("concede")) {
+        fail(`the last line of a conceded match's log does not say it was conceded: it reads "${finalLine}"`);
+      }
+      if (!finalLine.toLowerCase().includes("you lost")) {
+        fail(`the last line of a conceded match's log does not say the player lost: it reads "${finalLine}"`);
+      }
+
+      if (after.matchesPlayed !== playedBefore + 1) {
+        fail(
+          `after ${what} matches played reads ${after.matchesPlayed} instead of one more than ` +
+            `${playedBefore}, which is what a recorded match adds`
+        );
+      }
+      if (after.wins !== winsBefore) {
+        fail(`after ${what} wins reads ${after.wins} instead of ${winsBefore} — giving up counted as a win`);
+      }
+      if (after.result?.outcome !== "loss" || after.result?.awarded) {
+        fail(`after ${what} the result reads ${JSON.stringify(after.result)} instead of a loss that awarded no card`);
+      }
+      const cardsAfter = collection.collectionSize(game.readCollection().ownedCards);
+      if (cardsAfter !== cardsBefore) {
+        fail(
+          `after ${what} the collection holds ${cardsAfter} card(s) instead of ${cardsBefore} — ` +
+            "giving up a match earned a card"
+        );
+      }
+      if (collection.readSavedMatch() !== null) {
+        fail(`after ${what} the abandoned match is still saved, so the home screen would offer to continue it`);
+      }
+      if (game.readState().canContinue) {
+        fail(`after ${what} the page still reports an unfinished match to continue`);
+      }
+
+      return after;
+    };
+
+    // Given up from the board, with the control a player presses.
+    const beforePress = game.startMatch();
+    const concedeControl = document.getElementById("action-concede");
+    if (!beforePress.match?.active) {
+      fail("no live match could be dealt, so the Concede control cannot be checked");
+    } else if (!concedeControl) {
+      fail(
+        "the Play screen has no Concede control (#action-concede), so a player who is losing " +
+          "has no way out of a match"
+      );
+    } else {
+      if (concedeControl.hidden || concedeControl.closest("[hidden]")) {
+        fail("the Concede control is hidden during a live match, so a player cannot give one up");
+      }
+      if (concedeControl.tagName !== "BUTTON" || concedeControl.tabIndex < 0) {
+        fail("the Concede control is not a button a keyboard can reach");
+      }
+      if (!textOf(concedeControl).toLowerCase().includes("concede")) {
+        fail(`the Concede control reads "${textOf(concedeControl)}" instead of naming what pressing it does`);
+      }
+      if (!beforePress.actions.includes("Concede")) {
+        fail(`the moves a live match reports are ${JSON.stringify(beforePress.actions)}, which does not include Concede`);
+      }
+      if (beforePress.match.conceded) {
+        fail("a match that has not been given up already reports itself as conceded");
+      }
+    }
+
+    await concedeFrom("pressing Concede during a match", () => {
+      document.getElementById("action-concede")?.click();
+      return game.readState();
+    });
+
+    const afterConcede = game.readState();
+    const resultHeading = textOf(document.getElementById("match-result-heading"));
+    if (resultHeading !== "You conceded") {
+      fail(`the result of a conceded match reads "${resultHeading || "(nothing)"}" instead of "You conceded"`);
+    }
+    if (concedeControl && !concedeControl.hidden) {
+      fail("the Concede control is still offered once the match is over, though there is nothing left to give up");
+    }
+    if (afterConcede.actions.includes("Concede")) {
+      fail(`a finished match still lists Concede among its moves: ${JSON.stringify(afterConcede.actions)}`);
+    }
+
+    // The result offers a fresh match, and it is a new game rather than the
+    // abandoned one dealt back.
+    game.showScreen("play");
+    const freshButton = buttonNamed("play", "Play again");
+    if (!freshButton || freshButton.hidden) {
+      fail("a conceded match offers no Play again, so a player cannot begin a fresh match from the result");
+    } else {
+      freshButton.click();
+      const fresh = game.readState().match;
+      if (!fresh?.active || fresh.over) {
+        fail("Play again after conceding did not deal a fresh match");
+      } else if (fresh.log.some((line) => line.toLowerCase().includes("concede"))) {
+        fail("Play again after conceding resumed the abandoned match instead of dealing a new one");
+      } else if (concedeControl?.hidden) {
+        fail("a fresh match after conceding offers no way to give that one up too");
+      }
+    }
+
+    // And the same move through the tool an agent uses.
+    const concedeTool = toolNamed("concede-match");
+    if (!concedeTool) {
+      fail('no "concede-match" tool is declared, so an agent cannot give up a match a visitor can');
+    } else {
+      const annotations = concedeTool.annotations ?? {};
+      if (annotations.readOnlyHint !== false) {
+        fail('"concede-match" changes the page but is not marked as changing anything (readOnlyHint: false)');
+      }
+      if (annotations.consequentialHint !== true) {
+        fail('"concede-match" ends the match for good but is not marked as hard to undo (consequentialHint: true)');
+      }
+
+      const viaTool = await concedeFrom("conceding through the concede-match tool", () => concedeTool.execute({}));
+      if (viaTool) {
+        const second = await concedeTool.execute({});
+        if (!second?.error) {
+          fail(`conceding a match that is already over returned ${JSON.stringify(second)}, which reports no error`);
+        } else if (game.readState().matchesPlayed !== viaTool.matchesPlayed) {
+          fail("a refused second concede changed the number of matches played, so the result was counted twice");
+        }
+      }
+    }
+
+    // Leave a live match running, so the layout checks that follow measure a
+    // board a player can actually play.
+    game.startMatch();
+  }
+
   // --- Choosing an opponent before a match ----------------------------------
 
   // Which character a match is against is a choice the page offers and an agent

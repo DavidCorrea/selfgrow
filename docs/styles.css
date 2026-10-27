@@ -1461,9 +1461,11 @@ body {
     z-index: 2;
     /* A grid rather than a flex wrap: the controls that a match shows at once
        always share one row, so the bar never grows a row taller (and never
-       taller than the hand it sits over) when a long label is involved. */
+       taller than the hand it sits over) when a long label is involved. The
+       track is sized for the three controls a live match shows — End turn,
+       Concede, Back to home — so they keep that row on the narrowest phone. */
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(7rem, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(6rem, 1fr));
     gap: 0.5rem;
     padding: 0.5rem 0.9rem calc(0.5rem + env(safe-area-inset-bottom));
     border: 1px solid var(--edge);

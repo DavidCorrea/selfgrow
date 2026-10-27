@@ -291,6 +291,11 @@
           <p class="match-message" id="match-message" role="status" aria-live="polite"></p>
           <button type="button" class="btn btn-primary" id="action-start-match">Start match</button>
           <button type="button" class="btn btn-primary" id="action-end-turn" hidden>End turn</button>
+          <!-- The way out of a match a player no longer wants: it ends the game
+               as a loss, records it and clears the saved match, so the same
+               board can offer a fresh one. Hidden once the match is over, when
+               there is nothing left to give up. -->
+          <button type="button" class="btn btn-secondary" id="action-concede" hidden>Concede</button>
           <button type="button" class="btn btn-secondary" data-screen-target="home">Back to home</button>
         </div>
       </section>
