@@ -7694,11 +7694,14 @@ export async function checks() {
     } else {
       const bar = document.querySelector("#screen-play .actions");
       const barTop = bar ? rectOf(bar).top : viewportHeight;
+      // These are the readouts a phone must show without scrolling. The hand is
+      // deliberately absent: it legitimately sits behind the docked action bar,
+      // and its real promise — that the page can scroll every card clear of the
+      // bar, and that no panel clips a card — is measured scroll-aware below.
       for (const [what, element] of [
         ["your health", document.getElementById("match-player-health")],
         ["the opponent's health", document.getElementById("match-opponent-health")],
         ["your energy", document.getElementById("match-energy")],
-        ["your hand", document.getElementById("match-hand")],
         ["End turn", document.getElementById("action-end-turn")],
         ["Back to home", backToHome],
       ]) {
