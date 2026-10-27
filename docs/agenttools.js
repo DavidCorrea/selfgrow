@@ -6,6 +6,7 @@
 
 import {
   addCardToDeck,
+  attackMatch,
   endMatchTurn,
   playAgain,
   playMatchCard,
@@ -144,7 +145,7 @@ export function tools() {
       name: "end-turn",
       title: "End your turn",
       description:
-        "Ends your turn, and the two tables fight. Your cards each deal their attack to the front card of the opponent's table while it holds one: that card's health drops, and at zero it leaves the table with a log line naming it — the opponent's hero is untouched until its table is empty. The opponent then takes a turn of its own — drawing a card while its deck holds one, its energy growing and refilling, and playing the most expensive cards it can afford — and its cards do the same to the front card of your table, reaching your hero only once your table is empty. The turn comes back to you with your energy grown and refilled and a card drawn while your deck holds one. The match ends the moment either hero's health reaches zero: the log's last line is that final blow, `over` turns true, `winner` names the side that won, and the turn is not handed back to anyone. Every step is added to the match log. Returns the whole match afterwards so you can read what changed, or an `error` field saying why when there is no match, the match is already over, or it is not your turn.",
+        "Ends your turn, and the two tables fight. Your cards each deal their attack to the front card of the opponent's table while it holds one: that card's health drops, and at zero it leaves the table with a log line naming it — the opponent's hero is untouched until its table is empty. A card you already sent at a chosen target with the attack tool has struck and is spent, so it is skipped here and only the rest attack the front card — which is why ending the turn without attacking is always safe. The opponent then takes a turn of its own — drawing a card while its deck holds one, its energy growing and refilling, and playing the most expensive cards it can afford — and its cards do the same to the front card of your table, reaching your hero only once your table is empty. The turn comes back to you with your energy grown and refilled and a card drawn while your deck holds one. The match ends the moment either hero's health reaches zero: the log's last line is that final blow, `over` turns true, `winner` names the side that won, and the turn is not handed back to anyone. Every step is added to the match log. Returns the whole match afterwards so you can read what changed, or an `error` field saying why when there is no match, the match is already over, or it is not your turn.",
       inputSchema: { type: "object", properties: {}, additionalProperties: false },
       annotations: { readOnlyHint: false, consequentialHint: false },
       example: {},
@@ -153,10 +154,37 @@ export function tools() {
       },
     },
     {
+      name: "attack",
+      title: "Send one of your cards at a chosen target",
+      description:
+        "Directs one card on your own table at one chosen card on the opponent's table, or — only once the opponent's table is empty — at the opponent's hero, instead of leaving the blow to the front line. Pass the `attackerId` of a card on your table (from get-state's match.table) and the `target` id of a card on the opponent's table (from match.opponentTable), or the string \"hero\" to strike the opponent directly when that table is empty. Exactly one blow lands, with the same card-fall and hero-fall rules as ending the turn, and the attacker is spent for the rest of your turn, so end-turn will not send it again. You need not use this at all: ending the turn still sends every card you did not spend at the front card. Returns the whole match afterwards so you can read what changed, or an `error` field saying why when there is no match, the match is over, it is not your turn, the named card is not on your table, it has already attacked this turn, the target is not on the opponent's table, or the hero is named while a card still stands in front of it.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          attackerId: {
+            type: "string",
+            description: "The id of a card on your own table, as get-state's match.table lists it.",
+          },
+          target: {
+            type: "string",
+            description:
+              "The id of a card on the opponent's table, as match.opponentTable lists it, or \"hero\" to strike the opponent directly when that table is empty.",
+          },
+        },
+        required: ["attackerId", "target"],
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: false, consequentialHint: false },
+      example: { attackerId: "sprout", target: "thornling" },
+      async execute(input = {}) {
+        return attempted(() => attackMatch(input.attackerId, input.target));
+      },
+    },
+    {
       name: "get-match",
       title: "Read the match on the Play screen",
       description:
-        "Returns the match on its own, without the rest of the page. `opponentName` always names the character being faced, whose fixed deck is their own rather than a copy of yours — before a match starts it is who one would be against. `active` is false when no match has been started. While a match is running `over` is false and `turn` says whose move it is, with both heroes' health, your energy and its maximum, your hand (with the ids play-card wants), both tables — each card with the health it has left, which drops as the tables fight — how many cards are left to draw, the ordered log, including a line each time a side draws a card at the start of its own turn and a line naming each card that fell off a table — and the moves available now. Once a hero has fallen `over` is true, `winner` is \"player\" or \"opponent\", `outcome` says \"win\" or \"loss\" from your side, `recorded` says whether the result has already been saved, the loser's health is 0, the log's last line is the final blow, and `actions` is empty because a finished match accepts no more moves — so this is the tool to ask whether the match is still going and who won.",
+        "Returns the match on its own, without the rest of the page. `opponentName` always names the character being faced, whose fixed deck is their own rather than a copy of yours — before a match starts it is who one would be against. `active` is false when no match has been started. While a match is running `over` is false and `turn` says whose move it is, with both heroes' health, your energy and its maximum, your hand (with the ids play-card wants), both tables — each card with the health it has left, which drops as the tables fight, and whether it has already attacked this turn (`hasAttacked`) — how many cards are left to draw, the ordered log, including a line each time a side draws a card at the start of its own turn and a line naming each card that fell off a table — and the moves available now. Once a hero has fallen `over` is true, `winner` is \"player\" or \"opponent\", `outcome` says \"win\" or \"loss\" from your side, `recorded` says whether the result has already been saved, the loser's health is 0, the log's last line is the final blow, and `actions` is empty because a finished match accepts no more moves — so this is the tool to ask whether the match is still going and who won.",
       inputSchema: { type: "object", properties: {}, additionalProperties: false },
       annotations: { readOnlyHint: true },
       example: {},

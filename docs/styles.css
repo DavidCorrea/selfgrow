@@ -721,6 +721,50 @@ body {
   font-size: 0.85rem;
 }
 
+/* A table card carrying a control — the one that picks it to attack with, or the
+   one that sends an attack at it — keeps its picture and numbers as a chip and
+   sets the control beside them rather than pushing the card off its row. */
+.match-card-action {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.4rem 0.55rem;
+}
+
+/* The battle controls read quieter than the rail's own actions, the same way a
+   hand card's Play does, so a table of many cards is not a wall of loud buttons. */
+.btn.match-attack-select,
+.btn.match-attack-target,
+.btn.match-attack-hero {
+  padding: 0.45rem 0.8rem;
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+
+/* The picked card's control is filled, so the choice is read without relying on
+   colour alone: its aria-pressed state carries the same fact to a screen reader. */
+.match-attack-select[aria-pressed="true"] {
+  background-color: var(--foil);
+  border-color: var(--foil);
+  color: var(--on-foil);
+}
+
+/* A card that has already struck this turn is quieter, but stays pressable so
+   pressing it can say why it cannot strike again. */
+.match-card.is-spent .match-attack-select {
+  border-color: var(--edge-soft);
+  color: var(--ink-muted);
+  background-color: rgba(168, 177, 212, 0.03);
+}
+
+/* The lone control that strikes at the hero when the opponent's table is empty,
+   standing where the opponent's cards would be. */
+.match-attack-hero-item {
+  display: inline-flex;
+  border-style: dashed;
+}
+
 .match-empty {
   color: var(--ink-muted);
   font-size: 0.9rem;
@@ -987,6 +1031,33 @@ body {
     /* The label spells out the card and its cost; a smaller face keeps the
        longest one on a single line — and leaves the card's own name enough
        room to be read — instead of pushing the card off the edge. */
+    font-size: 0.72rem;
+  }
+
+  /* A table card carrying a battle control lays out like a hand card: picture,
+     name and numbers, then the control, so a table row stays short and the
+     board keeps the hand and the action bar in view. */
+  .match-card-action {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: 0.35rem;
+    padding: 0.3rem 0.5rem;
+  }
+
+  .match-card-action .card-art {
+    width: 2.6rem;
+  }
+
+  .match-card-action .match-card-name {
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+
+  .match-card-action .match-attack-select,
+  .match-card-action .match-attack-target,
+  .match-attack-hero {
+    width: auto;
+    padding: 0.3rem 0.5rem;
     font-size: 0.72rem;
   }
 
