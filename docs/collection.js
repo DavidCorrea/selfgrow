@@ -14,7 +14,7 @@
  * player's cards — and a match that cannot be written is simply not offered back.
  */
 
-import { CARDS, CARD_BY_ID, DECK_LIMIT, REWARD_POOL, STARTER_COLLECTION } from "./cards.js";
+import { CARDS, CARD_BY_ID, DECK_LIMIT, OPPONENTS, REWARD_POOL, STARTER_COLLECTION } from "./cards.js";
 import { ENERGY_CAP, HERO_HEALTH } from "./match.js";
 
 /**
@@ -308,8 +308,16 @@ function rehydrateMatch(saved) {
   const opponent = restoreSide(saved.opponent);
   if (!player || !opponent) return null;
 
+  // Which character the match is against. A save written before a player could
+  // choose an opponent carries only the name, so the id is read from the name it
+  // does carry rather than the match coming back without one.
+  const faced = OPPONENTS.find(
+    (entry) => entry.id === saved.opponentId || entry.name === saved.opponentName
+  );
+
   return {
     id: saved.id,
+    opponentId: faced?.id ?? null,
     opponentName: saved.opponentName,
     turn: "player",
     over: false,

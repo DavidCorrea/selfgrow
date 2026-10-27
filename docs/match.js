@@ -2,10 +2,13 @@
  * A match: one game of selfgrow against the opponent, taken a turn at a time.
  *
  * The two sides play different decks: the player plays the deck they built, and
- * the opponent plays `OPPONENT_DECK` — a fixed deck of its own, under a name of
- * its own — so a match is against a character rather than a mirror of the
- * player, and the cards chosen for a deck change what is on the other side of
- * the table.
+ * the opponent plays a fixed deck of its own, under a name of its own — so a
+ * match is against a character rather than a mirror of the player, and the cards
+ * chosen for a deck change what is on the other side of the table. Which
+ * character that is, is the caller's choice: `createMatch` takes an opponent id,
+ * stamps its id and name on the match and deals that opponent's deck, so the
+ * whole match — its labels, its log and a saved game picked up later — speaks of
+ * the character it was started against.
  *
  * The match is a plain object — two sides of numbers and card lists, whose turn
  * it is, and an ordered log of plain sentences. There is no DOM here and no
@@ -45,7 +48,7 @@
  * turn is ended and neither player nor opponent strikes twice with one card.
  */
 
-import { CARDS, CARD_BY_ID, MINIMUM_DECK_SIZE, OPPONENT_DECK, OPPONENT_NAME } from "./cards.js";
+import { CARDS, CARD_BY_ID, DEFAULT_OPPONENT, MINIMUM_DECK_SIZE, OPPONENT_BY_ID, OPPONENTS } from "./cards.js";
 
 /** Both heroes start at this much health and stay there until a match can end. */
 export const HERO_HEALTH = 20;
@@ -153,28 +156,39 @@ function beginTurn(side) {
 }
 
 /**
- * Start a match from the player's deck ids. The player is dealt their own deck
- * and the opponent is dealt `OPPONENT_DECK`, each shuffled separately, and each
- * side is dealt a starting hand — then the player's first turn begins at once,
- * drawing a card while the deck holds one. Refused when the deck holds fewer
- * cards than a match needs.
+ * Start a match from the player's deck ids, against the opponent named by
+ * `opponentId` (the first opponent unless another is chosen). The player is
+ * dealt their own deck and the opponent its own, each shuffled separately, and
+ * each side is dealt a starting hand — then the player's first turn begins at
+ * once, drawing a card while the deck holds one. The opponent's id and name are
+ * stamped on the match, so every label and log line that follows, and a save
+ * picked back up later, names the character the match was started against.
+ * Refused when the deck holds fewer cards than a match needs, or when the id
+ * names no opponent this game has.
  */
-export function createMatch(deckIds, { rng = Math.random } = {}) {
+export function createMatch(deckIds, { rng = Math.random, opponentId = DEFAULT_OPPONENT.id } = {}) {
   const held = Array.isArray(deckIds) ? deckIds.length : 0;
   if (held < MINIMUM_DECK_SIZE) {
     throw new Error(`a match needs at least ${MINIMUM_DECK_SIZE} cards in your deck, but it holds ${held}`);
   }
 
+  const opponent = OPPONENT_BY_ID.get(opponentId);
+  if (!opponent) {
+    const known = OPPONENTS.map((entry) => entry.id).join(", ");
+    throw new Error(`there is no opponent called "${opponentId}" to face — pick one of: ${known}`);
+  }
+
   const match = {
     id: createMatchId(),
-    opponentName: OPPONENT_NAME,
+    opponentId: opponent.id,
+    opponentName: opponent.name,
     turn: "player",
     over: false,
     winner: null,
     outcome: null,
     recorded: false,
     player: createSide(deckIds, rng),
-    opponent: createSide(OPPONENT_DECK, rng),
+    opponent: createSide(opponent.deck, rng),
     log: [],
   };
   // The match opens on the player's first turn, which draws a card. The line is

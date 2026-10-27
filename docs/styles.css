@@ -37,6 +37,12 @@
   --ink: #eef1fb;
   --ink-muted: #a8b1d4;
 
+  /* Each opponent has an accent of its own, spent on its sigil and on the option
+     picked in the Play screen's picker — so who is being chosen is read from a
+     mark and a word as well as from a colour. */
+  --opponent-thornmere: #7fd6a6;
+  --opponent-emberwake: #ffa06b;
+
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
   --radius-card: 20px;
   --radius-control: 12px;
@@ -576,6 +582,142 @@ body {
 }
 
 /* --------------------------------------------------------------------------
+   Before a match: who it is against
+   -------------------------------------------------------------------------- */
+
+/* The note about the deck and the opponents to choose from stand where the board
+   will be, and step aside together once a match is running. */
+.match-intro {
+  display: grid;
+  gap: 0.9rem;
+  align-content: start;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* Without this the wrapper keeps its `display: grid` and stays on screen. */
+.match-intro[hidden] {
+  display: none;
+}
+
+/* The opponents on offer: one radio each, so the choice is one a keyboard and a
+   screen reader make as easily as a thumb. */
+.opponent-picker {
+  display: grid;
+  gap: 0.55rem;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.opponent-picker[hidden] {
+  display: none;
+}
+
+.opponent-picker-legend {
+  margin-bottom: 0.5rem;
+  padding: 0;
+  color: var(--ink-muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+/* Options share a row when the width can hold two and stack when it cannot, so a
+   phone in portrait fits the picker as two short rows on the first screen. */
+.opponent-options {
+  display: grid;
+  gap: 0.55rem;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 12.5rem), 1fr));
+}
+
+/* The whole option is the radio's label: its mark in its own accent, its name,
+   then the look it cuts and the kind of deck it brings. */
+.opponent-option {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  align-items: center;
+  gap: 0.15rem 0.55rem;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--edge);
+  border-radius: var(--radius-control);
+  background-color: rgba(168, 177, 212, 0.04);
+  cursor: pointer;
+  transition:
+    border-color 160ms var(--ease-out),
+    background-color 160ms var(--ease-out);
+}
+
+.opponent-option:hover {
+  border-color: var(--edge-soft);
+}
+
+/* The chosen opponent is the one the Start match button will open the board
+   against, so it is marked by more than a filled radio: the accent keyline, a
+   lift in the surface and the mark held at full strength. */
+.opponent-option:has(.opponent-radio:checked) {
+  border-color: var(--sigil-accent);
+  background-color: rgba(168, 177, 212, 0.1);
+}
+
+/* The radio is the control, but the label is what is being picked, so the ring
+   goes round the whole option rather than round the dot alone. */
+.opponent-option:has(.opponent-radio:focus-visible) {
+  outline: 2px solid var(--foil);
+  outline-offset: 2px;
+}
+
+.opponent-radio {
+  width: 1.1rem;
+  height: 1.1rem;
+  margin: 0;
+  accent-color: var(--sigil-accent);
+}
+
+/* The mark of each option is drawn in its opponent's accent, the one detail cut
+   into it in the ink that prints on foil. */
+.opponent-sigil {
+  width: 1.75rem;
+  height: 1.75rem;
+  opacity: 0.75;
+}
+
+.opponent-option:has(.opponent-radio:checked) .opponent-sigil {
+  opacity: 1;
+}
+
+.sigil-body {
+  fill: var(--sigil-accent);
+}
+
+.sigil-accent {
+  fill: var(--on-foil);
+}
+
+.opponent-text {
+  display: grid;
+  min-width: 0;
+}
+
+.opponent-name {
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.opponent-look,
+.opponent-deck {
+  color: var(--ink-muted);
+  font-size: 0.8rem;
+  line-height: 1.35;
+}
+
+.opponent-deck {
+  color: var(--ink);
+}
+
+/* --------------------------------------------------------------------------
    The match
    -------------------------------------------------------------------------- */
 
@@ -1046,12 +1188,27 @@ body {
     grid-column: 1 / -1;
   }
 
-  /* Before a match the note stands where the board will be. */
+  /* Before a match the opponents to choose and the note stand where the board
+     will be. */
   #screen-play > #match-intro,
   #screen-play > .match-board {
     grid-row: 2;
     grid-column: 1;
     min-height: 0;
+  }
+
+  /* A finished match keeps the picker above it — the next one can be against
+     someone else — so the board takes the row below the choice instead of
+     sharing its cell with it. */
+  #screen-play:has(> #match-intro:not([hidden])) {
+    grid-template-rows: auto auto minmax(0, 1fr);
+  }
+
+  #screen-play:has(> #match-intro:not([hidden])) > .match-board {
+    grid-row: 3;
+    /* The choice costs the board a row, so the board keeps a height its tables
+       and log can be read at and the page scrolls rather than squashing them. */
+    min-height: 26rem;
   }
 
   #screen-play > .actions {

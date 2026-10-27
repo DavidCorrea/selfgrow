@@ -9,8 +9,8 @@
  * page says is what a tool returns, and what a tool does is what the page shows.
  */
 
-import { cardArtSvg, cardBackSvg } from "./cardart.js";
-import { CARDS, CARD_BY_ID, DECK_LIMIT, MINIMUM_DECK_SIZE, OPPONENT_NAME } from "./cards.js";
+import { cardArtSvg, cardBackSvg, opponentSigilSvg } from "./cardart.js";
+import { CARDS, CARD_BY_ID, DECK_LIMIT, DEFAULT_OPPONENT, MINIMUM_DECK_SIZE, OPPONENTS } from "./cards.js";
 import {
   clearSavedMatch,
   collectionSize,
@@ -67,6 +67,10 @@ const state = {
   // when none is picked — so End turn still sends the whole table at the front
   // card by default. It is a page-only choice, cleared with each new turn.
   selectedAttacker: null,
+  // The opponent the next match will be against, chosen from the picker on the
+  // Play screen. It belongs to the page rather than to a match: a match already
+  // running keeps the opponent it was started against.
+  opponentId: DEFAULT_OPPONENT.id,
 };
 
 const screens = new Map(
@@ -88,7 +92,11 @@ const deckSummary = document.getElementById("deck-summary");
 // degrades to a missing readout rather than a page that will not render.
 const matchBoard = document.getElementById("match-board");
 const matchIntro = document.getElementById("match-intro");
+const matchIntroLine = document.getElementById("match-intro-line");
 const matchIntroOpponent = document.getElementById("match-intro-opponent");
+const matchIntroDeck = document.getElementById("match-intro-deck");
+const opponentPicker = document.getElementById("opponent-picker");
+const opponentOptions = document.getElementById("opponent-options");
 const matchOpponentName = document.getElementById("match-opponent-name");
 const matchOpponentHealthLabel = document.getElementById("match-opponent-health-label");
 const matchOpponentHandLabel = document.getElementById("match-opponent-hand-label");
@@ -510,21 +518,95 @@ function rewardText(won) {
 }
 
 /**
+ * Whether the Play screen is standing before a match: with none started yet, or
+ * once the last one is over so the next can be against someone else. A match in
+ * progress owns the screen, and its own labels say who it is against.
+ */
+function isBeforeMatch() {
+  return !state.match || state.match.over;
+}
+
+/** The opponent the next match would be against, out of the one list of them. */
+function selectedOpponent() {
+  return OPPONENTS.find((opponent) => opponent.id === state.opponentId) ?? DEFAULT_OPPONENT;
+}
+
+/**
+ * One opponent in the picker, as a radio a keyboard can reach and a thumb can
+ * tap: the opponent's mark, their name, their look and the kind of deck they
+ * bring, with the whole option as the radio's label so pressing any part of it
+ * picks that opponent.
+ */
+function opponentOption(opponent) {
+  const option = document.createElement("label");
+  option.className = "opponent-option";
+  // The accent names a token in styles.css, so the colour itself stays written
+  // in the one place the page writes colours.
+  option.style.setProperty("--sigil-accent", `var(${opponent.accent})`);
+
+  const radio = document.createElement("input");
+  radio.type = "radio";
+  radio.name = "opponent";
+  radio.value = opponent.id;
+  radio.className = "opponent-radio";
+
+  const text = document.createElement("span");
+  text.className = "opponent-text";
+
+  const name = document.createElement("span");
+  name.className = "opponent-name";
+  name.textContent = opponent.name;
+
+  const look = document.createElement("span");
+  look.className = "opponent-look";
+  look.textContent = opponent.look;
+
+  const deck = document.createElement("span");
+  deck.className = "opponent-deck";
+  deck.textContent = opponent.description;
+
+  text.append(name, look, deck);
+  const sigil = opponentSigilSvg(opponent);
+  option.append(radio, ...(sigil ? [sigil] : []), text);
+  return option;
+}
+
+/**
+ * Write the chosen opponent into the picker and the note above it, and show them
+ * only while the Play screen stands before a match. The options are built once
+ * and only their checked state changes, so a radio a keyboard visitor is
+ * standing on keeps its focus while the choice is made.
+ */
+function renderOpponentChoice() {
+  if (opponentPicker) opponentPicker.hidden = !isBeforeMatch();
+  // With a result on the board the note about the deck has had its say: the
+  // picker alone stands above the board, to choose who the next match is against.
+  if (matchIntroLine) matchIntroLine.hidden = Boolean(state.match);
+  for (const radio of opponentOptions?.querySelectorAll("input") ?? []) {
+    radio.checked = radio.value === state.opponentId;
+  }
+  const opponent = selectedOpponent();
+  if (matchIntroOpponent) matchIntroOpponent.textContent = opponent.name;
+  if (matchIntroDeck) matchIntroDeck.textContent = opponent.description.toLowerCase();
+}
+
+/**
  * Draw the match board: who the match is against, both heroes' health, the
  * player's energy, the hand, both tables and the log — all of it text, so a
  * sighted player, a screen reader and an agent read the same match. With no
- * match in progress the board is hidden and the note about the deck, the
- * opponent and the Start match button stand in its place. Once a hero has fallen
- * the hand and the End turn button go with it and the result stands in their
- * place, so there is nothing left to press.
+ * match in progress the board is hidden and the opponent picker, the note about
+ * the deck, the opponent it names and the Start match button stand in its place.
+ * Once a hero has fallen the hand and the End turn button go with it and the
+ * result stands in their place, so there is nothing left to press.
  */
 function renderMatch() {
   const match = state.match;
   if (matchBoard) matchBoard.hidden = !match;
-  if (matchIntro) matchIntro.hidden = Boolean(match);
-  // The opponent is a character, named before the match and on the board, from
-  // the one place the opponent is defined.
-  if (matchIntroOpponent) matchIntroOpponent.textContent = OPPONENT_NAME;
+  if (matchIntro) matchIntro.hidden = !isBeforeMatch();
+  // Who is being faced is read from the picker's choice before a match, and from
+  // the match itself once one is running — so a choice changes nothing about the
+  // match already on the board.
+  renderOpponentChoice();
   if (startMatchButton) startMatchButton.hidden = Boolean(match);
   if (endTurnButton) endTurnButton.hidden = !match || match.over || match.turn !== "player";
   renderMatchResult(match);
@@ -652,19 +734,41 @@ export function refreshSavedMatch() {
 }
 
 /**
- * Start a match from the saved deck — what a visitor does by pressing Start
- * match, and what the start-match tool does on their behalf. Refused, with the
- * reason, when the deck holds fewer cards than a match needs. Opens the Play
- * screen, replaces any saved match with this new one, and returns the state
- * afterwards.
+ * Start a match from the saved deck, against the opponent named by `opponentId`
+ * — the one picked in the Play screen's picker unless another is named. What a
+ * visitor does by pressing Start match, and what the start-match tool does on
+ * their behalf. Refused, with the reason, when the deck holds fewer cards than a
+ * match needs or the opponent is not one this game has. Opens the Play screen,
+ * replaces any saved match with this new one, and returns the state afterwards.
  */
-export function startMatch() {
-  state.match = createMatch(state.deck);
+export function startMatch(opponentId = state.opponentId) {
+  state.match = createMatch(state.deck, { opponentId });
+  // The picker follows the match that was actually dealt, so a refused start
+  // leaves the choice where it was.
+  state.opponentId = state.match.opponentId;
   state.result = null;
   state.screen = "play";
   state.selectedAttacker = null;
   setMatchMessage("");
   persistMatch();
+  render();
+  return readState();
+}
+
+/**
+ * Choose which opponent the next match is against — what a visitor does by
+ * picking one in the Play screen's picker, and what the choose-opponent tool does
+ * on their behalf. The choice belongs to the page rather than to a match, so a
+ * match already running keeps the opponent it was started against, and an
+ * unfinished match picked up later still faces it. Refused, with the reason, when
+ * the id names no opponent this game has. Returns the state afterwards.
+ */
+export function selectOpponent(opponentId) {
+  if (!OPPONENTS.some((opponent) => opponent.id === opponentId)) {
+    const known = OPPONENTS.map((opponent) => opponent.id).join(", ");
+    throw new Error(`there is no opponent called "${opponentId}" to face — pick one of: ${known}`);
+  }
+  state.opponentId = opponentId;
   render();
   return readState();
 }
@@ -1014,10 +1118,13 @@ function commitDeck() {
  * size, its limit, the fewest cards a match needs and the cards themselves —
  * whether it will survive closing the page, how many matches have been played and
  * won, the result of the last finished match (whether it was a win or a loss, the
- * card a win awarded, and whether that completed the set), the match the home
- * screen offers to continue (`canContinue` and the `savedMatch` summary of an
- * unfinished game left in the browser), and the actions they can take from here.
- * This is what the get-state tool returns.
+ * card a win awarded, and whether that completed the set), the opponents a match
+ * can be fought against (`opponents` — each with the id to start a match with,
+ * its name, its look and the kind of deck it brings) and which of them the next
+ * match would be against (`selectedOpponentId`), the match the home screen offers
+ * to continue (`canContinue` and the `savedMatch` summary of an unfinished game
+ * left in the browser), and the actions they can take from here. This is what the
+ * get-state tool returns.
  */
 export function readState() {
   // Only the actions a visitor can actually reach: a control this screen hides
@@ -1042,6 +1149,10 @@ export function readState() {
     matchesPlayed: state.matchesPlayed,
     result: state.result ? { ...state.result } : null,
     saved: state.saved,
+    // Who a match could be against, and which of them the next one would be —
+    // the picker the Play screen offers, as plain data.
+    opponents: OPPONENTS.map(({ id, name, look, description }) => ({ id, name, look, description })),
+    selectedOpponentId: state.opponentId,
     match: readMatch(),
     canContinue: Boolean(offerable),
     savedMatch: savedMatchSummary(offerable),
@@ -1070,21 +1181,22 @@ function describeMatchCard(card) {
  * cards the opponent holds (`opponentHand`, the face-down backs the board shows)
  * and how many are left to draw, the ordered log of what happened — its last line the
  * final blow — and the moves
- * available now, of which a finished match offers none. `opponentName` names the
- * character being faced, whose deck is its own rather than a copy of the
- * player's. With no match it says so — `active` false, and `opponentName` the
- * character a match would be against, the name the Play screen prints before one
- * starts — so a reader can tell the difference between "nothing has happened
- * yet" and "a match with an empty hand". A finished match also carries its
- * `outcome` — "win" or "loss" from the player's side — and whether it has been
- * recorded to the save yet.
+ * available now, of which a finished match offers none. `opponentId` and
+ * `opponentName` name the character being faced, whose deck is its own rather
+ * than a copy of the player's. With no match it says so — `active` false, and
+ * `opponentId`/`opponentName` the character the picker has chosen, the name the
+ * Play screen prints before one starts — so a reader can tell the difference
+ * between "nothing has happened yet" and "a match with an empty hand". A
+ * finished match also carries its `outcome` — "win" or "loss" from the player's
+ * side — and whether it has been recorded to the save yet.
  */
 export function readMatch() {
   const match = state.match;
   if (!match) {
     return {
       active: false,
-      opponentName: OPPONENT_NAME,
+      opponentId: state.opponentId,
+      opponentName: selectedOpponent().name,
       over: false,
       winner: null,
       outcome: null,
@@ -1107,6 +1219,7 @@ export function readMatch() {
 
   return {
     active: true,
+    opponentId: match.opponentId,
     opponentName: match.opponentName,
     over: match.over,
     winner: match.winner,
@@ -1225,6 +1338,15 @@ export function showScreen(screen) {
 for (const button of document.querySelectorAll("[data-screen-target]")) {
   button.addEventListener("click", () => showScreen(button.dataset.screenTarget));
 }
+
+// The picker's options are built once from the list of opponents, and its
+// choice becomes the opponent the next match is against.
+if (opponentOptions) {
+  opponentOptions.replaceChildren(...OPPONENTS.map(opponentOption));
+}
+opponentPicker?.addEventListener("change", (event) => {
+  if (event.target instanceof HTMLInputElement) runMatchAction(() => selectOpponent(event.target.value));
+});
 
 startMatchButton?.addEventListener("click", () => runMatchAction(() => startMatch()));
 continueButton?.addEventListener("click", () => runMatchAction(() => continueMatch()));
