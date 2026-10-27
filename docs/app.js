@@ -35,6 +35,7 @@ import {
   nextRewardId,
   readSavedMatch,
   recordResult,
+  saveCode,
   saveDeck,
   saveMatch,
 } from "./collection.js";
@@ -168,6 +169,11 @@ const state = {
   // Play screen. It belongs to the page rather than to a match: a match already
   // running keeps the opponent it was started against.
   opponentId: DEFAULT_OPPONENT.id,
+  // Whether the Collection screen's save-code panel is open, so a caller can
+  // read the same fact the button's label carries. Revealing the code only sets
+  // this and fills the box: it reads the save and writes nothing, so the
+  // collection, the deck and the record are exactly as they were.
+  saveCodeShown: false,
 };
 
 const screens = new Map(
@@ -194,6 +200,20 @@ const collectionOrderButtons = [...document.querySelectorAll("[data-collection-o
 // card is drawn. Both optional, so a missing one degrades to no figure.
 const nextRewardHeading = document.getElementById("next-reward-heading");
 const nextRewardBody = document.getElementById("next-reward-body");
+
+// The Collection screen's save-code control: the one button that reveals and
+// hides the code, the panel holding the box and the copy button, and the status
+// line that says in words what happened. All optional, so a missing one degrades
+// to a missing control rather than a page that will not render.
+const saveCodeButton = document.getElementById("action-save-code");
+const saveCodePanel = document.getElementById("save-code-panel");
+const saveCodeText = document.getElementById("save-code-text");
+const copySaveCodeButton = document.getElementById("action-copy-save-code");
+const saveCodeStatus = document.getElementById("save-code-status");
+// What the save-code status line says — empty until the code is revealed, then
+// the words that say the code is on screen, or that it was copied, or that the
+// clipboard refused and the code is selected to copy by hand.
+let saveCodeMessage = "";
 
 // The match board's places, gathered once. Each is optional so a missing one
 // degrades to a missing readout rather than a page that will not render.
@@ -289,8 +309,33 @@ function render() {
   renderMatchRules();
   renderContinueOffer();
   renderNextReward();
+  renderSaveCode();
 
   screenStatus.textContent = `${SCREEN_LABELS[state.screen]} screen`;
+}
+
+/**
+ * Draw the Collection screen's save-code control: whether the panel is open,
+ * what the button offers next, and the words the status line carries. The button
+ * says the same thing in words that `aria-expanded` says silently, so the state
+ * is read whether or not the styling is.
+ */
+function renderSaveCode() {
+  if (!saveCodePanel) return;
+  saveCodePanel.hidden = !state.saveCodeShown;
+  if (saveCodeButton) {
+    saveCodeButton.setAttribute("aria-expanded", String(state.saveCodeShown));
+    saveCodeButton.textContent = state.saveCodeShown ? "Hide save code" : "Show save code";
+  }
+  // The box always holds the code for the game as it stands now, so a code left
+  // on screen while a match is won and lost is refreshed rather than stale. It
+  // is only rewritten when it changed, so a player selecting the code by hand is
+  // not interrupted by a redraw that would drop the selection.
+  if (state.saveCodeShown && saveCodeText) {
+    const current = saveCode();
+    if (saveCodeText.value !== current) saveCodeText.value = current;
+  }
+  if (saveCodeStatus) saveCodeStatus.textContent = saveCodeMessage;
 }
 
 /** The home screen's one-line deck summary: its size, then the cards in it. */
@@ -1453,6 +1498,62 @@ export function setCollectionOrder(order) {
 }
 
 /**
+ * The whole game as one save code, with whether the code is on screen right now
+ * — what the get-save-code tool returns, and what the page's own box holds. The
+ * code is always present, whether the panel is open or not, because it is
+ * derived from the save rather than from the panel. It is read-only: reading it
+ * changes nothing.
+ */
+export function readSaveCode() {
+  return { code: saveCode(), shown: state.saveCodeShown };
+}
+
+/**
+ * Open or close the Collection screen's save code — what a visitor does by
+ * pressing "Show save code" or "Hide save code", and what the
+ * set-save-code-shown tool does on their behalf. Revealing fills the box with a
+ * freshly derived code; hiding clears the words that were about it. Either way
+ * only the panel and those words change, so the collection, the deck and the
+ * record are exactly as they were. Returns `{ code, shown }` afterwards.
+ */
+export function setSaveCodeShown(shown) {
+  state.saveCodeShown = Boolean(shown);
+  saveCodeMessage = state.saveCodeShown
+    ? "Your save code is on screen — copy it, or select it by hand."
+    : "";
+  renderSaveCode();
+  return readSaveCode();
+}
+
+/**
+ * Put the save code on the clipboard — what pressing "Copy save code" does. The
+ * clipboard may be missing or refused, so a failed copy selects the code in its
+ * box instead and says so in words, rather than the player being told it worked
+ * when it did not. Returns the words the status line now shows.
+ */
+async function copySaveCode() {
+  let copied = false;
+  try {
+    await navigator.clipboard.writeText(saveCode());
+    copied = true;
+  } catch {
+    copied = false;
+  }
+
+  if (copied) {
+    saveCodeMessage = "Save code copied to the clipboard.";
+  } else {
+    // Selecting the code is the fallback the clipboard failure leaves: it is
+    // already selectable by hand, and this puts it in reach of one more press.
+    saveCodeText?.focus();
+    saveCodeText?.select();
+    saveCodeMessage = "Couldn't copy automatically — the save code is selected, copy it by hand.";
+  }
+  renderSaveCode();
+  return saveCodeMessage;
+}
+
+/**
  * Pick up the match that was left: set it running again from the saved record —
  * both sides' health, energy, hands, tables, decks and the log exactly as they
  * were, on the same side's turn — open the Play screen and return the state.
@@ -2035,7 +2136,10 @@ function commitDeck() {
  * card the last win added to the collection, or null when nothing was newly
  * earned: no result yet, a loss, or a win whose only card was a duplicate), the
  * card the next win would add (`nextReward`, with `nextRewardComplete` true once
- * every reward card is owned), the four points the Play screen tells a newcomer about a match and
+ * every reward card is owned), whether the Collection screen's save-code panel
+ * is open (`saveCodeShown`, the same fact the "Show save code"/"Hide save code"
+ * button carries — the get-save-code tool returns the code itself),
+ * the four points the Play screen tells a newcomer about a match and
  * whether that strip is showing
  * (`matchRules`), the opponents a match can be fought against (`opponents` — each
  * with the id to start a match with, its name, its look, the kind of deck it
@@ -2086,6 +2190,10 @@ export function readState() {
     collectionView: state.collectionView,
     // How that list is read: "catalog" for the game's own order, "cost" cheapest first.
     collectionOrder: state.collectionOrder,
+    // Whether the Collection screen's save-code panel is open right now, so a
+    // caller reads the same fact the "Show save code"/"Hide save code" button's
+    // label carries. The get-save-code tool returns the code itself.
+    saveCodeShown: state.saveCodeShown,
     deckSize: state.deck.length,
     deckLimit: state.deckLimit,
     minimumDeckSize: state.minimumDeckSize,
@@ -2396,6 +2504,8 @@ for (const button of collectionViewButtons) {
 for (const button of collectionOrderButtons) {
   button.addEventListener("click", () => setCollectionOrder(button.dataset.collectionOrder));
 }
+saveCodeButton?.addEventListener("click", () => setSaveCodeShown(!state.saveCodeShown));
+copySaveCodeButton?.addEventListener("click", () => copySaveCode());
 startMatchButton?.addEventListener("click", () => runMatchAction(() => startMatch()));
 continueSavedButton?.addEventListener("click", () => runMatchAction(() => continueMatch()));
 discardSavedButton?.addEventListener("click", () => runMatchAction(() => discardSavedMatch()));
