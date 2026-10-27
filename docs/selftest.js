@@ -3757,11 +3757,12 @@ export async function checks() {
   // --- What a newcomer is told before a match -------------------------------
 
   // The Play screen stands before a match with a short how-a-match-works strip:
-  // three labelled points — what a card costs, how the table fights and which
-  // hero losing ends it — folded behind one control. A player who has not
-  // finished a match meets it open, and the same words and whether they show are
-  // what the get-match-rules tool hands an agent. The strip must not push the
-  // picker or the Start match button off the first screen.
+  // four labelled points — what a card costs, how the table fights, which hero
+  // losing ends it, and what a card does the moment it is played — folded behind
+  // one control. A player who has not finished a match meets it open, and the
+  // same words and whether they show are what the get-match-rules tool hands an
+  // agent. The strip must not push the picker or the Start match button off the
+  // first screen.
   {
     const rulesSection = document.getElementById("match-rules");
     const rulesPoints = document.getElementById("match-rules-points");
@@ -3773,18 +3774,18 @@ export async function checks() {
         "the Play screen has no how-a-match-works strip (#match-rules, #match-rules-points and " +
           "#action-toggle-rules must all exist), so a first-time player is never told how a match works"
       );
-    } else if (!rulesState || !Array.isArray(rulesState.points) || rulesState.points.length !== 3) {
+    } else if (!rulesState || !Array.isArray(rulesState.points) || rulesState.points.length !== 4) {
       fail(
-        `the state exposes ${JSON.stringify(rulesState?.points)} as the match rules instead of three ` +
+        `the state exposes ${JSON.stringify(rulesState?.points)} as the match rules instead of four ` +
           "labelled points, so an agent cannot teach a newcomer how a match works"
       );
     } else {
       const labels = [...rulesPoints.querySelectorAll("dt")].map((dt) => textOf(dt));
       const lines = [...rulesPoints.querySelectorAll("dd")].map((dd) => textOf(dd));
-      if (labels.length !== 3 || lines.length !== 3) {
+      if (labels.length !== 4 || lines.length !== 4) {
         fail(
           `the Play screen prints ${labels.length} rule label(s) and ${lines.length} rule line(s) instead ` +
-            "of three labelled points"
+            "of four labelled points"
         );
       }
       rulesState.points.forEach((point, index) => {
@@ -3805,6 +3806,39 @@ export async function checks() {
       ]) {
         if (!allRules.includes(word)) {
           fail(`the match rules never mention "${word}", so a newcomer cannot read ${why}: they read "${allRules}"`);
+        }
+      }
+
+      // The fourth point is the newest rule: a card can act the moment it is
+      // played. It names all three things a card can do as it lands, in the
+      // words a card's own face prints them — the abilities are read from
+      // docs/cards.js, so the rule a newcomer reads and the card they watch
+      // cannot say different things.
+      const whenPlayedPoint = rulesState.points[3];
+      if (!whenPlayedPoint) {
+        fail("the match rules carry no fourth point, so nothing tells a newcomer a card can act as it lands");
+      } else {
+        const fourthRule = `${whenPlayedPoint.label} ${whenPlayedPoint.text}`.toLowerCase();
+        if (!fourthRule.includes("played")) {
+          fail(
+            `the fourth match rule reads "${whenPlayedPoint.label} — ${whenPlayedPoint.text}", whose label never ` +
+              "says a card can act when played"
+          );
+        }
+        for (const [ability, why] of [
+          [cardCatalog.DRAW_ON_PLAY, "draw you a card"],
+          [cardCatalog.HEAL_ON_PLAY, "heal your hero"],
+          [cardCatalog.STRIKE_ON_PLAY, "strike the opponent's front card"],
+        ]) {
+          // The rule drops the shared "When played:" prefix its own label stands
+          // in for, so the rest of the ability is what must appear.
+          const words = ability.replace(/^When played:\s*/, "").toLowerCase();
+          if (!fourthRule.includes(words)) {
+            fail(
+              `the fourth match rule reads "${whenPlayedPoint.label} — ${whenPlayedPoint.text}", which never says ` +
+                `a played card can "${words}", so a newcomer may never learn a card can ${why}`
+            );
+          }
         }
       }
 
@@ -3874,8 +3908,8 @@ export async function checks() {
         }
         const viaTool = await rulesTool.execute({});
         const live = game.readState().matchRules;
-        if (!viaTool || typeof viaTool.shown !== "boolean" || !Array.isArray(viaTool.points) || viaTool.points.length !== 3) {
-          fail(`the get-match-rules tool returns ${JSON.stringify(viaTool)} instead of three points and whether they show`);
+        if (!viaTool || typeof viaTool.shown !== "boolean" || !Array.isArray(viaTool.points) || viaTool.points.length !== 4) {
+          fail(`the get-match-rules tool returns ${JSON.stringify(viaTool)} instead of four points and whether they show`);
         } else if (JSON.stringify(viaTool.points) !== JSON.stringify(live.points) || viaTool.shown !== live.shown) {
           fail("the get-match-rules tool returns different rules, or a different shown state, than the page's own state");
         }
@@ -3891,7 +3925,7 @@ export async function checks() {
       } else if (game.readState().matchesPlayed === 0) {
         const wasShown = game.readState().matchRules.shown;
         const toggled = await toggleTool.execute({});
-        if (!toggled || toggled.shown === wasShown || !Array.isArray(toggled.points) || toggled.points.length !== 3) {
+        if (!toggled || toggled.shown === wasShown || !Array.isArray(toggled.points) || toggled.points.length !== 4) {
           fail(`the toggle-match-rules tool returned ${JSON.stringify(toggled)}, which does not report the strip flipped`);
         } else if (game.readState().matchRules.shown === wasShown) {
           fail("the toggle-match-rules tool reported flipping the strip but the page did not change");
