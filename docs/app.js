@@ -428,11 +428,30 @@ function attackTargetControl(card) {
   );
   control.addEventListener("click", () =>
     runMatchAction(() => {
-      attackMatch(state.selectedAttacker, card.id);
-      focusMatchControl(`#match-opponent-table [data-card-id="${card.id}"] .match-attack-target`);
+      const attackerId = state.selectedAttacker;
+      attackMatch(attackerId, card.id);
+      // The blow spends the attacker and clears the pick, so this very control
+      // goes with it; focus lands back on the card that struck, which is still
+      // on the table until the turn ends.
+      focusMatchControl(`#match-table [data-card-id="${attackerId}"] .match-attack-select`);
     })
   );
   return control;
+}
+
+/**
+ * The card the player picked to attack with, or null when none is picked. The
+ * pick names a card that is still standing on the player's table and has not
+ * yet attacked; the opponent's target controls are drawn only while this names
+ * a card, so the board never invites a move that cannot be made.
+ */
+function pickedAttacker(match) {
+  if (!state.selectedAttacker) return null;
+  return (
+    match.player.table.find(
+      (card) => card.id === state.selectedAttacker && !card.hasAttacked
+    ) || null
+  );
 }
 
 /**
@@ -600,23 +619,27 @@ function renderPlayerTable(match, canAttack, reactions) {
 /**
  * The opponent's table, each card with the control that sends the picked card at
  * it, and — once the table is empty — the one control that sends it at the hero
- * behind. Like the player's own controls, these appear only on the player's own
- * turn in a live match.
+ * behind. These appear only on the player's own turn in a live match and only
+ * once a table card has been picked to attack with, so no target is offered for
+ * a blow that cannot be made.
  */
 function renderOpponentTable(match, canAttack, reactions) {
   if (!matchOpponentTableList) return;
   const seen = new Map();
+  // The opponent's controls appear only once the player has picked a card to
+  // attack with, so the board offers a target exactly when one can be struck.
+  const targetable = canAttack && Boolean(pickedAttacker(match));
   const children = match.opponent.table.map((card) => {
     const item = matchCardItem(card);
     markCardReaction(item, reactions.opponent[tableOccurrenceKey(seen, card.id)]);
-    if (!canAttack) return item;
+    if (!targetable) return item;
     item.classList.add("match-card-action");
     item.append(attackTargetControl(card));
     return item;
   });
   if (!match.opponent.table.length) {
     children.push(emptyTableItem(`${match.opponentName}'s table is empty.`));
-    if (canAttack) {
+    if (targetable) {
       const item = document.createElement("li");
       item.className = "match-card match-card-action match-attack-hero-item";
       const control = document.createElement("button");
@@ -625,8 +648,9 @@ function renderOpponentTable(match, canAttack, reactions) {
       control.textContent = "Attack the opponent hero";
       control.addEventListener("click", () =>
         runMatchAction(() => {
-          attackMatch(state.selectedAttacker, HERO_TARGET);
-          focusMatchControl(".match-attack-hero");
+          const attackerId = state.selectedAttacker;
+          attackMatch(attackerId, HERO_TARGET);
+          focusMatchControl(`#match-table [data-card-id="${attackerId}"] .match-attack-select`);
         })
       );
       item.append(control);
