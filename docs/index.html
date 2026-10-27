@@ -291,11 +291,12 @@
              holds with the controls that put a copy in the deck, and the ones
              still to collect, marked as such. The view buttons above the list
              switch it between the whole set, only what is still to collect
-             and only the cards that do something the moment they are played or
-             the moment they fall, so a player working toward a full set can hide
-             what they already have and a player building around either ability
-             can see the cards that carry one; the two order buttons read the same
-             cards in the game's own order or cheapest first, so the cheap cards
+             and only the cards that do something the moment they are played,
+             the moment they fall, or that grow while they stay, so a player
+             working toward a full set can hide what they already have and a
+             player building around any ability can see the cards that carry one;
+             the two order buttons read the same cards in the game's own order or
+             cheapest first, so the cheap cards
              and the big ones land where a player building a deck expects them. A
              list of text, so a sighted player, a screen reader and an agent read
              the same set. -->
@@ -313,6 +314,9 @@
             </button>
             <button type="button" class="btn btn-secondary" data-collection-view="falls" aria-pressed="false">
               Acts when they fall
+            </button>
+            <button type="button" class="btn btn-secondary" data-collection-view="grows" aria-pressed="false">
+              Grows each turn
             </button>
           </div>
           <div class="collection-view" role="group" aria-label="Which order the set lists">

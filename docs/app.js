@@ -51,12 +51,12 @@ const SCREEN_LABELS = {
   play: "Play",
 };
 
-// The four views the Collection screen's set list can be in: every card in the
+// The five views the Collection screen's set list can be in: every card in the
 // game, only the ones not collected yet, only the ones whose face carries a
-// when-played ability, or only the ones whose face carries a fall ability. The
-// list is also the schema a tool checks against, so a caller cannot ask for a
-// view the page does not show.
-const COLLECTION_VIEWS = ["all", "missing", "abilities", "falls"];
+// when-played ability, only the ones whose face carries a fall ability, or only
+// the ones that grow while they stay. The list is also the schema a tool checks
+// against, so a caller cannot ask for a view the page does not show.
+const COLLECTION_VIEWS = ["all", "missing", "abilities", "falls", "grows"];
 
 // The two orders the Collection screen's set list can be read in: the catalog's
 // own order, or cheapest first. The list is also the schema a tool checks
@@ -1670,10 +1670,10 @@ export function toggleSaveRestore() {
 
 /**
  * Choose which cards the Collection screen's set list shows — what a visitor
- * does by pressing the "All cards", "Still to collect", "Acts when played" or
- * "Acts when they fall" button, and what the set-collection-view tool does on
- * their behalf. It only changes what the list shows: the collection and the
- * deck are untouched.
+ * does by pressing the "All cards", "Still to collect", "Acts when played",
+ * "Acts when they fall" or "Grows each turn" button, and what the
+ * set-collection-view tool does on their behalf. It only changes what the list
+ * shows: the collection and the deck are untouched.
  * Refused, with the reason, when the view is not one of COLLECTION_VIEWS.
  * Returns the state afterwards, the same shape readState() gives.
  */
@@ -2209,18 +2209,24 @@ export const COLLECTION_VIEW_TEXT = {
     label: "Cards in the game that act when they fall",
     empty: "No card in the game acts when it falls.",
   },
+  grows: {
+    label: "Cards in the game that grow while they stay",
+    empty: "No card in the game grows while it stays.",
+  },
 };
 
 /**
  * Whether a card belongs in the view the set list is showing: every card in
  * "all", the ones not collected yet in "missing", the ones whose face does
- * something the moment it is played in "abilities", and the ones whose face
- * does something the moment it leaves the table in "falls".
+ * something the moment it is played in "abilities", the ones whose face does
+ * something the moment it leaves the table in "falls", and the ones that grow
+ * while they stay in "grows".
  */
 function isInCollectionView(card) {
   if (state.collectionView === "missing") return !card.owned;
   if (state.collectionView === "abilities") return card.ability !== null;
   if (state.collectionView === "falls") return card.fallAbility !== null;
+  if (state.collectionView === "grows") return card.growthAbility !== null;
   return true;
 }
 
@@ -2229,10 +2235,10 @@ function isInCollectionView(card) {
  * their deck controls, and the ones they do not yet with a note saying so — or,
  * in the "missing" view, only the cards not collected yet, so a player working
  * toward a full set can hide what they already have, or, in the "abilities"
- * view, only the cards whose face carries a when-played ability, or, in the
- * "falls" view, only those carrying a fall ability, so either ability can be
- * chosen for on purpose. When a view has nothing to list, it says so rather
- * than reading as an empty set.
+ * view, only the cards whose face carries a when-played ability, in the "falls"
+ * view, only those carrying a fall ability, or, in the "grows" view, only those
+ * that grow while they stay, so any ability can be chosen for on purpose. When
+ * a view has nothing to list, it says so rather than reading as an empty set.
  */
 function renderCollectionCards() {
   const list = document.getElementById("collection-list");
@@ -2519,7 +2525,8 @@ export function readState() {
     cardsOwned: state.cardsOwned,
     distinctCards: state.distinctCards,
     setTotal: state.setTotal,
-    // Which cards the Collection screen's set list is showing: "all" or "missing".
+    // Which cards the Collection screen's set list is showing: "all", "missing",
+    // "abilities", "falls" or "grows".
     collectionView: state.collectionView,
     // How that list is read: "catalog" for the game's own order, "cost" cheapest first.
     collectionOrder: state.collectionOrder,
@@ -2774,9 +2781,10 @@ export function readMatch() {
  * held, and `setTotal` is how many different cards the game has, so
  * `distinctCards` of `setTotal` is how close the set is to complete. `view`
  * says which cards the Collection screen's set list is showing — every card,
- * only the ones not collected yet, only those that act when played, or only
- * those that act when they fall — and `order` how those cards are read, in the
- * game's own catalog order or cheapest first.
+ * only the ones not collected yet, only those that act when played, only those
+ * that act when they fall, or only those that grow while they stay — and
+ * `order` how those cards are read, in the game's own catalog order or cheapest
+ * first.
  */
 export function readCollection() {
   return {
@@ -2786,7 +2794,7 @@ export function readCollection() {
     distinctCards: state.distinctCards,
     setTotal: state.setTotal,
     // Which cards the Collection screen's set list is showing: "all", "missing",
-    // "abilities" or "falls".
+    // "abilities", "falls" or "grows".
     view: state.collectionView,
     // How that list is read: "catalog" for the game's own order, "cost" cheapest first.
     order: state.collectionOrder,
