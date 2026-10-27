@@ -452,14 +452,15 @@ function cardName(cardId) {
 /**
  * The text box a card's face prints, in the same words on every card everywhere
  * it is shown, or null when the card carries no ability at all. A card that
- * carries both a when-played and a fall ability prints them as two lines of one
- * box, the when-played line first, so the text a reader looks for stays first
- * and a card that carries only a fall ability still reads its fall text. The
- * caller adds the result to the face it builds, so a card reads the same in the
- * collection, the deck, the hand and on the match table.
+ * carries more than one ability prints them as lines of one box in the order the
+ * card's own texts are written — when-played first, then growth, then fall — so
+ * the text a reader looks for stays first and a card that carries only a growth
+ * or fall ability still reads its text. The caller adds the result to the face it
+ * builds, so a card reads the same in the collection, the deck, the hand and on
+ * the match table.
  */
 function cardAbilityNote(card) {
-  const lines = [card.ability, card.fallAbility].filter(Boolean);
+  const lines = [card.ability, card.growthAbility, card.fallAbility].filter(Boolean);
   if (lines.length === 0) return null;
   if (lines.length === 1) return cardAbilityLine(lines[0]);
 
@@ -2635,6 +2636,10 @@ function describeMatchCard(card) {
     attack: card.attack,
     health: card.health,
     ability: card.ability ?? null,
+    // The ability the card carries for growing while it stays on the table,
+    // resolved from the catalog by id too, so a match card dealt before the
+    // field existed still reports it.
+    growthAbility: card.growthAbility ?? CARD_BY_ID.get(card.id)?.growthAbility ?? null,
     // The ability the card carries for when it leaves the table, resolved from
     // the catalog by id too, so a match card dealt before the field existed
     // still reports it.

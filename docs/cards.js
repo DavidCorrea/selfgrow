@@ -106,9 +106,30 @@ export const HEAL_ON_FALL = `When this falls: heal your hero ${HEAL_ON_FALL_AMOU
  */
 export const STRIKE_ON_FALL = `When this falls: deal ${STRIKE_ON_PLAY_AMOUNT} damage to the opponent's front card`;
 
+/** How much attack a card that grows gains at the start of each of its owner's
+ * turns while it remains on that table. */
+export const GROWTH_ABILITY_AMOUNT = 1;
+
+/**
+ * The ability a card carries when it rewards staying on the table. It is the
+ * first ability that answers how long a card lasts rather than what it does the
+ * moment it lands or leaves: a card whose face says it grows gains attack at the
+ * start of each of its owner's turns while it is still on that table, so a cheap
+ * card left standing becomes a threat the other side must answer, and holding a
+ * card back becomes a real decision. The grown attack is what the card strikes
+ * with, so the reward compounds.
+ *
+ * It lives in a `growthAbility` field of its own rather than overloading
+ * `ability` or `fallAbility`, so a card may carry it alongside either. The amount
+ * is written into the words on the face from the same constant the match grows
+ * by, so the card can never promise a number the trigger does not pay.
+ */
+export const GROWTH_ABILITY = `Grows: +${GROWTH_ABILITY_AMOUNT} attack at the start of each of your turns`;
+
 /** Every card in the game: id, name, cost to play, attack, health, the ability
- * printed on its face for when it is played, and the ability it carries for when
- * it falls (each absent on a card with none). */
+ * printed on its face for when it is played, the ability it carries for growing
+ * while it stays on the table, and the ability it carries for when it falls
+ * (each absent on a card with none). */
 export const CARDS = [
   // A seedling and a water spirit: the two living things that read as mending
   // what they touch, so each carries the heal ability below. Sprout is dealt at
@@ -211,6 +232,15 @@ export const CARDS = [
     ability: STRIKE_ON_PLAY,
     fallAbility: DRAW_ON_FALL,
   },
+  // The first card that rewards staying on the table rather than only arriving
+  // or leaving: a cheap climbing vine that grows an attack for every turn it
+  // survives, so a small body left standing becomes a threat the other side must
+  // answer and holding a card back becomes a real decision. Its growth lives in
+  // the `growthAbility` field of its own, so the card prints no when-played and
+  // no fall text and its one line is about the reward it pays for patience. It
+  // is a reward card, cheap enough to play on the opening turn, so a player meets
+  // the ability by collecting toward it and can then build a deck around it.
+  { id: "climbing-ivy", name: "Climbing Ivy", cost: 1, attack: 1, health: 2, growthAbility: GROWTH_ABILITY },
 ];
 
 /** Lookup by id — the shape the saved collection speaks in. */
@@ -287,6 +317,9 @@ export const REWARD_POOL = [
   // Appended for the same reason as every reward before it: a save written
   // before the bloom existed keeps the next-reward order it already had.
   "sunspear-bloom",
+  // Appended again, so a save written before the ivy existed keeps its next
+  // reward and its place in the queue untouched.
+  "climbing-ivy",
 ];
 
 /**

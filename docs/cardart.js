@@ -583,6 +583,22 @@ const CARD_ART = new Map([
       `,
     },
   ],
+  [
+    "climbing-ivy",
+    {
+      description:
+        "A climbing vine: a curving stem climbing up the frame with four pointed leaves and two berries",
+      inner: `
+        <path class="art-body" d="M46 54 C44 44 46 34 50 24 C54 14 54 9 50 5 L56 5 C59 10 59 16 55 26 C51 36 49 44 52 54 Z" />
+        <path class="art-body" d="M47 46 C36 48 26 41 24 29 C36 28 45 35 47 46 Z" />
+        <path class="art-body" d="M51 36 C62 38 72 31 74 19 C62 18 53 25 51 36 Z" />
+        <path class="art-body" d="M49 26 C38 28 28 21 26 9 C38 8 47 15 49 26 Z" />
+        <path class="art-body" d="M51 18 C60 20 68 14 70 4 C60 3 52 9 51 18 Z" />
+        <circle class="art-accent" cx="46" cy="40" r="2.6" />
+        <circle class="art-accent" cx="52" cy="30" r="2.6" />
+      `,
+    },
+  ],
 ]);
 
 /**

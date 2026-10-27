@@ -82,6 +82,13 @@
  * and stops the moment a hero falls, so the blow that ends the match is the last
  * line logged.
  *
+ * A card can also reward staying on the table, by a third field of its own. A
+ * card whose face says it grows gains attack at the start of each of its owner's
+ * turns while it remains on that table — once per turn, before that side's blows
+ * — and the log names the card and its new attack. Because the growth lands
+ * before the blows, the grown attack is what the card strikes with when the turn
+ * ends or when it is sent at a chosen target, so a reward for patience compounds.
+ *
  * The front card is only the default. During their own turn the player may send
  * one of their table cards at a card of their choosing on the opponent's table —
  * or at the hero, once that table is empty — with `attack`. A card that has
@@ -97,6 +104,8 @@ import {
   DEFAULT_OPPONENT,
   DRAW_ON_FALL,
   DRAW_ON_PLAY,
+  GROWTH_ABILITY,
+  GROWTH_ABILITY_AMOUNT,
   HEAL_ON_FALL,
   HEAL_ON_FALL_AMOUNT,
   HEAL_ON_PLAY,
@@ -160,6 +169,10 @@ function cardOf(cardId) {
     // The ability the card carries for when it leaves the table, or null when it
     // carries none — kept apart from `ability` so a card may have both.
     fallAbility: card.fallAbility ?? null,
+    // The ability the card carries for growing while it stays on the table, or
+    // null when it carries none — a third field of its own, so a card may carry
+    // it alongside either of the others.
+    growthAbility: card.growthAbility ?? null,
     // Whether the card has already struck during its owner's current turn. It
     // is reset as each of that side's own turns begins, so a card strikes at
     // most once per turn whichever way the player directs it.
@@ -201,23 +214,50 @@ function createSide(deckIds, rng) {
 
 /**
  * Begin one side's own turn: count it, let its energy grow by one after the
- * first turn (never past ENERGY_CAP), refill its energy to its maximum, and draw
- * the top card of its deck while there is one. Returns the card drawn, or null
- * when the deck is spent — so the caller can say in the match log what happened,
- * in the words of the side whose turn it is. The deck already holds complete
- * cards, so the card drawn is pushed into the hand exactly as it came.
+ * first turn (never past ENERGY_CAP), refill its energy to its maximum, freshen
+ * every card on its table so each may strike again, grow the cards that reward
+ * staying, and draw the top card of its deck while there is one. Returns the
+ * card drawn, or null when the deck is spent — so the caller can say in the
+ * match log what happened, in the words of the side whose turn it is. The deck
+ * already holds complete cards, so the card drawn is pushed into the hand
+ * exactly as it came.
  */
-function beginTurn(side) {
+function beginTurn(match, side, ownerWord) {
   side.turns += 1;
   if (side.turns > 1) side.maxEnergy = Math.min(ENERGY_CAP, side.maxEnergy + 1);
   side.energy = side.maxEnergy;
   // A new own turn freshens every card on the table, so each may strike once
   // again, however it struck on the turn before.
   for (const card of side.table) card.hasAttacked = false;
+  // A card that rewards staying grows here, before any blow is struck, so the
+  // grown attack is what the card strikes with and what the board reports.
+  growTable(match, side, ownerWord);
   if (side.deck.length === 0) return null;
   const card = side.deck.shift();
   side.hand.push(card);
   return card;
+}
+
+/**
+ * Every card on `side`'s table that carries the growth ability gains its amount
+ * of attack at the start of that side's own turn, and each growth is logged
+ * naming the card and its new attack. It fires for the side whose turn is
+ * beginning and before that side's blows, so the grown attack is what the card
+ * strikes with for the rest of the turn. The ability is read from the card the
+ * match holds, and resolved from the catalog by id when the card was dealt
+ * before the field existed, so a match saved before a growth ability was printed
+ * still grows.
+ */
+function growTable(match, side, ownerWord) {
+  for (const card of side.table) {
+    const growthAbility = card.growthAbility ?? CARD_BY_ID.get(card.id)?.growthAbility ?? null;
+    if (growthAbility !== GROWTH_ABILITY) continue;
+    card.attack += GROWTH_ABILITY_AMOUNT;
+    appendLog(
+      match,
+      `${card.name} grows +${GROWTH_ABILITY_AMOUNT} attack for ${ownerWord} — it now has ${card.attack} attack.`
+    );
+  }
 }
 
 /**
@@ -277,7 +317,7 @@ export function createMatch(deckIds, { rng = Math.random, opponentId = DEFAULT_O
   };
   // The match opens on the player's first turn, which draws a card. The line is
   // logged after the opening note so the note counts the hand after the draw.
-  const openingDraw = beginTurn(match.player);
+  const openingDraw = beginTurn(match, match.player, "you");
   appendLog(
     match,
     `Match started against ${match.opponentName}. You hold ${match.player.hand.length} cards; ` +
@@ -670,7 +710,7 @@ export function attack(match, attackerId, target) {
  */
 function takeOpponentTurn(match) {
   const opponent = match.opponent;
-  const drawn = beginTurn(opponent);
+  const drawn = beginTurn(match, opponent, "the opponent");
   if (drawn) appendLog(match, `The opponent draws ${drawn.name} — ${opponent.deck.length} left in deck.`);
 
   const chooseCard = opponentChooser(match);
@@ -726,7 +766,7 @@ export function endTurn(match) {
   if (takeOpponentTurn(match)) return match;
 
   match.turn = "player";
-  const drawn = beginTurn(match.player);
+  const drawn = beginTurn(match, match.player, "you");
   appendLog(
     match,
     `Your turn — energy refreshed to ${match.player.energy} of ${match.player.maxEnergy}.`
