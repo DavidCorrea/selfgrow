@@ -9044,6 +9044,132 @@ export async function checks() {
             "blow(s) instead of the one the attack dealt"
         );
       }
+
+      // (5) Thornmere brings it: the fall card stands on the opponent's side of
+      // the table, so a player meets the mechanic before ever owning one — kills
+      // a Thornmere body and pays a front card for it. The fixed deck holds it,
+      // the state and the picker promise it by name, and Thornmere plays it on
+      // its own turn like any other card it brings.
+      const thornmereFallDeck = cardCatalog.OPPONENT_BY_ID.get("thornmere")?.deck ?? [];
+      if (!thornmereFallDeck.includes("whipthorn")) {
+        fail(
+          `Thornmere's fixed deck ${JSON.stringify(thornmereFallDeck)} does not hold "Whipthorn", so the fall ` +
+            "strike is never met on the opponent's side of the table"
+        );
+      } else {
+        const stateFallDeck =
+          game.readState().opponents.find((entry) => entry.id === "thornmere")?.deck ?? [];
+        if (!stateFallDeck.includes("whipthorn")) {
+          fail(
+            `an agent reading the state sees Thornmere's deck as ${JSON.stringify(stateFallDeck)}, which does not ` +
+              'name "Whipthorn"'
+          );
+        }
+        const deckToolForFall = toolNamed("toggle-opponent-deck");
+        if (!deckToolForFall) {
+          fail(
+            'no "toggle-opponent-deck" tool is declared, so an agent cannot open the fall-bringing deck a visitor can'
+          );
+        } else {
+          const openedFallDeck = await deckToolForFall.execute({ opponentId: "thornmere" });
+          if (!(openedFallDeck?.deck ?? []).includes("whipthorn")) {
+            fail(
+              `opening Thornmere's deck reports ${JSON.stringify(openedFallDeck?.deck ?? null)}, which does not ` +
+                'name "Whipthorn"'
+            );
+          }
+          // Fold it away again, so the picker is left as it was found.
+          await deckToolForFall.execute({ opponentId: "thornmere" });
+        }
+        const thornmereFallFace = document.querySelector(
+          '#opponent-options [data-opponent-id="thornmere"] .opponent-deck-cards [data-card-id="whipthorn"]'
+        );
+        if (faceAbility(thornmereFallFace) !== fallStrikeText) {
+          fail(
+            "the fall-striking card in Thornmere's deck fold does not say " +
+              `${JSON.stringify(fallStrikeText)} on its face (it reads ${JSON.stringify(faceAbility(thornmereFallFace))})`
+          );
+        }
+
+        // The opponent's own turn: Thornmere plays its fall card like any other,
+        // and killing it strikes the player's front card in the usual words.
+        const fallAgainst = matchEngine.createMatch(fallDeck, { rng: () => 0, opponentId: "thornmere" });
+        fallAgainst.player.table = [turtleAt(5)];
+        fallAgainst.player.hand = [];
+        fallAgainst.player.deck = [];
+        fallAgainst.opponent.table = [];
+        fallAgainst.opponent.hand = [{ ...whipthorn, health: 1, hasAttacked: false }];
+        fallAgainst.opponent.deck = [];
+        fallAgainst.opponent.energy = whipthorn.cost;
+        fallAgainst.opponent.maxEnergy = whipthorn.cost;
+        matchEngine.endTurn(fallAgainst);
+        if (!fallAgainst.opponent.table.some((card) => card.id === "whipthorn")) {
+          fail(
+            `Thornmere did not play "Whipthorn", the only card in its hand, on its turn (its table holds ` +
+              `${JSON.stringify(fallAgainst.opponent.table.map((card) => card.id))})`
+          );
+        } else {
+          const frontBefore = fallAgainst.player.table.find((card) => card.id === "mudback-turtle")?.health;
+          const expectedFrontHealth =
+            frontBefore === undefined ? "(front card gone)" : frontBefore - fallStrikeAmount;
+          const fallAttackBefore = fallAgainst.log.length;
+          matchEngine.attack(fallAgainst, "mudback-turtle", "whipthorn");
+          const fallAttackLines = fallAgainst.log.slice(fallAttackBefore);
+          const frontAfter = fallAgainst.player.table.find((card) => card.id === "mudback-turtle")?.health;
+          if (frontAfter !== expectedFrontHealth) {
+            fail(
+              `killing Thornmere's Whipthorn left your front card at ${frontAfter ?? "(gone)"} health instead of ` +
+                `${expectedFrontHealth} (${frontBefore} less the ${fallStrikeAmount} its fall deals)`
+            );
+          }
+          const expectedThornmereFallLine =
+            `Opponent's Whipthorn deals ${fallStrikeAmount} to your Mudback Turtle — it has ${frontAfter} health left.`;
+          if (!fallAttackLines.includes(expectedThornmereFallLine)) {
+            fail(
+              `the log does not read Thornmere's fallen Whipthorn's blow as a turn's blow does: expected ` +
+                `${JSON.stringify(expectedThornmereFallLine)} among ${JSON.stringify(fallAttackLines)}`
+            );
+          }
+        }
+
+        // (6) Once the player's table is empty, the same fall reaches the
+        // player's hero: a chain of falls wears the player's table away card by
+        // card, and Thornmere's last Whipthorn — the only card left standing —
+        // deals its dying blow to the hero behind the now-empty table, on the
+        // usual hero line. A played card lands on the player's table, so the
+        // table is emptied by a fall rather than by starting it empty.
+        const fallChain = matchEngine.createMatch(fallDeck, { rng: () => 0, opponentId: "thornmere" });
+        fallChain.player.table = [whipAt(1)];
+        fallChain.player.hand = [];
+        fallChain.player.deck = [];
+        fallChain.opponent.table = [whipAt(1), whipAt(1)];
+        fallChain.opponent.hand = [];
+        fallChain.opponent.deck = [];
+        const heroHealthBefore = fallChain.player.health;
+        const fallChainBefore = fallChain.log.length;
+        matchEngine.attack(fallChain, "whipthorn", "whipthorn");
+        const fallChainLines = fallChain.log.slice(fallChainBefore);
+        if (fallChain.player.table.length) {
+          fail(
+            `a chain of falls left ${JSON.stringify(fallChain.player.table.map((card) => card.id))} on your table, ` +
+              "so the fallen Whipthorn's blow never reached the hero behind it"
+          );
+        }
+        if (fallChain.player.health !== heroHealthBefore - fallStrikeAmount) {
+          fail(
+            `a fallen Whipthorn's blow at your empty table left your hero at ${fallChain.player.health} health ` +
+              `instead of ${heroHealthBefore} less the ${fallStrikeAmount} its fall deals`
+          );
+        }
+        const expectedHeroFallLine =
+          `Opponent's Whipthorn deals ${fallStrikeAmount} to you — your health ${fallChain.player.health}.`;
+        if (!fallChainLines.includes(expectedHeroFallLine)) {
+          fail(
+            `the log does not read a fallen Whipthorn's blow at the player's hero as a turn's blow does: expected ` +
+              `${JSON.stringify(expectedHeroFallLine)} among ${JSON.stringify(fallChainLines)}`
+          );
+        }
+      }
     }
   }
 
