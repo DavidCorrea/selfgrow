@@ -254,6 +254,9 @@ const matchRulesToggle = document.getElementById("action-toggle-rules");
 const matchOpponentName = document.getElementById("match-opponent-name");
 const matchOpponentPortrait = document.getElementById("match-opponent-portrait");
 const matchOpponentHealthLabel = document.getElementById("match-opponent-health-label");
+// The label their hero wears when it is the thing an ending turn would strike,
+// standing where their cards would once the table in front of it is empty.
+const matchOpponentStrikeTarget = document.getElementById("match-opponent-strike-target");
 const matchOpponentHandLabel = document.getElementById("match-opponent-hand-label");
 const matchOpponentTableHeading = document.getElementById("match-opponent-table-heading");
 const matchMessage = document.getElementById("match-message");
@@ -721,11 +724,29 @@ function renderPlayerTable(match, canAttack, reactions) {
 }
 
 /**
+ * What the player's ending turn would strike: the card at the front of the
+ * opponent's table, or — once that table is empty — the opponent's hero. Null
+ * whenever no turn of the player's is in progress, so the mark goes with the
+ * turn it belongs to. It is a label rather than a control: ending the turn is
+ * the move, and where the blows land follows from it. The board and the state a
+ * tool reads are both filled from here, so the card marked and the card struck
+ * are one answer.
+ */
+export function endOfTurnTarget(match) {
+  if (!match || match.over || match.turn !== "player") return null;
+  const front = match.opponent.table[0];
+  if (front) return { kind: "card", cardId: front.id, name: front.name };
+  return { kind: "hero", cardId: null, name: match.opponentName };
+}
+
+/**
  * The opponent's table, each card with the control that sends the picked card at
  * it, and — once the table is empty — the one control that sends it at the hero
  * behind. These appear only on the player's own turn in a live match and only
  * once a table card has been picked to attack with, so no target is offered for
- * a blow that cannot be made.
+ * a blow that cannot be made. The card an ending turn would strike carries its
+ * own wording instead, whether or not a target has been picked: that blow is
+ * coming whichever card strikes, so the mark stands on its own.
  */
 function renderOpponentTable(match, canAttack, reactions) {
   if (!matchOpponentTableList) return;
@@ -733,9 +754,23 @@ function renderOpponentTable(match, canAttack, reactions) {
   // The opponent's controls appear only once the player has picked a card to
   // attack with, so the board offers a target exactly when one can be struck.
   const targetable = canAttack && Boolean(pickedAttacker(match));
-  const children = match.opponent.table.map((card) => {
+  const strikeTarget = endOfTurnTarget(match);
+  const children = match.opponent.table.map((card, index) => {
     const item = matchCardItem(card);
     markCardReaction(item, reactions.opponent[tableOccurrenceKey(seen, card.id)]);
+    // The front of the table is read by position, not by id: two copies of one
+    // card can stand side by side, and only the first of them is struck. The
+    // mark is added after the card's own face, so a screen reader hears the card
+    // named and numbered before the wording; it is drawn first on the face by
+    // CSS, because a table surface is a fixed height on a wide window and a tall
+    // card's lower edge is the part that scrolls out of it.
+    if (strikeTarget?.kind === "card" && index === 0) {
+      item.classList.add("is-end-turn-target");
+      const mark = document.createElement("span");
+      mark.className = "match-strike-mark";
+      mark.textContent = "Your end of turn strikes this card";
+      item.append(mark);
+    }
     if (!targetable) return item;
     item.classList.add("match-card-action");
     item.append(attackTargetControl(card));
@@ -1273,6 +1308,18 @@ function renderMatch() {
   if (concedeButton) concedeButton.hidden = !match || match.over;
   renderMatchResult(match);
   renderMatchOpponentPortrait(match);
+  // The one target an ending turn would strike, said in words: the opponent's
+  // hero, once the table in front of it is empty. It names the hero because it
+  // stands on the empty battlefield rather than beside the hero — and it goes
+  // with the turn, while a card standing there carries the mark instead.
+  if (matchOpponentStrikeTarget) {
+    const heroTarget = endOfTurnTarget(match);
+    const atHero = heroTarget?.kind === "hero";
+    matchOpponentStrikeTarget.hidden = !atHero;
+    if (atHero) {
+      matchOpponentStrikeTarget.textContent = `Your end of turn strikes ${heroTarget.name}`;
+    }
+  }
   if (!match) {
     shownBoard = null;
     return;
@@ -2456,7 +2503,12 @@ function describeMatchCard(card) {
  * and how many are left to draw, the ordered log of what happened — its last line the
  * final blow, or the concession when the match was given up — and the moves
  * available now — a live match always offers Concede beside its other moves, and
- * a finished one offers none. `opponentId` and
+ * a finished one offers none. `endOfTurnTarget` is what every card of the
+ * player's that has not already struck would hit when the turn is ended: the
+ * front card of the opponent's table as `{ kind: "card", cardId, name }`, or the
+ * opponent's hero as `{ kind: "hero", cardId: null, name }` once that table is
+ * empty — the same fact the board prints as a mark on that card or hero, and
+ * null when it is not the player's turn or the match is over. `opponentId` and
  * `opponentName` name the character being faced, whose deck is its own rather
  * than a copy of the player's. With no match it says so — `active` false, and
  * `opponentId`/`opponentName` the character the picker has chosen, the name the
@@ -2480,6 +2532,7 @@ export function readMatch() {
       recorded: false,
       turn: null,
       selectedAttacker: null,
+      endOfTurnTarget: null,
       playerHealth: null,
       opponentHealth: null,
       energy: null,
@@ -2505,6 +2558,7 @@ export function readMatch() {
     recorded: match.recorded,
     turn: match.turn,
     selectedAttacker: state.selectedAttacker,
+    endOfTurnTarget: endOfTurnTarget(match),
     playerHealth: match.player.health,
     opponentHealth: match.opponent.health,
     energy: match.player.energy,

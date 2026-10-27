@@ -479,6 +479,15 @@
                 id="match-opponent-table"
                 aria-label="Cards on the opponent's table"
               ></ul>
+              <!-- What the player's ending turn would strike once the opponent's
+                   table stands empty: the hero behind it. It is a label rather
+                   than a control — ending the turn is the move — so it takes no
+                   pointer, and it names the hero it means so it says the same
+                   thing to a sighted player, a screen reader and an agent. The
+                   board fills it in from the match and hides it the moment a
+                   card stands in front of the hero, or when no turn of the
+                   player's is running. -->
+              <p class="match-strike-mark" id="match-opponent-strike-target" hidden></p>
             </div>
           </section>
 
