@@ -457,6 +457,18 @@ export async function checks() {
       }
     }
 
+    // Every card is obtainable: either dealt at the start or earned by winning.
+    // A card in the catalog that is in neither is a card no player can ever own.
+    const rewardIds = new Set(rewardPool);
+    for (const card of cardCatalog.CARDS) {
+      if (!starterIds.has(card.id) && !rewardIds.has(card.id)) {
+        fail(
+          `"${card.name}" is in the card catalog but neither in the starting collection nor in the reward pool, ` +
+            "so no player can ever own it"
+        );
+      }
+    }
+
     // Two cards drawn identically are one card to a player's eye.
     const drawnBy = new Map();
     for (const [id, drawing] of drawings) {

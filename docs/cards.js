@@ -31,6 +31,14 @@ export const CARDS = [
   { id: "dewdrop-nymph", name: "Dewdrop Nymph", cost: 1, attack: 1, health: 3 },
   { id: "twilight-fox", name: "Twilight Fox", cost: 3, attack: 2, health: 2 },
   { id: "bark-sentinel", name: "Bark Sentinel", cost: 5, attack: 3, health: 8 },
+  // Six more reward cards, spread across the cost curve so a collection keeps
+  // handing back something new at every size of deck.
+  { id: "moss-glider", name: "Moss Glider", cost: 1, attack: 2, health: 1 },
+  { id: "fern-drake", name: "Fern Drake", cost: 2, attack: 2, health: 2 },
+  { id: "boulder-ram", name: "Boulder Ram", cost: 3, attack: 3, health: 2 },
+  { id: "hollow-wisp", name: "Hollow Wisp", cost: 4, attack: 2, health: 5 },
+  { id: "granite-warden", name: "Granite Warden", cost: 5, attack: 4, health: 6 },
+  { id: "ironbark-titan", name: "Ironbark Titan", cost: 6, attack: 6, health: 7 },
 ];
 
 /** Lookup by id — the shape the saved collection speaks in. */
@@ -82,6 +90,12 @@ export const REWARD_POOL = [
   "dewdrop-nymph",
   "twilight-fox",
   "bark-sentinel",
+  "moss-glider",
+  "fern-drake",
+  "boulder-ram",
+  "hollow-wisp",
+  "granite-warden",
+  "ironbark-titan",
 ];
 
 /**
