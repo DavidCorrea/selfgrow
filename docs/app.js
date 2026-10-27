@@ -1008,7 +1008,7 @@ function opponentOption(opponent) {
 
   // The name and the record share a row where the width allows it — the record
   // is about the character, and on a phone one row for both keeps the picker
-  // from costing a line of its own on each of three stacked options.
+  // from costing a line of its own on each of four stacked options.
   const head = document.createElement("span");
   head.className = "opponent-head";
   head.append(name, record);
@@ -1038,7 +1038,7 @@ function opponentOption(opponent) {
  * opponent is chosen with the deck in sight instead of on the promise of a
  * sentence.
  *
- * Folded rather than always drawn because ten faces under each of three
+ * Folded rather than always drawn because ten faces under each of four
  * opponents would push the picker, and Start match with it, off the first
  * screen — and the line above still says the kind of deck each one brings for a
  * player who never opens it.
