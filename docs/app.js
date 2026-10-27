@@ -85,6 +85,10 @@ const state = {
   // It is what the home screen offers to continue until a match is loaded, at
   // which point it is the live match itself and there is nothing to continue.
   savedMatch: readSavedMatch(),
+  // Whether a press of Start match is waiting on the player's answer about an
+  // unfinished saved match: continue that match, or discard it and deal a new
+  // one. Nothing is dealt or saved while it is set.
+  startPending: false,
   // Which of the player's table cards the next chosen attack comes from, or null
   // when none is picked — so End turn still sends the whole table at the front
   // card by default. It is a page-only choice, cleared with each new turn.
@@ -129,6 +133,11 @@ const matchOpponentHandLabel = document.getElementById("match-opponent-hand-labe
 const matchOpponentTableHeading = document.getElementById("match-opponent-table-heading");
 const matchMessage = document.getElementById("match-message");
 const startMatchButton = document.getElementById("action-start-match");
+// The two answers to a pending start: keep the saved match, or throw it away.
+// Both sit in the same rail as the button that asked, so the choice is one
+// press away from where it was raised.
+const continueSavedButton = document.getElementById("action-continue-saved");
+const discardSavedButton = document.getElementById("action-discard-saved");
 const endTurnButton = document.getElementById("action-end-turn");
 const concedeButton = document.getElementById("action-concede");
 const matchTurnStanding = document.getElementById("match-turn-standing");
@@ -811,7 +820,16 @@ function renderMatch() {
   // the match itself once one is running — so a choice changes nothing about the
   // match already on the board.
   renderOpponentChoice();
-  if (startMatchButton) startMatchButton.hidden = Boolean(match);
+  // A start that is waiting on the player's answer shows the two answers instead
+  // of the button that asked, so the rail offers exactly one way on at a time.
+  const startPending = state.startPending;
+  if (startMatchButton) startMatchButton.hidden = Boolean(match) || startPending;
+  if (continueSavedButton) continueSavedButton.hidden = !startPending;
+  if (discardSavedButton) discardSavedButton.hidden = !startPending;
+  // The pending choice carries two full-sentence answers, so on a phone they
+  // stack instead of fighting for one row of the docked bar; the screen marks
+  // itself so the layout knows the bar is taller for it.
+  screens.get("play").dataset.startPending = String(startPending);
   if (endTurnButton) endTurnButton.hidden = !match || match.over || match.turn !== "player";
   // Whose move it is, said plainly for as long as the match runs: the log's last
   // line is a record of what happened, not a standing answer to "am I waiting on
@@ -962,14 +980,43 @@ export function refreshSavedMatch() {
 }
 
 /**
+ * Ask what to do about the unfinished match that is waiting, rather than throw
+ * it away: a plain question in the match's own status line, the two controls
+ * that answer it in the same rail, and focus on the one that keeps the match.
+ * Nothing is dealt or saved until the player answers.
+ */
+function askToReplaceSavedMatch(waiting) {
+  state.startPending = true;
+  state.screen = "play";
+  setMatchMessage(
+    `You have an unfinished match against ${waiting.opponentName}. Continue it, or discard it and start a new one.`
+  );
+  render();
+  continueSavedButton?.focus();
+  return readState();
+}
+
+/**
  * Start a match from the saved deck, against the opponent named by `opponentId`
  * — the one picked in the Play screen's picker unless another is named. What a
  * visitor does by pressing Start match, and what the start-match tool does on
  * their behalf. Refused, with the reason, when the deck holds fewer cards than a
- * match needs or the opponent is not one this game has. Opens the Play screen,
- * replaces any saved match with this new one, and returns the state afterwards.
+ * match needs or the opponent is not one this game has.
+ *
+ * An unfinished match saved from a page left behind is never overwritten by
+ * accident: starting while one is waiting, with no confirmed discard, deals
+ * nothing and instead asks the player to continue that match or discard it,
+ * returning the state with `startConflict` naming what is waiting. Only
+ * `discardSaved: true` — what Discard and start new does — deals and saves the
+ * new match in its place. Opens the Play screen and returns the state.
  */
-export function startMatch(opponentId = state.opponentId) {
+export function startMatch(opponentId = state.opponentId, { discardSaved = false } = {}) {
+  const waiting = offerableSavedMatch();
+  if (waiting && !discardSaved) {
+    return askToReplaceSavedMatch(waiting);
+  }
+
+  state.startPending = false;
   state.match = createMatch(state.deck, { opponentId });
   // The picker follows the match that was actually dealt, so a refused start
   // leaves the choice where it was.
@@ -981,6 +1028,17 @@ export function startMatch(opponentId = state.opponentId) {
   persistMatch();
   render();
   return readState();
+}
+
+/**
+ * Throw away the unfinished match that is waiting and deal a fresh one in its
+ * place — what a visitor does by pressing Discard and start new on the choice,
+ * and what the discard-saved-match tool does on their behalf. It is `startMatch`
+ * with the discarding confirmed, so it is the only way a waiting match is ever
+ * replaced. Returns the state afterwards.
+ */
+export function discardSavedMatch(opponentId = state.opponentId) {
+  return startMatch(opponentId, { discardSaved: true });
 }
 
 /**
@@ -1030,6 +1088,9 @@ export function continueMatch() {
   state.result = null;
   state.screen = "play";
   state.selectedAttacker = null;
+  // Continuing is one answer to the choice a Start match raised; the question
+  // goes with the match that answers it.
+  state.startPending = false;
   setMatchMessage("");
   render();
   return readState();
@@ -1388,8 +1449,11 @@ function commitDeck() {
  * its name, its look and the kind of deck it brings) and which of them the next
  * match would be against (`selectedOpponentId`), the match the home screen offers
  * to continue (`canContinue` and the `savedMatch` summary of an unfinished game
- * left in the browser), and the actions they can take from here. This is what the
- * get-state tool returns.
+ * left in the browser), the choice a Start match is waiting on rather than
+ * throwing that match away (`startConflict` — null unless a start is pending, and
+ * otherwise a `reason` naming the waiting opponent beside the same `savedMatch`
+ * summary), and the actions they can take from here. This is what the get-state
+ * tool returns.
  */
 export function readState() {
   // Only the actions a visitor can actually reach: a control this screen hides
@@ -1400,6 +1464,19 @@ export function readState() {
     .map((button) => button.textContent.trim());
 
   const offerable = offerableSavedMatch();
+
+  // The conflict is only standing while a start is actually waiting on it, so a
+  // caller that has not asked to start anything reads null here and uses
+  // `canContinue`/`savedMatch` for the match merely on offer.
+  const startConflict =
+    state.startPending && offerable
+      ? {
+          reason:
+            `An unfinished match against ${offerable.opponentName} is saved. Continue it, ` +
+            "or discard it and start a new one.",
+          savedMatch: savedMatchSummary(offerable),
+        }
+      : null;
 
   return {
     screen: state.screen,
@@ -1427,6 +1504,7 @@ export function readState() {
     match: readMatch(),
     canContinue: Boolean(offerable),
     savedMatch: savedMatchSummary(offerable),
+    startConflict,
     actions,
   };
 }
@@ -1607,6 +1685,13 @@ export function showScreen(screen) {
 
   const changed = screen !== state.screen;
   state.screen = screen;
+  // A start waiting on the player's answer is backed out of by leaving Play: the
+  // saved match is left exactly as it was, and the question goes with the screen
+  // it was asked on — so returning to Play offers the start again.
+  if (state.startPending && screen !== "play") {
+    state.startPending = false;
+    setMatchMessage("");
+  }
   render();
 
   // The button that was pressed is now hidden, which would drop a keyboard
@@ -1650,6 +1735,8 @@ opponentPicker?.addEventListener("change", (event) => {
 
 matchRulesToggle?.addEventListener("click", () => toggleMatchRules());
 startMatchButton?.addEventListener("click", () => runMatchAction(() => startMatch()));
+continueSavedButton?.addEventListener("click", () => runMatchAction(() => continueMatch()));
+discardSavedButton?.addEventListener("click", () => runMatchAction(() => discardSavedMatch()));
 continueButton?.addEventListener("click", () => runMatchAction(() => continueMatch()));
 playAgainButton?.addEventListener("click", () => runMatchAction(() => playAgain()));
 endTurnButton?.addEventListener("click", () => runMatchAction(() => endMatchTurn()));

@@ -1714,6 +1714,25 @@ body {
     padding: 0.35rem 0.8rem;
   }
 
+  /* The question a Start match asks carries two full-sentence answers, too long
+     for one row of the bar, so on a phone they stack as full-width targets. The
+     bar is taller for it, and the card keeps room below so nothing is left
+     behind the bar. */
+  #screen-play[data-start-pending="true"] .actions {
+    grid-template-columns: 1fr;
+  }
+
+  /* The question is the whole point of the choice, so it reads in full rather
+     than being bounded to the row a refusal is. */
+  #screen-play[data-start-pending="true"] .match-message:not(:empty) {
+    max-height: none;
+    overflow: visible;
+  }
+
+  #screen-play[data-start-pending="true"] {
+    padding-bottom: calc(16rem + env(safe-area-inset-bottom));
+  }
+
   /* A phone's rhythm, tighter than a wide window's: the hand has to clear the
      bar with room to spare. */
   .screen {

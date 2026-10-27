@@ -327,10 +327,16 @@
              the same rail as the match's controls: on a phone that rail is a bar
              docked to the foot of the window, so the status and the actions are
              read together without scrolling. It is always in the page, so the
-             reason stays reachable instead of hidden behind a disabled control. -->
+             reason stays reachable instead of hidden behind a disabled control.
+             The question a Start match raises — continue the match you left, or
+             discard it and start new — is asked in the same rail, with the two
+             answers standing in place of the Start match button, so the choice
+             is one press away from where it was raised. -->
         <div class="actions">
           <p class="match-message" id="match-message" role="status" aria-live="polite"></p>
           <button type="button" class="btn btn-primary" id="action-start-match">Start match</button>
+          <button type="button" class="btn btn-primary" id="action-continue-saved" hidden>Continue saved match</button>
+          <button type="button" class="btn btn-secondary" id="action-discard-saved" hidden>Discard and start new</button>
           <button type="button" class="btn btn-primary" id="action-end-turn" hidden>End turn</button>
           <!-- The way out of a match a player no longer wants: it ends the game
                as a loss, records it and clears the saved match, so the same
