@@ -1575,13 +1575,82 @@ function renderCollectionCards() {
   list.replaceChildren(...listAllCards(state.cards).map(collectionCardRow));
 }
 
+/**
+ * The deck's shape by cost: one entry per energy cost the deck holds, cheapest
+ * first, each with how many of the deck's cards cost it. It is counted from the
+ * same cards the deck panel draws, so the curve and the cards cannot disagree.
+ */
+function deckCostCurve(cards) {
+  const cardsPerCost = new Map();
+  for (const card of cards) cardsPerCost.set(card.cost, (cardsPerCost.get(card.cost) ?? 0) + 1);
+
+  return [...cardsPerCost.entries()]
+    .sort(([a], [b]) => a - b)
+    .map(([cost, count]) => ({ cost, count }));
+}
+
+/**
+ * One bar of the cost curve: the cost named, a bar as long as its share of the
+ * fullest cost, and how many of the deck's cards sit at it. The bar is the same
+ * numbers drawn again, so it is hidden from a screen reader that is already
+ * given the cost and the count.
+ */
+function deckCurveRow({ cost, count }, tallestCount) {
+  const row = document.createElement("li");
+  row.className = "deck-curve-row";
+  row.dataset.cost = String(cost);
+
+  const label = document.createElement("span");
+  label.className = "deck-curve-cost";
+  label.textContent = `Cost ${cost}`;
+
+  const bar = document.createElement("span");
+  bar.className = "deck-curve-bar";
+  bar.setAttribute("aria-hidden", "true");
+  const fill = document.createElement("span");
+  fill.className = "deck-curve-fill";
+  fill.style.width = `${(count / tallestCount) * 100}%`;
+  bar.append(fill);
+
+  const tally = document.createElement("span");
+  tally.className = "deck-curve-count";
+  tally.textContent = count === 1 ? "1 card" : `${count} cards`;
+
+  row.append(label, bar, tally);
+  // The two numbers side by side would run together as "Cost 12", so the row is
+  // named as the one sentence it means, the way a card's stats are.
+  row.setAttribute("aria-label", `Cost ${cost}: ${tally.textContent}`);
+  return row;
+}
+
+/**
+ * Draw the deck's cost curve under its cards, or hide it for a deck that holds
+ * none — where the empty-deck note already says there is nothing to draw.
+ */
+function renderDeckCurve(curve) {
+  const block = document.getElementById("deck-curve");
+  const list = document.getElementById("deck-curve-list");
+  if (!block || !list) return;
+
+  block.hidden = curve.length === 0;
+  if (!curve.length) {
+    list.replaceChildren();
+    return;
+  }
+
+  const tallestCount = Math.max(...curve.map(({ count }) => count));
+  list.replaceChildren(...curve.map((entry) => deckCurveRow(entry, tallestCount)));
+}
+
 /** Draw the deck's current contents, each card as a face that shows its picture
- * and reads its name and numbers. */
+ * and reads its name and numbers, and under them the shape of the deck by cost. */
 function renderDeck() {
   const list = document.getElementById("deck-list");
   if (!list) return;
 
   const cards = listDeckCards(state.deck);
+  renderDeckCurve(deckCostCurve(cards));
+
   if (!cards.length) {
     const empty = document.createElement("li");
     empty.className = "deck-empty";
@@ -1646,7 +1715,10 @@ function commitDeck() {
 /**
  * Everything the page currently shows: the screen that is open, how many cards
  * the player owns and how many are different out of the whole set, the deck — its
- * size, its limit, the fewest cards a match needs and the cards themselves —
+ * size, its limit, the fewest cards a match needs, the cards themselves, and
+ * `deckCurve`, its shape by cost: one entry per energy cost the deck holds,
+ * cheapest first, each with that `cost` and how many of its cards cost it
+ * (`count`), in the rows the Collection screen prints under the cards —
  * whether it will survive closing the page, how many matches have been played and
  * won, the result of the last finished match (whether it was a win or a loss, the
  * card a win awarded, whether that completed the set, and `firstWin` — whether
@@ -1670,6 +1742,7 @@ function commitDeck() {
  */
 export function readState() {
   const nextReward = nextRewardCard();
+  const deck = listDeckCards(state.deck);
 
   // Only the actions a visitor can actually reach: a control this screen hides
   // — on its own or inside a hidden section — is not something they can press,
@@ -1698,10 +1771,11 @@ export function readState() {
     cardsOwned: state.cardsOwned,
     distinctCards: state.distinctCards,
     setTotal: state.setTotal,
-    deckSize: state.deck.length,
+    deckSize: deck.length,
     deckLimit: state.deckLimit,
     minimumDeckSize: state.minimumDeckSize,
-    deck: listDeckCards(state.deck),
+    deck,
+    deckCurve: deckCostCurve(deck),
     wins: state.wins,
     matchesPlayed: state.matchesPlayed,
     // What the Play screen tells a newcomer about a match, and whether that strip

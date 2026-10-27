@@ -526,6 +526,78 @@ body {
   font-size: 0.9rem;
 }
 
+/* The deck's cost curve, under its cards: its own quiet heading and then one row
+   per cost the deck holds — the cost, a bar as long as its share of the fullest
+   cost, and how many cards sit there. The bars are the shape of the deck, so a
+   cheap deck and a top-heavy one are told apart at a glance; the words beside
+   them are what a screen reader reads. It is a hairline above the block, not a
+   box inside a box, so it reads as part of the deck it describes. */
+.deck-curve {
+  display: grid;
+  gap: 0.35rem;
+  padding-top: 0.7rem;
+  border-top: 1px solid var(--edge-soft);
+}
+
+/* Without this a hidden curve keeps its `display: grid` and stays on screen. */
+.deck-curve[hidden] {
+  display: none;
+}
+
+.deck-curve-heading {
+  margin: 0;
+  color: var(--ink-muted);
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.deck-curve-list {
+  list-style: none;
+  /* Rows keep a readable measure instead of running the width of the card, so
+     a cost, its bar and its count stay one glance apart on a wide window. */
+  max-width: 34rem;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.2rem;
+}
+
+.deck-curve-row {
+  display: grid;
+  grid-template-columns: 3.9rem minmax(0, 1fr) 4rem;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.deck-curve-cost {
+  color: var(--ink-muted);
+}
+
+.deck-curve-bar {
+  height: 0.4rem;
+  border-radius: 999px;
+  background-color: rgba(168, 177, 212, 0.14);
+  overflow: hidden;
+}
+
+/* Foil is the accent spent on this deck's numbers, so the shape of it carries
+   the same colour as the counts printed on its cards. */
+.deck-curve-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background-color: var(--foil);
+}
+
+.deck-curve-count {
+  color: var(--ink);
+  font-weight: 600;
+  text-align: right;
+}
+
 /* The home screen's one-line deck summary, beside the numbers it restates. */
 .deck-summary {
   margin: 0;

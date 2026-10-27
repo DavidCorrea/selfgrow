@@ -1308,6 +1308,84 @@ export async function checks() {
   const ownedIds = owned.cards.map((card) => card.id);
   const deckIds = () => game.readState().deck.map((card) => card.id);
   const heldCopies = (id) => deckIds().filter((held) => held === id).length;
+
+  // The cost curve under the deck: one row per energy cost the deck holds,
+  // cheapest first, each naming the cost and how many of the deck's cards are at
+  // it. Its expected reading is counted here from the deck's own cards, so the
+  // page and the state an agent reads are both checked against the deck rather
+  // than against each other.
+  const curveBlock = document.getElementById("deck-curve");
+  const curveList = document.getElementById("deck-curve-list");
+  if (!curveBlock || !curveList) {
+    fail(
+      "the collection screen has no cost curve under the deck (#deck-curve and #deck-curve-list), " +
+        "so the shape of the deck cannot be read"
+    );
+  }
+  const curveOfDeck = () => {
+    const copiesPerCost = new Map();
+    for (const card of game.readState().deck) {
+      copiesPerCost.set(card.cost, (copiesPerCost.get(card.cost) ?? 0) + 1);
+    }
+    return [...copiesPerCost.entries()]
+      .sort(([a], [b]) => a - b)
+      .map(([cost, count]) => ({ cost, count }));
+  };
+  const curveRows = () => (curveList ? [...curveList.children] : []);
+  // Whether the curve's own box is drawn, read from its own display rather than
+  // from its ancestors: the Collection screen may be folded away while these
+  // checks build the deck, and a curve `hidden` but still `display: grid` is
+  // exactly what a CSS rule can leave on screen.
+  const curveIsDrawn = () => Boolean(curveBlock && getComputedStyle(curveBlock).display !== "none");
+  // The curve as it reads on the page, row by row: the cost and the count each
+  // row prints as words, so a screen reader reads the numbers the bars draw.
+  const shownCurve = () =>
+    curveRows().map((row) => ({
+      cost: Number((textOf(row.querySelector(".deck-curve-cost")).match(/\d+/) ?? [])[0]),
+      count: Number((textOf(row.querySelector(".deck-curve-count")).match(/\d+/) ?? [])[0]),
+    }));
+  /** Check the curve the page prints and the one get-state reports against the
+   * deck itself, and hand back the page's reading so a caller can compare two. */
+  const checkDeckCurve = (when) => {
+    for (const row of curveRows()) {
+      const cost = textOf(row.querySelector(".deck-curve-cost"));
+      const count = textOf(row.querySelector(".deck-curve-count"));
+      const costNumber = cost.match(/\d+/)?.[0];
+      const countNumber = count.match(/\d+/)?.[0];
+      if (!costNumber || !countNumber || !/ cards?$/.test(count)) {
+        fail(
+          `a cost-curve row ${when} reads "${cost || "(no cost)"}" / "${count || "(no count)"}" ` +
+            "instead of naming the energy cost and how many of the deck's cards cost it"
+        );
+      }
+    }
+
+    const expected = curveOfDeck();
+    const shown = shownCurve();
+    if (JSON.stringify(shown) !== JSON.stringify(expected)) {
+      fail(
+        `the cost curve ${when} reads ${JSON.stringify(shown)} while the deck's cards cost ` +
+          JSON.stringify(expected)
+      );
+    }
+    const reported = game.readState().deckCurve;
+    if (JSON.stringify(reported) !== JSON.stringify(expected)) {
+      fail(
+        `the state an agent reads reports the cost curve ${when} as ${JSON.stringify(reported)} while the ` +
+          `deck's cards cost ${JSON.stringify(expected)}`
+      );
+    }
+    const counted = shown.reduce((sum, entry) => sum + entry.count, 0);
+    if (counted !== game.readState().deckSize) {
+      fail(
+        `the cost curve ${when} counts ${counted} card(s) while the deck holds ${game.readState().deckSize}`
+      );
+    }
+    if (!curveIsDrawn() || curveBlock?.hidden) {
+      fail(`a deck holding cards does not show its cost curve ${when}`);
+    }
+    return shown;
+  };
   const ownedCopies = (id) => owned.cards.find((card) => card.id === id)?.copies ?? 0;
   const addControl = (id) => document.querySelector(`[data-deck-add="${id}"]`);
   const removeControl = (id) => document.querySelector(`[data-deck-remove="${id}"]`);
@@ -1417,6 +1495,27 @@ export async function checks() {
     fail(`the dealt deck could not be emptied on the collection screen: ${deckIds().length} card(s) remain`);
   }
 
+  // A deck holding no cards has no shape to draw: the empty-deck note stands
+  // where the curve would be, with no rows and no curve in the state either.
+  if (curveBlock && curveList) {
+    if (curveIsDrawn()) {
+      fail("an empty deck still shows a cost curve, where the empty-deck note should stand on its own");
+    }
+    if (curveRows().length) {
+      fail(`an empty deck drew ${curveRows().length} cost-curve row(s) instead of none`);
+    }
+    const emptyCurve = game.readState().deckCurve;
+    if (!Array.isArray(emptyCurve) || emptyCurve.length) {
+      fail(`an empty deck reports a cost curve of ${JSON.stringify(emptyCurve)} instead of an empty one`);
+    }
+    if (!textOf(deckList).includes("No cards in your deck yet.")) {
+      fail(
+        `an empty deck does not show the note that says it is empty: the deck list reads ` +
+          `"${textOf(deckList) || "(nothing)"}"`
+      );
+    }
+  }
+
   // A card owned in several copies can be put in the deck that many times, so a
   // collection of duplicates is worth building around. The starter collection
   // holds three Sprouts, which is a real owned card rather than a fixture.
@@ -1424,11 +1523,30 @@ export async function checks() {
   if (!multipleId) {
     fail("the collection holds no card in three or more copies, so a duplicate deck cannot be built");
   } else {
-    for (let copy = 0; copy < 3; copy++) game.addCardToDeck(multipleId);
+    game.addCardToDeck(multipleId);
+    const curveAfterOneCopy = checkDeckCurve("with one card in the deck");
+    for (let copy = 1; copy < 3; copy++) game.addCardToDeck(multipleId);
     if (heldCopies(multipleId) !== 3) {
       fail(
         `"${multipleId}" is owned in ${ownedCopies(multipleId)} copies but only ${heldCopies(multipleId)} ` +
           "reached the deck — duplicates are still being dropped"
+      );
+    }
+
+    // The curve is a live reading of the deck, not a snapshot: adding a copy of
+    // the same card on the spot lengthens its bar and raises its count, without
+    // leaving the Collection screen.
+    const curveAfterThreeCopies = checkDeckCurve("with three copies of one card in the deck");
+    if (JSON.stringify(curveAfterThreeCopies) === JSON.stringify(curveAfterOneCopy)) {
+      fail(
+        `the cost curve did not change when a second and third copy of "${multipleId}" went in: ` +
+          `it still reads ${JSON.stringify(curveAfterThreeCopies)}`
+      );
+    }
+    if (curveAfterThreeCopies.length !== 1 || curveAfterThreeCopies[0]?.count !== 3) {
+      fail(
+        `three copies of one card in the deck read as the cost curve ${JSON.stringify(curveAfterThreeCopies)} ` +
+          "instead of one row counting three"
       );
     }
 
@@ -1474,6 +1592,17 @@ export async function checks() {
   if (JSON.stringify(deckNames) !== JSON.stringify(expectedDeckNames)) {
     fail(
       `the deck list on the page reads ${JSON.stringify(deckNames)} while the state holds ${JSON.stringify(expectedDeckNames)}`
+    );
+  }
+
+  // Under the cards, the deck's shape by cost: one row for each energy cost the
+  // deck actually holds, cheapest first, each saying the cost and how many of
+  // the deck's cards are at it, and the counts adding up to the deck's size.
+  const fullDeckCurve = checkDeckCurve("with a ten-card deck");
+  if (fullDeckCurve.length < 2) {
+    fail(
+      `the ten-card deck was built across ${fullDeckCurve.length} energy cost(s), too few for a curve — ` +
+        "the deck used to check the curve should span several costs"
     );
   }
 
@@ -1602,6 +1731,7 @@ export async function checks() {
   if (!removeButton) {
     fail(`the collection screen has no control to remove "${firstDeckId}" from the deck`);
   } else {
+    const curveBeforeRemoval = checkDeckCurve("with a full deck");
     removeButton.click();
     if (deckIds().length !== 9) {
       fail(`removing a card left the deck at ${deckIds().length} cards instead of nine`);
@@ -1621,6 +1751,16 @@ export async function checks() {
       fail(
         `after removing a card the deck holds ${game.readState().deck.length} card(s) but ` +
           `${deckPictureRows().length} are shown as a picture`
+      );
+    }
+
+    // The curve follows the same redraw: the card that left the deck leaves the
+    // curve too, and the counts still add up to the deck that is left.
+    const curveAfterRemoval = checkDeckCurve("after removing a card");
+    if (JSON.stringify(curveAfterRemoval) === JSON.stringify(curveBeforeRemoval)) {
+      fail(
+        `the cost curve did not change when "${firstDeckId}" left the deck: it still reads ` +
+          JSON.stringify(curveAfterRemoval)
       );
     }
   }
@@ -2922,6 +3062,23 @@ export async function checks() {
             `where its face says ${JSON.stringify(catalogAbility(card.id))}`
         );
       }
+    }
+    // The deck's shape by cost is on the Collection screen, so it is part of what
+    // get-state returns — the same rows, in the same order, as a visitor reads.
+    if (JSON.stringify(reported.deckCurve) !== JSON.stringify(live.deckCurve)) {
+      fail(
+        `get-state reports deckCurve ${JSON.stringify(reported.deckCurve)} while the page's state says ` +
+          `${JSON.stringify(live.deckCurve)}, so an agent cannot see the shape of the deck`
+      );
+    }
+    const curveCounted = (Array.isArray(reported.deckCurve) ? reported.deckCurve : []).reduce(
+      (sum, entry) => sum + entry.count,
+      0
+    );
+    if (curveCounted !== live.deckSize) {
+      fail(
+        `get-state's deckCurve counts ${curveCounted} card(s) while the deck it reports holds ${live.deckSize}`
+      );
     }
 
     // The card the next win will add is part of what the home screen shows, so it
