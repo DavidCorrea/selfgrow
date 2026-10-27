@@ -1450,6 +1450,19 @@ body {
   animation: card-hit 340ms var(--ease-out);
 }
 
+/* A card that fired a when-played ability as it landed — it drew a card or
+   mended its hero — wears a foil ring while the moment lasts, so the effect is
+   seen on the table and not only read in the log. The ring is the mark; the
+   lift is only the flourish on top of it, so a visitor who asked for less
+   motion still sees which card acted. */
+.match-card.is-ability {
+  border-color: var(--foil);
+  box-shadow:
+    0 0 0 2px rgba(242, 193, 78, 0.5),
+    0 0 14px 2px rgba(242, 193, 78, 0.3);
+  animation: card-ability 420ms var(--ease-out);
+}
+
 /* The card that has just left the table, still shown at the spot it stood. It
    takes no pointer and carries no card identity, and the log is what names the
    fall, so the marker never announces the blow a second time. */
@@ -1493,6 +1506,20 @@ body {
   }
   80% {
     transform: translateX(2px);
+  }
+}
+
+/* A smaller lift than a strike's, so an ability reads as its own moment rather
+   than as another blow. */
+@keyframes card-ability {
+  0% {
+    transform: none;
+  }
+  40% {
+    transform: translateY(-4px) scale(1.02);
+  }
+  100% {
+    transform: none;
   }
 }
 
@@ -2200,10 +2227,13 @@ body {
     animation: none;
   }
 
-  /* A blow is told by the health numbers and the log when motion is unwanted:
-     nothing lifts, shakes or fades, and the leaving card is not drawn at all. */
+  /* A blow, and an ability landing, are told by the health numbers and the log
+     when motion is unwanted: nothing lifts, shakes or fades, and the leaving
+     card is not drawn at all. The ability's foil ring is not motion, so it
+     stays and the card that acted is still marked. */
   .match-card.is-striking,
   .match-card.is-hit,
+  .match-card.is-ability,
   .match-card-falling {
     animation: none;
   }
