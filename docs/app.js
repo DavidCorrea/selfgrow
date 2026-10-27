@@ -18,6 +18,7 @@ import {
   listDeckCards,
   listOwnedCards,
   loadGame,
+  nextRewardId,
   readSavedMatch,
   recordResult,
   saveDeck,
@@ -113,6 +114,10 @@ const screenStatus = document.getElementById("screen-status");
 const storageNote = document.getElementById("storage-note");
 const deckMessage = document.getElementById("deck-message");
 const deckSummary = document.getElementById("deck-summary");
+// The home screen's promise of what the next win will add, and the place its
+// card is drawn. Both optional, so a missing one degrades to no figure.
+const nextRewardHeading = document.getElementById("next-reward-heading");
+const nextRewardBody = document.getElementById("next-reward-body");
 
 // The match board's places, gathered once. Each is optional so a missing one
 // degrades to a missing readout rather than a page that will not render.
@@ -206,6 +211,7 @@ function render() {
   renderMatch();
   renderMatchRules();
   renderContinueOffer();
+  renderNextReward();
 
   screenStatus.textContent = `${SCREEN_LABELS[state.screen]} screen`;
 }
@@ -654,6 +660,47 @@ export function awardCardFigure(card) {
   caption.append(name, stats);
   figure.append(caption);
   return figure;
+}
+
+/**
+ * The heading over the home screen's next-reward card: what the next win is
+ * working toward, or the plain fact that there is nothing left to earn.
+ */
+export function nextRewardHeadingText(setComplete) {
+  return setComplete ? "Set complete" : "Next win earns";
+}
+
+/**
+ * The reward card the next win would add, read from the same choice `recordResult`
+ * awards by, or null once the player owns every reward card.
+ */
+export function nextRewardCard() {
+  const id = nextRewardId(state.cards);
+  return id ? CARD_BY_ID.get(id) : null;
+}
+
+/**
+ * Show, on the home screen, the card the next win will add: the label over it,
+ * then the card itself — its picture, name and three numbers — so the goal a win
+ * is working toward is visible before the match rather than only after it. Once
+ * every reward card is held there is no next card to promise, so it says the set
+ * is complete instead and shows no figure.
+ *
+ * `state.cards` is updated the moment a match is recorded, so after a win this
+ * advances to the following unowned card.
+ */
+function renderNextReward() {
+  if (!nextRewardHeading || !nextRewardBody) return;
+  const card = nextRewardCard();
+  nextRewardHeading.textContent = nextRewardHeadingText(card === null);
+  if (card) {
+    nextRewardBody.replaceChildren(awardCardFigure(card));
+    return;
+  }
+  const note = document.createElement("p");
+  note.className = "next-reward-note";
+  note.textContent = "You own every reward card — nothing left to earn.";
+  nextRewardBody.replaceChildren(note);
 }
 
 /**
@@ -1506,8 +1553,10 @@ function commitDeck() {
  * size, its limit, the fewest cards a match needs and the cards themselves —
  * whether it will survive closing the page, how many matches have been played and
  * won, the result of the last finished match (whether it was a win or a loss, the
- * card a win awarded, and whether that completed the set), the three points the
- * Play screen tells a newcomer about a match and whether that strip is showing
+ * card a win awarded, and whether that completed the set), the card the next win
+ * would add (`nextReward`, with `nextRewardComplete` true once every reward card
+ * is owned), the three points the Play screen tells a newcomer about a match and
+ * whether that strip is showing
  * (`matchRules`), the opponents a match can be fought against (`opponents` — each
  * with the id to start a match with, its name, its look, the kind of deck it
  * brings, the `deck` of card ids it is dealt, whose cards list-collection names
@@ -1521,6 +1570,8 @@ function commitDeck() {
  * the actions they can take from here. This is what the get-state tool returns.
  */
 export function readState() {
+  const nextReward = nextRewardCard();
+
   // Only the actions a visitor can actually reach: a control this screen hides
   // — on its own or inside a hidden section — is not something they can press,
   // so an agent should not be told it can.
@@ -1561,6 +1612,12 @@ export function readState() {
       points: MATCH_RULES.map(({ label, text }) => ({ label, text })),
     },
     result: state.result ? { ...state.result } : null,
+    // The card a win would add next, as the home screen shows it under "Next win
+    // earns": the first reward card not yet owned, with its name, cost, attack
+    // and health — or null, with `nextRewardComplete` true, once every reward
+    // card is owned.
+    nextReward: nextReward ? { ...nextReward } : null,
+    nextRewardComplete: nextReward === null,
     saved: state.saved,
     // Who a match could be against, and which of them the next one would be —
     // the picker the Play screen offers, as plain data. Each brings the fixed
