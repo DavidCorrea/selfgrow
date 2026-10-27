@@ -189,6 +189,20 @@ body {
   }
 }
 
+/* The same entrance without the move. A filled animation keeps its transform on
+   the element, and a transformed ancestor is the containing block for a fixed
+   descendant — which on a phone would drag the match's docked action bar off the
+   foot of the window. The match screen fades instead of sliding, so the bar sits
+   where the viewport is. */
+@keyframes screen-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
 .standings {
   display: flex;
   flex-wrap: wrap;
@@ -650,9 +664,12 @@ body {
 }
 
 /* What just happened in the match. The live region is always in the page, only
-   drawing its frame once it has something to say. */
+   drawing its frame once it has something to say. It rides in the match's action
+   rail and takes a line of its own there, so the status and the controls are read
+   as one bar. */
 .match-message {
   margin: 0;
+  flex-basis: 100%;
   font-size: 0.9rem;
 }
 
@@ -677,6 +694,9 @@ body {
   font: inherit;
   font-weight: 600;
   padding: 0.8rem 1.35rem;
+  /* A control a thumb can hit: WCAG asks 44px at AAA, and a phone game is tapped
+     repeatedly, so the height is held whatever the padding works out to. */
+  min-height: 2.75rem;
   border: 1px solid transparent;
   border-radius: var(--radius-control);
   background-color: transparent;
@@ -690,7 +710,10 @@ body {
   transform: scale(0.97);
 }
 
-.btn:focus-visible {
+/* Every control on the card shows where the keyboard is, in the card's own foil
+   keyline — whether it is one of the game's buttons or a plain control the
+   browser drew, so no control is ever focusable without showing it. */
+:where(button, a[href], input, select, textarea):focus-visible {
   outline: 2px solid var(--foil);
   outline-offset: 2px;
 }
@@ -718,10 +741,155 @@ body {
   }
 }
 
-/* A phone gets the actions as full-width targets under the numbers. */
+/* A phone gets the actions as full-width targets under the numbers, and the
+   match's rail as a bar docked to the foot of the window so the health, the
+   energy, the hand and the controls all read without scrolling. The card's own
+   chrome is pulled in too: on a short phone every pixel above the board is a
+   pixel the hand cannot use. */
 @media (max-width: 719px) {
+  body {
+    padding: 0.5rem;
+  }
+
+  .card {
+    padding: 0.9rem 0.9rem 1rem;
+  }
+
+  .wordmark {
+    font-size: clamp(1.9rem, 1.4rem + 3vw, 2.4rem);
+  }
+
+  .rules {
+    padding-block: 0.6rem 0.8rem;
+    font-size: 0.95rem;
+  }
+
   .actions {
     display: grid;
+  }
+
+  /* The bar covers the foot of the window, so the card keeps enough room under
+     its last content for the log to be scrolled clear of it. */
+  #screen-play {
+    padding-bottom: calc(6rem + env(safe-area-inset-bottom));
+    animation: screen-fade 200ms var(--ease-out) both;
+  }
+
+  #screen-play .actions {
+    position: fixed;
+    left: 0.5rem;
+    right: 0.5rem;
+    bottom: 0;
+    z-index: 2;
+    /* A grid rather than a flex wrap: the controls that a match shows at once
+       always share one row, so the bar never grows a row taller (and never
+       taller than the hand it sits over) when a long label is involved. */
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(7rem, 1fr));
+    gap: 0.5rem;
+    padding: 0.5rem 0.9rem calc(0.5rem + env(safe-area-inset-bottom));
+    border: 1px solid var(--edge);
+    border-bottom: 0;
+    border-radius: var(--radius-control) var(--radius-control) 0 0;
+    background-color: var(--card);
+  }
+
+  /* The status line rides its own row across the whole bar. */
+  #screen-play .actions .match-message {
+    grid-column: 1 / -1;
+  }
+
+  /* min-height still holds the 44px tap target; only the padding gives way, so
+     the bar is as short as a control can be. */
+  #screen-play .actions .btn {
+    white-space: nowrap;
+    padding: 0.35rem 0.8rem;
+  }
+
+  /* A phone's rhythm, tighter than a wide window's: the hand has to clear the
+     bar with room to spare. */
+  .screen {
+    gap: 0.6rem;
+    padding-top: 0.5rem;
+  }
+
+  .match-board {
+    gap: 0.6rem;
+  }
+
+  /* Five numbers a turn turns on, in two compact columns with the label beside
+     its value, so the health row costs a line or two rather than half the
+     screen. */
+  .match-standings {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.3rem 0.9rem;
+    padding-bottom: 0.4rem;
+  }
+
+  .match-standings .standing {
+    flex-direction: row;
+    align-items: baseline;
+    gap: 0.35rem;
+  }
+
+  .match-standings .standing-label {
+    font-size: 0.72rem;
+  }
+
+  .match-standings .standing-value {
+    font-size: 1.05rem;
+  }
+
+  .match-side,
+  .match-log-wrap {
+    padding: 0.5rem 0.75rem 0.65rem;
+  }
+
+  /* A hand card face puts the card's name and numbers on one line and the
+     control that plays it beside them, so three cards stack in the height of
+     three rows rather than three boxes — the only way a short phone can show
+     the whole hand above the action bar. */
+  .match-hand {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.3rem;
+  }
+
+  .match-card-playable {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.25rem 0.55rem;
+  }
+
+  .match-hand .match-card-head {
+    flex-wrap: nowrap;
+    min-width: 0;
+  }
+
+  .match-hand .match-card-name {
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+
+  .match-card-playable .match-play {
+    width: auto;
+    white-space: nowrap;
+    padding: 0.35rem 0.55rem;
+    /* The label spells out the card and its cost; a smaller face keeps the
+       longest one on a single line — and leaves the card's own name enough
+       room to be read — instead of pushing the card off the edge. */
+    font-size: 0.72rem;
+  }
+
+  /* A refusal rides in the docked bar, which is fixed — so it is bounded to a
+     couple of lines and scrolls, rather than growing tall enough to cover the
+     hand it is warning about. */
+  #screen-play .match-message:not(:empty) {
+    max-height: 3.4rem;
+    overflow-y: auto;
   }
 }
 
@@ -743,6 +911,7 @@ body {
 
 @media (prefers-reduced-motion: reduce) {
   .screen,
+  #screen-play,
   .match-result {
     animation: none;
   }
