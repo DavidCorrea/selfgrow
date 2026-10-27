@@ -8,14 +8,24 @@
  * here, so renaming a card never loses the copies a player owns of it.
  */
 
-/** Every card in the game: id, name, cost to play, attack, health. */
+/**
+ * The one ability a card can carry, in the words printed on its face. A card
+ * with it draws its owner a card the moment it is played — see `playCard` and
+ * the opponent's turn in match.js. It is written once here so the text on the
+ * card, the trigger in the match and the text a tool reports can never drift
+ * apart.
+ */
+export const DRAW_ON_PLAY = "When played: draw a card";
+
+/** Every card in the game: id, name, cost to play, attack, health, and the
+ * ability printed on its face (absent on a card with none). */
 export const CARDS = [
   { id: "sprout", name: "Sprout", cost: 1, attack: 1, health: 1 },
   { id: "pebble-toad", name: "Pebble Toad", cost: 1, attack: 1, health: 2 },
   { id: "thornling", name: "Thornling", cost: 2, attack: 2, health: 1 },
   { id: "sun-moth", name: "Sun Moth", cost: 2, attack: 1, health: 3 },
   { id: "bramble-hound", name: "Bramble Hound", cost: 2, attack: 3, health: 1 },
-  { id: "glowcap", name: "Glowcap", cost: 3, attack: 2, health: 4 },
+  { id: "glowcap", name: "Glowcap", cost: 3, attack: 2, health: 4, ability: DRAW_ON_PLAY },
   { id: "mudback-turtle", name: "Mudback Turtle", cost: 3, attack: 1, health: 5 },
   { id: "vine-lasher", name: "Vine Lasher", cost: 3, attack: 3, health: 2 },
   { id: "storm-crow", name: "Storm Crow", cost: 4, attack: 4, health: 2 },
@@ -24,8 +34,10 @@ export const CARDS = [
   { id: "elder-oak", name: "Elder Oak", cost: 6, attack: 4, health: 9 },
   // The reward cards, earned by winning rather than dealt at the start. They are
   // real cards — playable, and saved like any other — so a win grows what a
-  // player can put in a deck.
-  { id: "moon-bloom", name: "Moon Bloom", cost: 2, attack: 2, health: 3 },
+  // player can put in a deck. Moon Bloom, the first one a win earns, is also one
+  // of the two cards that draw a card when played, so the ability is met in the
+  // starter deck and then hunted for in the reward pool.
+  { id: "moon-bloom", name: "Moon Bloom", cost: 2, attack: 2, health: 3, ability: DRAW_ON_PLAY },
   { id: "amber-antler", name: "Amber Antler", cost: 4, attack: 4, health: 3 },
   { id: "cinder-shrike", name: "Cinder Shrike", cost: 3, attack: 4, health: 1 },
   { id: "dewdrop-nymph", name: "Dewdrop Nymph", cost: 1, attack: 1, health: 3 },

@@ -394,6 +394,23 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
+/* The ability line on a card's face: the one sentence a card carries besides
+   its numbers, printed in the same words by app.js wherever the card is shown —
+   collection, deck, hand and match table. A hairline above it makes it read as
+   the card's text box rather than as a fourth stat, and it wraps inside the face
+   instead of widening it, so a narrow phone column keeps every card the same
+   size. */
+.card-ability {
+  margin: 0;
+  padding-top: 0.4rem;
+  border-top: 1px solid var(--edge-soft);
+  color: var(--ink-muted);
+  font-size: 0.8rem;
+  line-height: 1.35;
+  text-wrap: pretty;
+  overflow-wrap: anywhere;
+}
+
 /* The deck controls at the foot of each card face: how many of its copies are
    in the deck, then the buttons that add one more or take one out. Scoped under
    .btn as .btn.deck-add / .btn.deck-remove so these sizes outrank .btn's own

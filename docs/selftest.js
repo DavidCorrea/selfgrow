@@ -63,6 +63,10 @@ export async function checks() {
 
   const state = game.readState();
   const cardCatalog = await import("./cards.js");
+  // The ability a card's face carries, as docs/cards.js writes it — null for a
+  // card that does nothing when played. Every surface that reports a card is
+  // held to this one answer.
+  const catalogAbility = (id) => cardCatalog.CARD_BY_ID.get(id)?.ability ?? null;
   const snapshot = game.readCollection();
   // The Collection screen now shows the whole card set, so `snapshot.cards` is
   // every card in the game. The checks that speak of what the player holds read
@@ -2823,6 +2827,12 @@ export async function checks() {
     }
     for (const card of reportedDeck) {
       if (!card.name) fail(`get-state returns a deck card "${card.id}" with no name, so an agent cannot read the deck`);
+      if (card.ability !== catalogAbility(card.id)) {
+        fail(
+          `get-state returns the deck card "${card.name}" with ability ${JSON.stringify(card.ability ?? null)} ` +
+            `where its face says ${JSON.stringify(catalogAbility(card.id))}`
+        );
+      }
     }
 
     // The card the next win will add is part of what the home screen shows, so it
@@ -2878,6 +2888,30 @@ export async function checks() {
         if (!Number.isInteger(card[stat])) {
           fail(`list-collection returns "${card.name}" with no ${stat}, so an agent cannot judge the card`);
         }
+      }
+      // A card's ability is half of what it is: an agent choosing a deck reads
+      // the same words the card's face prints, or null for a card that does
+      // nothing when played.
+      if (card.ability !== catalogAbility(card.id)) {
+        fail(
+          `list-collection returns "${card.name}" with ability ${JSON.stringify(card.ability ?? null)} where its ` +
+            `face says ${JSON.stringify(catalogAbility(card.id))}`
+        );
+      }
+    }
+    for (const [id, expected] of [
+      ["glowcap", "When played: draw a card"],
+      ["moon-bloom", "When played: draw a card"],
+      ["sprout", null],
+    ]) {
+      const entry = listedCards.find((card) => card.id === id);
+      if (!entry) {
+        fail(`list-collection does not return "${id}", so its ability cannot be read`);
+      } else if (entry.ability !== expected) {
+        fail(
+          `list-collection returns "${id}" with ability ${JSON.stringify(entry.ability ?? null)} instead of ` +
+            `${JSON.stringify(expected)}`
+        );
       }
     }
     if (listed.distinctCards !== owned.distinctCards) {
@@ -3669,8 +3703,15 @@ export async function checks() {
         if (!afterPlay.table.some((card) => card.id === affordable.id)) {
           fail(`playing "${affordable.name}" did not put it on the table`);
         }
-        if (afterPlay.hand.length !== handBefore - 1) {
-          fail(`playing a card left ${afterPlay.hand.length} cards in hand instead of ${handBefore - 1}`);
+        // A card that draws a card when played trades its own place in the hand
+        // for the one it draws, so the hand shrinks by one only when it does not.
+        const drawnByPlay = catalogAbility(affordable.id) ? 1 : 0;
+        if (afterPlay.hand.length !== handBefore - 1 + drawnByPlay) {
+          fail(
+            `playing ${affordable.name} left ${afterPlay.hand.length} cards in hand instead of ` +
+              `${handBefore - 1 + drawnByPlay}` +
+              (drawnByPlay ? " (one played, one drawn by its ability)" : "")
+          );
         }
         if (afterPlay.energy !== energyBefore - affordable.cost) {
           fail(`playing a ${affordable.cost}-cost card left ${afterPlay.energy} energy instead of ${energyBefore - affordable.cost}`);
@@ -6006,6 +6047,270 @@ export async function checks() {
               `${WIDE_WINDOW_HEIGHT} window, so the controls a player needs scroll away`
           );
         }
+      }
+    }
+  }
+
+  // --- A card that draws a card when it is played ----------------------------
+
+  // The first card ability: a card whose face says so draws its owner a card as
+  // it lands. It is written once in docs/cards.js, fires from one trigger in
+  // docs/match.js for both sides, and reads the same on every card face — so a
+  // card is more than its three numbers and a match stays symmetric.
+  const abilityText = cardCatalog.DRAW_ON_PLAY;
+  const glowcapCard = cardCatalog.CARD_BY_ID.get("glowcap");
+  const moonBloomCard = cardCatalog.CARD_BY_ID.get("moon-bloom");
+  const plainCard = cardCatalog.CARD_BY_ID.get("sprout");
+
+  if (typeof abilityText !== "string" || !abilityText.trim()) {
+    fail("docs/cards.js names no ability for a card that draws a card when played, so no card can say what it does");
+  } else {
+    // One ability card the player starts with, one they have to earn, so a player
+    // meets the ability early and keeps finding it.
+    if (glowcapCard?.ability !== abilityText) {
+      fail(
+        `Glowcap's ability reads ${JSON.stringify(glowcapCard?.ability ?? null)} instead of ` +
+          `${JSON.stringify(abilityText)}, so a card the player starts with does not draw them a card`
+      );
+    }
+    if (moonBloomCard?.ability !== abilityText) {
+      fail(
+        `Moon Bloom's ability reads ${JSON.stringify(moonBloomCard?.ability ?? null)} instead of ` +
+          `${JSON.stringify(abilityText)}, so the first reward card does not draw its owner a card`
+      );
+    }
+    if (!(cardCatalog.STARTER_COLLECTION ?? []).some((entry) => entry.id === "glowcap")) {
+      fail("the card that draws a card is not in the starter collection, so a new player never meets the ability");
+    }
+    if (!(cardCatalog.REWARD_POOL ?? []).includes("moon-bloom")) {
+      fail("the reward card that draws a card is not in the reward pool, so a player can never earn a second one");
+    }
+    if (plainCard?.ability !== undefined) {
+      fail(
+        `"${plainCard?.name}" carries the ability ${JSON.stringify(plainCard?.ability)}, though only the cards ` +
+          "that say so on their face should do anything when played"
+      );
+    }
+
+    // How a card face prints the ability, read off the page rather than its data:
+    // the collection shows every card in the game, owned or not, and each one says
+    // what it does.
+    const abilityOnFace = (face) => textOf(face?.querySelector(".card-ability"));
+    for (const face of document.querySelectorAll("#collection-list [data-card-id]")) {
+      const id = face.dataset.cardId;
+      const expected = catalogAbility(id) ?? "";
+      if (abilityOnFace(face) !== expected) {
+        const name = cardCatalog.CARD_BY_ID.get(id)?.name ?? id;
+        fail(
+          `the collection's "${name}" reads ${JSON.stringify(abilityOnFace(face))} where its ability is ` +
+            `${JSON.stringify(expected)}, so a player cannot see what the card does`
+        );
+      }
+    }
+    const glowcapInCollection = document.querySelector('#collection-list [data-card-id="glowcap"]');
+    if (abilityOnFace(glowcapInCollection) !== abilityText) {
+      fail(
+        `Glowcap's card in the collection does not say "${abilityText}" on its face ` +
+          `(it reads ${JSON.stringify(abilityOnFace(glowcapInCollection))})`
+      );
+    }
+
+    // The deck faces print it too: the opponent's deck fold is the ten faces a
+    // match brings, drawn by the same deck-card face a player's own deck uses, and
+    // Thornmere's deck holds the Glowcap and the Moon Bloom.
+    for (const [opponentId, abilityId] of [
+      ["thornmere", "glowcap"],
+      ["thornmere", "moon-bloom"],
+      ["emberwake", "moon-bloom"],
+    ]) {
+      const deckFace = document.querySelector(
+        `#opponent-options [data-opponent-id="${opponentId}"] .opponent-deck-cards [data-card-id="${abilityId}"]`
+      );
+      if (abilityOnFace(deckFace) !== abilityText) {
+        fail(
+          `the deck face for "${abilityId}" in "${opponentId}"'s deck does not say "${abilityText}" ` +
+            `(it reads ${JSON.stringify(abilityOnFace(deckFace))})`
+        );
+      }
+    }
+
+    // The card a win earned says it on its face as well.
+    const rewardFace = game.awardCardFigure(moonBloomCard);
+    if (abilityOnFace(rewardFace) !== abilityText) {
+      fail(
+        `the earned-card face of Moon Bloom does not say "${abilityText}" ` +
+          `(it reads ${JSON.stringify(abilityOnFace(rewardFace))})`
+      );
+    }
+
+    // The trigger itself, through the board a player sees: a controlled hand with
+    // a Glowcap in it and two cards left to draw, loaded the way a saved match is.
+    if (!matchEngine || typeof game.continueMatch !== "function") {
+      fail("the match engine or the continue-match action is missing, so the draw-on-play trigger cannot be checked");
+    } else if (
+      !collection.saveMatch({
+        id: "check-draw-on-play",
+        opponentName: cardCatalog.OPPONENT_NAME,
+        turn: "player",
+        over: false,
+        winner: null,
+        outcome: null,
+        recorded: false,
+        player: {
+          health: 20,
+          energy: 3,
+          maxEnergy: 3,
+          turns: 1,
+          hand: [
+            { id: "glowcap", health: 4, hasAttacked: false },
+            { id: "sprout", health: 1, hasAttacked: false },
+          ],
+          table: [],
+          deck: [
+            { id: "pebble-toad", health: 2, hasAttacked: false },
+            { id: "sun-moth", health: 3, hasAttacked: false },
+          ],
+        },
+        opponent: { health: 20, energy: 1, maxEnergy: 1, turns: 0, hand: [], table: [], deck: [] },
+        log: ["A match set up to play a card that draws a card."],
+      })
+    ) {
+      fail("a controlled board with Glowcap in hand could not be saved, so the draw-on-play trigger cannot be checked");
+    } else {
+      game.refreshSavedMatch();
+      let drawBoard = null;
+      try {
+        drawBoard = game.continueMatch();
+      } catch (e) {
+        fail(`a controlled board with Glowcap in hand could not be loaded — ${e.message}`);
+      }
+
+      if (drawBoard?.match) {
+        // The card in hand says on its own face what it will do when played.
+        const glowcapInHand = document.querySelector('#match-hand [data-card-id="glowcap"]');
+        if (abilityOnFace(glowcapInHand) !== abilityText) {
+          fail(
+            `Glowcap in your hand does not say "${abilityText}" on its face ` +
+              `(it reads ${JSON.stringify(abilityOnFace(glowcapInHand))})`
+          );
+        }
+
+        const beforePlay = game.readState().match;
+        const handBefore = beforePlay.hand.map((card) => card.id);
+        const logBefore = beforePlay.log.length;
+        game.playMatchCard("glowcap");
+        const afterPlay = game.readState().match;
+
+        const played = afterPlay.table.find((card) => card.id === "glowcap");
+        if (!played) {
+          fail('playing Glowcap did not put it on the table, so the card that draws a card was never played');
+        } else if (abilityOnFace(document.querySelector('#match-table [data-card-id="glowcap"]')) !== abilityText) {
+          fail(
+            `Glowcap on the table does not say "${abilityText}" on its face, so the card reads differently ` +
+              "there than in the collection"
+          );
+        }
+        if (afterPlay.hand.length !== handBefore.length) {
+          fail(
+            `playing Glowcap left ${afterPlay.hand.length} card(s) in hand instead of drawing one onto the ` +
+              `${handBefore.length} it was played from (one played, one drawn)`
+          );
+        }
+        if (!afterPlay.hand.some((card) => card.id === "pebble-toad")) {
+          fail(
+            `playing Glowcap drew ${JSON.stringify(afterPlay.hand.map((card) => card.id))} instead of the top ` +
+              'card of the deck ("pebble-toad")'
+          );
+        }
+        if (afterPlay.deckRemaining !== 1) {
+          fail(`the draw left ${afterPlay.deckRemaining} card(s) to draw instead of the one the deck held after it`);
+        }
+        if (afterPlay.energy !== 0) {
+          fail(
+            `playing Glowcap, which costs 3, left ${afterPlay.energy} energy instead of spending its cost ` +
+              "on top of drawing a card"
+          );
+        }
+        const drawLine = afterPlay.log.slice(logBefore).find((line) => /^Glowcap draws .+ for you /.test(line));
+        if (!drawLine) {
+          fail(
+            `the log does not say Glowcap drew a card: the play added ${JSON.stringify(afterPlay.log.slice(logBefore))}`
+          );
+        } else if (!drawLine.includes("Pebble Toad")) {
+          fail(`the log line for the drawn card does not name it: "${drawLine}"`);
+        }
+        if (!document.querySelector('#match-hand [data-card-id="pebble-toad"]')) {
+          fail("the card drawn by Glowcap is not in the hand on the board, though the state says it is held");
+        }
+      }
+
+      // The same trigger for the opponent: a Moon Bloom in its hand is played on
+      // its turn, and it draws a card and says so — a match is symmetric.
+      const opponentBoard = matchEngine.createMatch(
+        ["sprout", "pebble-toad", "thornling", "sun-moth", "bramble-hound"],
+        { rng: () => 0 }
+      );
+      const elderOak = { ...cardCatalog.CARD_BY_ID.get("elder-oak"), hasAttacked: false };
+      // Its hand holds only the Moon Bloom, and its deck only cards too dear for
+      // the energy it has, so the Moon Bloom is the one card it plays.
+      opponentBoard.opponent.hand = [{ ...moonBloomCard, hasAttacked: false }];
+      opponentBoard.opponent.deck = [{ ...elderOak }, { ...elderOak }, { ...elderOak }];
+      opponentBoard.opponent.energy = 2;
+      opponentBoard.opponent.maxEnergy = 2;
+      const opponentLogBefore = opponentBoard.log.length;
+      matchEngine.endTurn(opponentBoard);
+      const opponentLines = opponentBoard.log.slice(opponentLogBefore);
+
+      if (!opponentBoard.opponent.table.some((card) => card.id === "moon-bloom")) {
+        fail(
+          `the opponent did not play the Moon Bloom in its hand on its turn ` +
+            `(its table holds ${JSON.stringify(opponentBoard.opponent.table.map((card) => card.id))})`
+        );
+      }
+      if (opponentBoard.opponent.energy !== 0) {
+        fail(`the opponent's Moon Bloom (cost 2) left it ${opponentBoard.opponent.energy} energy instead of spending it`);
+      }
+      const opponentHandIds = opponentBoard.opponent.hand.map((card) => card.id);
+      if (opponentHandIds.filter((id) => id === "elder-oak").length !== 2) {
+        fail(
+          `the opponent's Moon Bloom left it the hand ${JSON.stringify(opponentHandIds)} instead of the card it ` +
+            "drew on its turn plus the one the ability drew"
+        );
+      }
+      if (opponentBoard.opponent.deck.length !== 1) {
+        fail(
+          `the opponent's deck holds ${opponentBoard.opponent.deck.length} card(s) after drawing two of three, ` +
+            "so the ability did not draw from the deck"
+        );
+      }
+      const opponentDrawLine = opponentLines.find((line) => /^Moon Bloom draws .+ for the opponent /.test(line));
+      if (!opponentDrawLine) {
+        fail(`the log does not say the opponent's Moon Bloom drew it a card: the turn added ${JSON.stringify(opponentLines)}`);
+      } else if (!opponentDrawLine.includes("Elder Oak")) {
+        fail(`the log line for the card the opponent drew does not name it: "${opponentDrawLine}"`);
+      }
+
+      // A spent deck is not a broken trigger: the card still lands and still
+      // costs its energy, and nothing extra is claimed in the log.
+      const emptyDeckBoard = matchEngine.createMatch(
+        ["sprout", "pebble-toad", "thornling", "sun-moth", "bramble-hound"],
+        { rng: () => 0 }
+      );
+      emptyDeckBoard.player.hand = [{ ...glowcapCard, hasAttacked: false }];
+      emptyDeckBoard.player.deck = [];
+      emptyDeckBoard.player.energy = 3;
+      emptyDeckBoard.player.maxEnergy = 3;
+      const emptyLogBefore = emptyDeckBoard.log.length;
+      matchEngine.playCard(emptyDeckBoard, "glowcap");
+      const emptyLines = emptyDeckBoard.log.slice(emptyLogBefore);
+      if (!emptyDeckBoard.player.table.some((card) => card.id === "glowcap")) {
+        fail("playing a card that draws a card with an empty deck did not put it on the table");
+      }
+      if (emptyDeckBoard.player.energy !== 0) {
+        fail(`playing Glowcap with an empty deck left ${emptyDeckBoard.player.energy} energy instead of spending 3`);
+      }
+      if (emptyLines.some((line) => /draw/i.test(line))) {
+        fail(`a card that draws from an empty deck claimed a draw: ${JSON.stringify(emptyLines)}`);
       }
     }
   }
