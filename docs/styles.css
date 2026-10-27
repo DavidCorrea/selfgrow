@@ -461,6 +461,23 @@ body {
   overflow-wrap: anywhere;
 }
 
+/* A card that carries both a when-played and a fall ability prints them as two
+   lines of the one text box, the when-played line first. The box's hairline
+   belongs to the whole box, so it is drawn once on the wrapper and each line
+   inside carries none of its own. */
+.card-abilities {
+  display: grid;
+  gap: 0.3rem;
+  margin: 0;
+  padding-top: 0.4rem;
+  border-top: 1px solid var(--edge-soft);
+}
+
+.card-abilities .card-ability {
+  padding-top: 0;
+  border-top: 0;
+}
+
 /* The deck controls at the foot of each card face: how many of its copies are
    in the deck, then the buttons that add one more or take one out. Scoped under
    .btn as .btn.deck-add / .btn.deck-remove so these sizes outrank .btn's own

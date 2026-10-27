@@ -65,6 +65,16 @@
  * one killed any other way. In every case the cost still leaves that side's
  * energy, so the card trades energy for a fresh option rather than being free.
  *
+ * A card can also do something as it leaves the table, by a second shared trigger
+ * at the one point a table card is removed. A card whose face says "When this
+ * falls: draw a card" takes the top card of its owner's deck into that hand the
+ * moment it falls — whichever blow removed it, a chosen attack, a turn's blows or
+ * a sweeping card — and the log names the card that fell and the card drawn. A
+ * card with no fall ability changes nothing beyond the "falls — it leaves …
+ * table" line the log already prints, so removing a plain card is still only a
+ * body lost, while removing a card that carries the ability hands its owner a
+ * card in return.
+ *
  * The front card is only the default. During their own turn the player may send
  * one of their table cards at a card of their choosing on the opponent's table —
  * or at the hero, once that table is empty — with `attack`. A card that has
@@ -78,6 +88,7 @@ import {
   CLEAR_ON_PLAY,
   CLEAR_ON_PLAY_AMOUNT,
   DEFAULT_OPPONENT,
+  DRAW_ON_FALL,
   DRAW_ON_PLAY,
   HEAL_ON_PLAY,
   HEAL_ON_PLAY_AMOUNT,
@@ -136,6 +147,9 @@ function cardOf(cardId) {
     // The ability printed on the card's face, or null when it carries none, so
     // the trigger below reads the card a match holds rather than the catalog.
     ability: card.ability ?? null,
+    // The ability the card carries for when it leaves the table, or null when it
+    // carries none — kept apart from `ability` so a card may have both.
+    fallAbility: card.fallAbility ?? null,
     // Whether the card has already struck during its owner's current turn. It
     // is reset as each of that side's own turns begins, so a card strikes at
     // most once per turn whichever way the player directs it.
@@ -334,6 +348,23 @@ function firePlayAbility(match, side, card, beneficiary) {
 }
 
 /**
+ * Fire the ability a card carries the moment it leaves the table, for whichever
+ * side owned it — the one shared trigger every removal path reaches, so a card
+ * that falls to a chosen attack, a turn's blows or a sweeping card acts the same
+ * way. The ability is read from the card as the match holds it, and resolved
+ * from the catalog by id when the card was dealt before the field existed, so a
+ * match saved before a fall ability was printed still fires it. The fall ability
+ * so far draws its owner a card — the other half of a card's text, answering
+ * what happens to a card after it lands rather than only as it is played.
+ */
+function fireFallAbility(match, side, card) {
+  const fallAbility = card.fallAbility ?? CARD_BY_ID.get(card.id)?.fallAbility ?? null;
+  if (fallAbility === DRAW_ON_FALL) {
+    drawFromPlay(match, side, card, side === match.player ? "you" : "the opponent");
+  }
+}
+
+/**
  * A card that draws a card when played takes the top card of its owner's deck
  * into that hand, and the log names the card drawn. A side whose deck is spent
  * draws nothing, and nothing extra is logged: the card still lands on the table
@@ -497,6 +528,8 @@ function landBlow(match, card, defender, attackerWord, defenderWord, healthWord,
     if (!fell) return false;
     defender.table.splice(defender.table.indexOf(targetCard), 1);
     appendLog(match, `${tableOwnerOpening} ${targetCard.name} falls — it leaves ${tableOwner} table.`);
+    // The card is off the table, so whatever it carries for falling now fires.
+    fireFallAbility(match, defender, targetCard);
     return false;
   }
 
