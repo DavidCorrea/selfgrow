@@ -897,6 +897,22 @@ export async function checks() {
       fail("the opening turn drew a card but the match log never says a card was drawn");
     }
 
+    // A draw moves a card rather than making one: after dealing and the opening
+    // draw — and before any card can be fought off a table — each side's cards
+    // still add up to the deck it was dealt from.
+    for (const [who, side] of [
+      ["player", dealt.player],
+      ["opponent", dealt.opponent],
+    ]) {
+      const held = side.hand.length + side.table.length + side.deck.length;
+      if (held !== cheapDeck.length) {
+        fail(
+          `the ${who}'s cards add up to ${held} after dealing, instead of the ${cheapDeck.length} it was dealt ` +
+            "— a draw duplicated or dropped one"
+        );
+      }
+    }
+
     const affordable = dealt.player.hand.find((card) => card.cost <= dealt.player.energy);
     if (!affordable) {
       fail("the controlled cheap deck dealt nothing affordable, so the turn loop cannot be tested");
@@ -953,11 +969,145 @@ export async function checks() {
       }
     }
 
+    // A table is fought over. A known board — one card each side, taken from the
+    // hands the fixed shuffle deals — makes the arithmetic exact: your card hits
+    // the front card of the opponent's table, the hero behind it is untouched,
+    // and a card worn to zero leaves the table with the log naming it. The deck
+    // is chosen so both hands hold a Sprout, a Thornling and a Mudback Turtle.
+    const fightDeck = ["sprout", "thornling", "mudback-turtle", "sprout", "sprout"];
+    const takeFromHand = (side, id) => {
+      const at = side.hand.findIndex((card) => card.id === id);
+      return at < 0 ? null : side.hand.splice(at, 1)[0];
+    };
+
+    const fight = matchEngine.createMatch(fightDeck, { rng: fixedRng });
+    const yourFighter = takeFromHand(fight.player, "sprout");
+    const theirWall = takeFromHand(fight.opponent, "mudback-turtle");
+    if (!yourFighter || !theirWall) {
+      fail(
+        "the controlled fight deck did not deal a Sprout to the player and a Mudback Turtle to the opponent, " +
+          "so table combat cannot be checked"
+      );
+    } else {
+      fight.player.table = [yourFighter];
+      fight.opponent.table = [theirWall];
+      const theirHeroBefore = fight.opponent.health;
+      const wallHealthBefore = theirWall.health;
+      const fightLogBefore = fight.log.length;
+      matchEngine.endTurn(fight);
+      const fightLines = fight.log.slice(fightLogBefore);
+
+      if (theirWall.health !== wallHealthBefore - yourFighter.attack) {
+        fail(
+          `ending the turn left the opponent's front card "${theirWall.name}" at ${theirWall.health} health ` +
+            `instead of ${wallHealthBefore - yourFighter.attack} after ${yourFighter.attack} damage from "${yourFighter.name}"`
+        );
+      }
+      if (fight.opponent.health !== theirHeroBefore) {
+        fail(
+          `ending the turn cut the opponent's hero to ${fight.opponent.health} while its table still held ` +
+            `"${theirWall.name}", so the blow went past the card in front of it`
+        );
+      }
+      const hitLine = fightLines.find(
+        (line) => line.includes(yourFighter.name) && line.includes(theirWall.name)
+      );
+      if (!hitLine) {
+        fail(
+          `the attack on the opponent's "${theirWall.name}" was not logged by name: the turn added ` +
+            JSON.stringify(fightLines)
+        );
+      } else if (!hitLine.includes(`${theirWall.health} health left`)) {
+        fail(`the log line for the hit on "${theirWall.name}" does not state its remaining health ${theirWall.health}: "${hitLine}"`);
+      }
+    }
+
+    // A card worn to zero leaves its table, and the log names the card that
+    // fell. The front card of the opponent's table starts one hit from falling,
+    // so nothing after the first blow can be what removed it.
+    const fall = matchEngine.createMatch(fightDeck, { rng: fixedRng });
+    const striker = takeFromHand(fall.player, "sprout");
+    const doomed = takeFromHand(fall.opponent, "thornling");
+    if (!striker || !doomed || doomed.health > striker.attack) {
+      fail(
+        "the controlled fight deck did not deal a card the player can fell in one blow, so a card leaving the table cannot be checked"
+      );
+    } else {
+      fall.player.table = [striker];
+      fall.opponent.table = [doomed];
+      const theirHeroBefore = fall.opponent.health;
+      const fallLogBefore = fall.log.length;
+      matchEngine.endTurn(fall);
+      const fallLines = fall.log.slice(fallLogBefore);
+
+      if (fall.opponent.table.includes(doomed)) {
+        fail(`the opponent's "${doomed.name}" was reduced to 0 health but stayed on the table`);
+      }
+      if (fall.opponent.health !== theirHeroBefore) {
+        fail(
+          `the opponent's hero fell to ${fall.opponent.health} on the blow that emptied its table, instead of ` +
+            "staying untouched until the table was clear"
+        );
+      }
+      const fellLine = fallLines.find((line) => line.includes(doomed.name) && /falls/i.test(line));
+      if (!fellLine) {
+        fail(
+          `the match log never says the fallen "${doomed.name}" left the table: the turn added ` +
+            JSON.stringify(fallLines)
+        );
+      } else if (!/opponent's table/i.test(fellLine)) {
+        fail(`the log says "${doomed.name}" fell without saying which table it left: "${fellLine}"`);
+      }
+      if (!fallLines.some((line) => line.includes(doomed.name) && line.includes("0 health"))) {
+        fail(`the log never shows "${doomed.name}" at 0 health before it left the table: ${JSON.stringify(fallLines)}`);
+      }
+    }
+
+    // The opponent's turn is fought over the same way: its cards hit the front
+    // card of your table, and your hero is untouched while that card stands.
+    const defend = matchEngine.createMatch(fightDeck, { rng: fixedRng });
+    const yourWall = takeFromHand(defend.player, "mudback-turtle");
+    const theirFighter = takeFromHand(defend.opponent, "thornling");
+    if (!yourWall || !theirFighter) {
+      fail(
+        "the controlled fight deck did not deal a Mudback Turtle to the player and a Thornling to the opponent, " +
+          "so the opponent's attack cannot be checked"
+      );
+    } else {
+      defend.player.table = [yourWall];
+      defend.opponent.table = [theirFighter];
+      const yourHeroBefore = defend.player.health;
+      const wallHealthBefore = yourWall.health;
+      matchEngine.endTurn(defend);
+      // Every card on the opponent's table attacked once during its turn, and
+      // nothing the player did can have damaged its own card in between.
+      const incoming = defend.opponent.table.reduce((total, card) => total + card.attack, 0);
+
+      if (yourWall.health !== Math.max(0, wallHealthBefore - incoming)) {
+        fail(
+          `the opponent's turn left your front card "${yourWall.name}" at ${yourWall.health} health instead of ` +
+            `${Math.max(0, wallHealthBefore - incoming)} after ${incoming} damage from its table`
+        );
+      }
+      if (yourWall.health === 0 && defend.player.table.includes(yourWall)) {
+        fail(`your "${yourWall.name}" was reduced to 0 health by the opponent but stayed on the table`);
+      }
+      if (yourWall.health > 0 && defend.player.health !== yourHeroBefore) {
+        fail(
+          `the opponent's turn cut your hero to ${defend.player.health} while your table still held ` +
+            `"${yourWall.name}", so the blow went past the card in front of it`
+        );
+      }
+      if (!defend.log.some((line) => line.includes(`your ${yourWall.name}`) && line.includes("health"))) {
+        fail(`the opponent's attack on your "${yourWall.name}" was not logged against that card`);
+      }
+    }
+
     // A match always reaches a result: two small decks race each other, and the
     // moment a hero falls the match is over, the winner is named, and no move is
     // accepted any more.
     const race = matchEngine.createMatch(cheapDeck);
-    for (let move = 0; move < 40 && !race.over; move += 1) {
+    for (let move = 0; move < 60 && !race.over; move += 1) {
       const playable = race.player.hand.find((card) => card.cost <= race.player.energy);
       if (playable) matchEngine.playCard(race, playable.id);
       else matchEngine.endTurn(race);
@@ -965,7 +1115,7 @@ export async function checks() {
 
     if (!race.over) {
       fail(
-        `40 moves into a match both heroes were still standing (${race.player.health} and ` +
+        `60 moves into a match both heroes were still standing (${race.player.health} and ` +
           `${race.opponent.health} health), so a match never reaches the result it is played for`
       );
     } else {
@@ -1023,21 +1173,6 @@ export async function checks() {
       }
     }
 
-    // A draw moves a card rather than making one: through every draw so far,
-    // each side's cards still add up to the deck it was dealt from.
-    for (const [who, side] of [
-      ["player", dealt.player],
-      ["opponent", dealt.opponent],
-    ]) {
-      const held = side.hand.length + side.table.length + side.deck.length;
-      if (held !== cheapDeck.length) {
-        fail(
-          `the ${who}'s cards add up to ${held} after drawing, instead of the ${cheapDeck.length} it was dealt ` +
-            "— a draw duplicated or dropped one"
-        );
-      }
-    }
-
     // An exhausted deck draws nothing and says nothing, but the turn still runs.
     const spent = matchEngine.createMatch(cheapDeck, { rng: fixedRng });
     spent.player.deck = [];
@@ -1065,14 +1200,14 @@ export async function checks() {
       .slice(0, 5)
       .map((card) => card.id);
     const priceyDeck = matchEngine.createMatch(dearest, { rng: fixedRng });
-    for (let move = 0; move < 30 && !priceyDeck.over; move += 1) {
+    for (let move = 0; move < 60 && !priceyDeck.over; move += 1) {
       const playable = priceyDeck.player.hand.find((card) => card.cost <= priceyDeck.player.energy);
       if (playable) matchEngine.playCard(priceyDeck, playable.id);
       else matchEngine.endTurn(priceyDeck);
     }
     if (!priceyDeck.over) {
       fail(
-        `a deck of only the dearest cards stalled: 30 moves in, both heroes stood at ` +
+        `a deck of only the dearest cards stalled: 60 moves in, both heroes stood at ` +
           `${priceyDeck.player.health} and ${priceyDeck.opponent.health} health, so the match never reached a result`
       );
     }
@@ -1676,7 +1811,7 @@ export async function checks() {
   // match is over — how a sensible player finishes a game. Bounded, so a match
   // that will not end fails this check instead of hanging the whole suite.
   const playToResult = () => {
-    for (let move = 0; move < 30; move += 1) {
+    for (let move = 0; move < 60; move += 1) {
       const live = game.readState().match;
       if (!live || live.over) return live;
       const strongest = live.hand
