@@ -10365,8 +10365,14 @@ export async function checks() {
     { id: "thornback-behemoth", fallAbility: cardCatalog.STRIKE_ON_FALL },
   ];
   const higherFallIds = new Set(higherFallCards.map(({ id }) => id));
+  // The cards these two had to be dearer than are the fall cards written before
+  // them in the catalog, not every fall card the set holds now: a fall card
+  // added later is a new promise, and its cost says nothing about whether these
+  // two were the first dear ones.
+  const firstHigherFallAt = cardCatalog.CARDS.findIndex((card) => higherFallIds.has(card.id));
   const olderFallCosts = cardCatalog.CARDS
-    .filter((card) => card.fallAbility && !higherFallIds.has(card.id))
+    .slice(0, firstHigherFallAt)
+    .filter((card) => card.fallAbility)
     .map((card) => card.cost);
   const dearestOlderFallCard = Math.max(...olderFallCosts);
 
@@ -10453,8 +10459,12 @@ export async function checks() {
     fail("collection.js does not export nextRewardId, so the dearest fall cards cannot be checked as winnable");
   } else {
     const pool = cardCatalog.REWARD_POOL;
-    const olderRewards = pool.filter((id) => !higherFallIds.has(id));
-    if (pool.join(",") !== olderRewards.concat([...higherFallIds]).join(",")) {
+    // They follow everything that was already there, in the order they were
+    // added. A reward appended behind them later is allowed — it is reached once
+    // these are held — but nothing may be slotted in before or between them.
+    const firstHigherRewardAt = Math.min(...[...higherFallIds].map((id) => pool.indexOf(id)));
+    const poolAfterOlderRewards = pool.slice(firstHigherRewardAt, firstHigherRewardAt + higherFallCards.length);
+    if (firstHigherRewardAt < 0 || poolAfterOlderRewards.join(",") !== [...higherFallIds].join(",")) {
       fail(
         `the reward pool reads ${JSON.stringify(pool)} instead of the cards that were already there followed by ` +
           `${JSON.stringify([...higherFallIds])}, so a save made before these cards existed would be handed a ` +
@@ -10483,6 +10493,181 @@ export async function checks() {
       const following = collection.nextRewardId(won.cards);
       if (following === id) {
         fail(`after winning "${id}" the next-win card is still "${following}", so the goal never moves on`);
+      }
+    }
+  }
+
+  // --- A card that acts both as it lands and as it falls --------------------
+
+  // A card's face can carry a line for when it is played and a line for when it
+  // falls at once, and the match fires each at its own moment — but until now no
+  // card used both halves, so the set never showed the range its own texts
+  // promise. Sunspear Bloom is that card: it strikes the opponent's front card as
+  // it lands and hands its owner a card back as it leaves the table. Both halves
+  // are checked here, because a card that shipped with one of them missing would
+  // still read as a finished card everywhere else.
+  const sunspear = cardCatalog.CARD_BY_ID.get("sunspear-bloom");
+
+  if (!sunspear) {
+    fail('"sunspear-bloom" is not a card in the game, so no card acts both when it is played and when it falls');
+  } else {
+    if (sunspear.ability !== cardCatalog.STRIKE_ON_PLAY) {
+      fail(
+        `"${sunspear.name}" carries the when-played ability ${JSON.stringify(sunspear.ability ?? null)} instead of ` +
+          `${JSON.stringify(cardCatalog.STRIKE_ON_PLAY)}, so it does not act as it lands`
+      );
+    }
+    if (sunspear.fallAbility !== cardCatalog.DRAW_ON_FALL) {
+      fail(
+        `"${sunspear.name}" carries fallAbility ${JSON.stringify(sunspear.fallAbility ?? null)} instead of ` +
+          `${JSON.stringify(cardCatalog.DRAW_ON_FALL)}, so it does not act as it falls`
+      );
+    }
+    if (!cardCatalog.REWARD_POOL.includes(sunspear.id)) {
+      fail(
+        `"${sunspear.name}" acts twice but is not in the reward pool, so a win can never add it to a collection`
+      );
+    } else if (cardCatalog.REWARD_POOL[cardCatalog.REWARD_POOL.length - 1] !== sunspear.id) {
+      fail(
+        `the reward pool reads ${JSON.stringify(cardCatalog.REWARD_POOL)}, so "${sunspear.name}" is not appended ` +
+          "behind the rewards that were already there and a save made before it existed would be handed a " +
+          "different next reward"
+      );
+    }
+    if (cardCatalog.STARTER_COLLECTION.some((entry) => entry.id === sunspear.id)) {
+      fail(`"${sunspear.name}" is a reward card but is also dealt at the start, so a new player already owns it`);
+    }
+
+    // A described picture in the shared flat-silhouette style, built only from
+    // the two art classes the whole set is drawn in.
+    const sunspearArt = cardArt?.cardArt(sunspear.id);
+    if (!sunspearArt || !(sunspearArt.inner || "").trim()) {
+      fail(`"${sunspear.name}" has no picture, so the card that acts twice cannot be known by sight`);
+    } else if (!sunspearArt.description?.trim()) {
+      fail(`"${sunspear.name}"'s picture is not described, so it cannot be checked against the style`);
+    } else if (!/art-body/.test(sunspearArt.inner)) {
+      fail(`"${sunspear.name}" is drawn without a creature in the foil the whole set is drawn in`);
+    } else {
+      const drawnClasses = [...sunspearArt.inner.matchAll(/class="([^"]*)"/g)].map(([, className]) => className);
+      const outsideStyle = drawnClasses.filter((className) => !["art-body", "art-accent"].includes(className));
+      if (drawnClasses.length === 0 || outsideStyle.length > 0) {
+        fail(
+          `"${sunspear.name}" is drawn with ${JSON.stringify(drawnClasses)} instead of only the set's art-body ` +
+            "and art-accent shapes, so its picture does not follow the shared art style"
+        );
+      }
+    }
+
+    // Both lines are printed on the face wherever the card is shown — in the set
+    // list and on the card a win earns — in the words the match uses, the
+    // when-played line first.
+    const expectedSunspearLines = [cardCatalog.STRIKE_ON_PLAY, cardCatalog.DRAW_ON_FALL];
+    const faceLinesOf = (face) => [...(face?.querySelectorAll(".card-ability") ?? [])].map((line) => textOf(line));
+    const collectionSunspearFace = document.querySelector('#collection-list [data-card-id="sunspear-bloom"]');
+    const collectionSunspearLines = faceLinesOf(collectionSunspearFace);
+    if (collectionSunspearLines.join(" | ") !== expectedSunspearLines.join(" | ")) {
+      fail(
+        `the Sunspear Bloom shown in the collection prints ${JSON.stringify(collectionSunspearLines)} on its ` +
+          `face instead of ${JSON.stringify(expectedSunspearLines)}`
+      );
+    }
+    const awardSunspearLines = faceLinesOf(game.awardCardFigure(sunspear));
+    if (awardSunspearLines.join(" | ") !== expectedSunspearLines.join(" | ")) {
+      fail(
+        `the earned-card face of the Sunspear Bloom prints ${JSON.stringify(awardSunspearLines)} instead of ` +
+          `${JSON.stringify(expectedSunspearLines)}`
+      );
+    }
+
+    // An agent that lists the set reads both halves in the fields written for
+    // them, so what the face says and what a caller reads are one answer.
+    if (listCollection) {
+      const sunspearEntry = (await listCollection.execute()).cards.find((card) => card.id === sunspear.id);
+      if (sunspearEntry?.ability !== cardCatalog.STRIKE_ON_PLAY) {
+        fail(
+          `list-collection returns "${sunspear.name}" with ability ${JSON.stringify(sunspearEntry?.ability ?? null)} ` +
+            `instead of ${JSON.stringify(cardCatalog.STRIKE_ON_PLAY)}`
+        );
+      }
+      if (sunspearEntry?.fallAbility !== cardCatalog.DRAW_ON_FALL) {
+        fail(
+          `list-collection returns "${sunspear.name}" with fallAbility ` +
+            `${JSON.stringify(sunspearEntry?.fallAbility ?? null)} instead of ${JSON.stringify(cardCatalog.DRAW_ON_FALL)}`
+        );
+      }
+    }
+
+    // Both triggers, in a real match: the half that fires as it lands, and the
+    // half that fires as it is removed.
+    if (!matchEngine) {
+      fail("docs/match.js could not be imported, so the card that acts twice cannot be played");
+    } else {
+      const bloomDeck = ["sprout", "pebble-toad", "thornling", "sun-moth", "bramble-hound"];
+      const freshBloom = () => ({ ...sunspear, health: sunspear.health, hasAttacked: false });
+
+      // (1) Played: the when-played strike lands on the opponent's front card,
+      // in the same words a turn's blow uses.
+      const playBloom = matchEngine.createMatch(bloomDeck, { rng: () => 0 });
+      playBloom.player.table = [];
+      playBloom.player.hand = [freshBloom()];
+      playBloom.player.deck = [];
+      playBloom.player.energy = sunspear.cost;
+      playBloom.player.maxEnergy = sunspear.cost;
+      playBloom.opponent.table = [{ ...cardCatalog.CARD_BY_ID.get("elder-oak"), hasAttacked: false }];
+      playBloom.opponent.hand = [];
+      playBloom.opponent.deck = [];
+      const struckHealthBefore = playBloom.opponent.table[0].health;
+      const playLogBefore = playBloom.log.length;
+      matchEngine.playCard(playBloom, sunspear.id);
+      const playLines = playBloom.log.slice(playLogBefore);
+      if (!playBloom.player.table.some((card) => card.id === sunspear.id)) {
+        fail(`playing "${sunspear.name}" did not put it on the table, so it is not a card a deck can play`);
+      }
+      const playStrikeLine = playLines.find((line) => line.includes(sunspear.name) && /deals/i.test(line));
+      if (!playStrikeLine) {
+        fail(
+          `playing "${sunspear.name}" logged ${JSON.stringify(playLines)}, none of which is the blow its ` +
+            "when-played ability promises"
+        );
+      }
+      const frontAfterPlay = playBloom.opponent.table[0];
+      if (!frontAfterPlay || frontAfterPlay.health !== struckHealthBefore - cardCatalog.STRIKE_ON_PLAY_AMOUNT) {
+        fail(
+          `playing "${sunspear.name}" left the opponent's front card at ${frontAfterPlay?.health} health instead ` +
+            `of ${struckHealthBefore - cardCatalog.STRIKE_ON_PLAY_AMOUNT}`
+        );
+      }
+
+      // (2) Removed: the fall ability hands its owner a card, and the log names
+      // the card drawn, so removing the bloom is not a free move.
+      const fellBloom = matchEngine.createMatch(bloomDeck, { rng: () => 0 });
+      fellBloom.player.table = [{ ...cardCatalog.CARD_BY_ID.get("elder-oak"), hasAttacked: false }];
+      fellBloom.player.hand = [];
+      fellBloom.player.deck = [];
+      fellBloom.opponent.table = [{ ...sunspear, health: 1, hasAttacked: false }];
+      fellBloom.opponent.hand = [];
+      fellBloom.opponent.deck = [{ ...cardCatalog.CARD_BY_ID.get("mudback-turtle"), hasAttacked: false }];
+      const handBeforeFall = fellBloom.opponent.hand.length;
+      const fallLogBefore = fellBloom.log.length;
+      matchEngine.attack(fellBloom, "elder-oak", sunspear.id);
+      const fallLines = fellBloom.log.slice(fallLogBefore);
+      if (fellBloom.opponent.table.some((card) => card.id === sunspear.id)) {
+        fail(`a chosen attack left "${sunspear.name}" on the table, so its fall ability was never reached`);
+      }
+      if (fellBloom.opponent.hand.length !== handBeforeFall + 1) {
+        fail(
+          `killing "${sunspear.name}" left its owner holding ${fellBloom.opponent.hand.length} card(s) instead of ` +
+            `the ${handBeforeFall + 1} its fall ability promises`
+        );
+      }
+      const fallDrawLine = fallLines.find((line) => line.includes(sunspear.name) && /draws/i.test(line));
+      if (!fallDrawLine) {
+        fail(
+          `the log reads ${JSON.stringify(fallLines)} when "${sunspear.name}" falls, none of which says it drew ` +
+            "its owner a card"
+        );
+      } else if (!fallDrawLine.includes("Mudback Turtle")) {
+        fail(`the log line for the bloom's fall draw does not name the card drawn: "${fallDrawLine}"`);
       }
     }
   }

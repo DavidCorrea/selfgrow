@@ -566,6 +566,23 @@ const CARD_ART = new Map([
       `,
     },
   ],
+  [
+    "sunspear-bloom",
+    {
+      description:
+        "A sunlit bloom on a short stalk: a spear tip rising out of its head, two leaves below, and two seeds spilling to the ground",
+      inner: `
+        <rect class="art-body" x="45.5" y="22" width="5" height="32" rx="2.5" />
+        <path class="art-body" d="M47 40 C37 42 27 35 24 23 C36 21 45 28 47 40 Z" />
+        <path class="art-body" d="M49 34 C59 36 69 29 72 17 C60 15 51 22 49 34 Z" />
+        <path class="art-body" d="M48 1 L55 14 L48 21 L41 14 Z" />
+        <ellipse class="art-body" cx="48" cy="24" rx="13" ry="7" />
+        <ellipse class="art-body" cx="26" cy="51" rx="5" ry="3.6" />
+        <ellipse class="art-body" cx="70" cy="49" rx="4.6" ry="3.3" />
+        <circle class="art-accent" cx="48" cy="24" r="2.6" />
+      `,
+    },
+  ],
 ]);
 
 /**

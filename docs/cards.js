@@ -193,6 +193,24 @@ export const CARDS = [
   // that answers its own removal, so clearing it is a real cost in the late
   // game instead of a free sweep, and a fall deck has a threat worth building to.
   { id: "thornback-behemoth", name: "Thornback Behemoth", cost: 6, attack: 7, health: 6, fallAbility: STRIKE_ON_FALL },
+  // The first card that acts twice: it strikes the opponent's front card as it
+  // lands, and hands its owner a card back as it leaves the table. Every ability
+  // printed on a face has been carried by some card since it was written, but
+  // never two on one card — so this is the card that shows the range a card can
+  // have. A player who plays it pays for a body that answers the board at once,
+  // and a player who builds around it gets a card back when it is killed, so the
+  // turn it dies is not a turn wasted. Its two abilities are the shared constants
+  // rather than copies of their words, so its face can never drift from the
+  // trigger the match runs. It is a reward card, so both halves are collected for.
+  {
+    id: "sunspear-bloom",
+    name: "Sunspear Bloom",
+    cost: 4,
+    attack: 3,
+    health: 4,
+    ability: STRIKE_ON_PLAY,
+    fallAbility: DRAW_ON_FALL,
+  },
 ];
 
 /** Lookup by id — the shape the saved collection speaks in. */
@@ -266,6 +284,9 @@ export const REWARD_POOL = [
   // reward and its place in the queue untouched.
   "lantern-bough",
   "thornback-behemoth",
+  // Appended for the same reason as every reward before it: a save written
+  // before the bloom existed keeps the next-reward order it already had.
+  "sunspear-bloom",
 ];
 
 /**
