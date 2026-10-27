@@ -50,6 +50,17 @@ export const ART_STYLE = {
 // rather than by eighteen similar ones. It is the only stroke in a picture.
 const FRAME = '<rect class="art-frame" x="1.5" y="1.5" width="93" height="61" rx="12"/>';
 
+// What is printed on the back of a card: the shared frame around the game's own
+// mark — a foil diamond with a dark inset and a foil seed at its centre, built
+// from the same shapes as the creatures, so a card turned face down is still the
+// game's card rather than a grey rectangle. It is one drawing, reused for every
+// hidden card, so a hand of five backs reads as five cards and not one picture.
+const CARD_BACK = `
+  <path class="art-body" d="M48 9 L84 32 L48 55 L12 32 Z" />
+  <path class="art-accent" d="M48 21 L66 32 L48 43 L30 32 Z" />
+  <circle class="art-body" cx="48" cy="32" r="4.5" />
+`;
+
 /**
  * Every card's drawing: a short description of what it shows, and the SVG markup
  * of its creature. A card with no entry here has no picture yet, and the page
@@ -350,5 +361,22 @@ export function cardArtSvg(cardId, label) {
   svg.setAttribute("role", "img");
   svg.setAttribute("aria-label", label);
   svg.innerHTML = FRAME + art.inner;
+  return svg;
+}
+
+/**
+ * The back of a card, for a card a player is not allowed to see: the same frame
+ * every card wears around the game's own mark. It carries no text of its own —
+ * the pile it sits in is labelled with how many cards it holds, and that count
+ * is what a screen reader reads — so the drawing is hidden from assistive
+ * technology rather than announced once per card.
+ */
+export function cardBackSvg() {
+  const svg = document.createElementNS(SVG_NAMESPACE, "svg");
+  svg.setAttribute("class", "card-art card-back");
+  svg.setAttribute("viewBox", "0 0 96 64");
+  svg.setAttribute("aria-hidden", "true");
+  svg.setAttribute("focusable", "false");
+  svg.innerHTML = FRAME + CARD_BACK;
   return svg;
 }
