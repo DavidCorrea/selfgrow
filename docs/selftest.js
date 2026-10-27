@@ -2688,6 +2688,156 @@ export async function checks() {
     }
   }
 
+  // --- What a newcomer is told before a match -------------------------------
+
+  // The Play screen stands before a match with a short how-a-match-works strip:
+  // three labelled points — what a card costs, how the table fights and which
+  // hero losing ends it — folded behind one control. A player who has not
+  // finished a match meets it open, and the same words and whether they show are
+  // what the get-match-rules tool hands an agent. The strip must not push the
+  // picker or the Start match button off the first screen.
+  {
+    const rulesSection = document.getElementById("match-rules");
+    const rulesPoints = document.getElementById("match-rules-points");
+    const rulesToggle = document.getElementById("action-toggle-rules");
+    const rulesState = game.readState().matchRules;
+
+    if (!rulesSection || !rulesPoints || !rulesToggle) {
+      fail(
+        "the Play screen has no how-a-match-works strip (#match-rules, #match-rules-points and " +
+          "#action-toggle-rules must all exist), so a first-time player is never told how a match works"
+      );
+    } else if (!rulesState || !Array.isArray(rulesState.points) || rulesState.points.length !== 3) {
+      fail(
+        `the state exposes ${JSON.stringify(rulesState?.points)} as the match rules instead of three ` +
+          "labelled points, so an agent cannot teach a newcomer how a match works"
+      );
+    } else {
+      const labels = [...rulesPoints.querySelectorAll("dt")].map((dt) => textOf(dt));
+      const lines = [...rulesPoints.querySelectorAll("dd")].map((dd) => textOf(dd));
+      if (labels.length !== 3 || lines.length !== 3) {
+        fail(
+          `the Play screen prints ${labels.length} rule label(s) and ${lines.length} rule line(s) instead ` +
+            "of three labelled points"
+        );
+      }
+      rulesState.points.forEach((point, index) => {
+        if (!point.label || !point.text) {
+          fail(`match rule ${index + 1} is missing its label or its line: ${JSON.stringify(point)}`);
+        } else if (labels[index] !== point.label || lines[index] !== point.text) {
+          fail(
+            `rule ${index + 1} reads "${labels[index]} — ${lines[index]}" on the page while the state hands an ` +
+              `agent "${point.label} — ${point.text}"`
+          );
+        }
+      });
+      const allRules = rulesState.points.map((point) => `${point.label} ${point.text}`).join(" ").toLowerCase();
+      for (const [word, why] of [
+        ["energy", "that a card is paid for with energy"],
+        ["card", "that cards are what fight"],
+        ["hero", "which hero losing ends the match"],
+      ]) {
+        if (!allRules.includes(word)) {
+          fail(`the match rules never mention "${word}", so a newcomer cannot read ${why}: they read "${allRules}"`);
+        }
+      }
+
+      // The control names its action and carries the expanded state a screen
+      // reader reads, so the strip folds and reopens on the keyboard as on a tap.
+      if (rulesToggle.tagName !== "BUTTON") {
+        fail(
+          `the rules strip's control is a <${rulesToggle.tagName.toLowerCase()}>, not a button, so a ` +
+            "keyboard cannot fold it"
+        );
+      }
+      if (rulesToggle.getAttribute("aria-controls") !== rulesPoints.id) {
+        fail(
+          `the rules control points at ${JSON.stringify(rulesToggle.getAttribute("aria-controls"))} instead ` +
+            `of the points it folds (#${rulesPoints.id})`
+        );
+      }
+
+      // A player who has not finished a match meets the points open, and the one
+      // control folds and reopens them for both the page and the state an agent
+      // reads.
+      if (game.readState().matchesPlayed === 0) {
+        if (!rulesState.shown || rulesToggle.getAttribute("aria-expanded") !== "true" || rulesPoints.hidden) {
+          fail("a player who has not finished a match is not shown how a match works on the Play screen");
+        }
+        rulesToggle.click();
+        const folded = game.readState().matchRules;
+        if (folded.shown !== false || rulesToggle.getAttribute("aria-expanded") !== "false" || !rulesPoints.hidden) {
+          fail("folding the rules strip did not hide the points or did not reach the state an agent reads");
+        }
+        rulesToggle.click();
+        const reopened = game.readState().matchRules;
+        if (reopened.shown !== true || rulesToggle.getAttribute("aria-expanded") !== "true" || rulesPoints.hidden) {
+          fail("reopening the rules strip did not show the points again or did not reach the state an agent reads");
+        }
+      }
+
+      // With the points open, what a newcomer reads and the Start match button
+      // share the first screen, on a phone and on a wide window alike.
+      if (rulesSection.hidden || rulesSection.getBoundingClientRect().height === 0) {
+        fail("the rules strip has no place on the Play screen before a match, so a visitor cannot read it");
+      } else {
+        const foldHeight = document.documentElement.clientHeight;
+        const width = document.documentElement.clientWidth;
+        for (const [what, id] of [
+          ["the opponent picker", "opponent-picker"],
+          ["Start match", "action-start-match"],
+        ]) {
+          const box = document.getElementById(id)?.getBoundingClientRect();
+          if (box && box.height > 0 && box.bottom > foldHeight + 1) {
+            fail(
+              `with the rules shown, ${what} ends ${Math.round(box.bottom - foldHeight)}px below the fold on ` +
+                `a ${width}x${foldHeight} window`
+            );
+          }
+        }
+      }
+
+      // The same words, reachable by an agent: the tool returns the rules the page
+      // prints and whether they are showing.
+      const rulesTool = toolNamed("get-match-rules");
+      if (!rulesTool) {
+        fail('no "get-match-rules" tool is declared, so an agent cannot read what the page tells a newcomer');
+      } else {
+        if (!rulesTool.annotations || rulesTool.annotations.readOnlyHint !== true) {
+          fail('"get-match-rules" does not declare itself read-only, though it only reads');
+        }
+        const viaTool = await rulesTool.execute({});
+        const live = game.readState().matchRules;
+        if (!viaTool || typeof viaTool.shown !== "boolean" || !Array.isArray(viaTool.points) || viaTool.points.length !== 3) {
+          fail(`the get-match-rules tool returns ${JSON.stringify(viaTool)} instead of three points and whether they show`);
+        } else if (JSON.stringify(viaTool.points) !== JSON.stringify(live.points) || viaTool.shown !== live.shown) {
+          fail("the get-match-rules tool returns different rules, or a different shown state, than the page's own state");
+        }
+      }
+
+      // Folding the strip is a move a visitor can make, so it is a tool too: it
+      // flips the strip and reports the flip, and leaves it where it was put.
+      const toggleTool = toolNamed("toggle-match-rules");
+      if (!toggleTool) {
+        fail('no "toggle-match-rules" tool is declared, so an agent cannot fold the rules as a visitor can');
+      } else if (!toggleTool.annotations || toggleTool.annotations.readOnlyHint !== false) {
+        fail('"toggle-match-rules" changes the strip but is not marked as changing anything (readOnlyHint: false)');
+      } else if (game.readState().matchesPlayed === 0) {
+        const wasShown = game.readState().matchRules.shown;
+        const toggled = await toggleTool.execute({});
+        if (!toggled || toggled.shown === wasShown || !Array.isArray(toggled.points) || toggled.points.length !== 3) {
+          fail(`the toggle-match-rules tool returned ${JSON.stringify(toggled)}, which does not report the strip flipped`);
+        } else if (game.readState().matchRules.shown === wasShown) {
+          fail("the toggle-match-rules tool reported flipping the strip but the page did not change");
+        }
+        await toggleTool.execute({});
+        if (game.readState().matchRules.shown !== wasShown) {
+          fail("toggling the rules strip twice through the tool did not leave it as it was");
+        }
+      }
+    }
+  }
+
   // Before a match the board has no opponent to show, so its portrait slot is
   // empty and hidden even while the Play screen stands ready.
   const beforeMatchPortrait = document.getElementById("match-opponent-portrait");
@@ -3637,6 +3787,22 @@ export async function checks() {
   game.startMatch();
   const playedOut = playToResult();
   checkResult("playing the strongest card your energy covers, turn after turn", playedOut);
+
+  // Once a match has been finished the rules fold for good: a returning player
+  // no longer meets the newcomer's strip open, even though the control remains
+  // to open it again.
+  const afterRulesMatch = game.readState();
+  if (afterRulesMatch.matchesPlayed < 1) {
+    fail("a match was played out but matchesPlayed is still 0, so a returning player cannot be told apart");
+  } else if (afterRulesMatch.matchRules?.shown) {
+    fail("the rules strip is still shown after a match has been played, so a returning player does not get their space back");
+  }
+  if (document.getElementById("action-toggle-rules")?.getAttribute("aria-expanded") !== "false") {
+    fail("after a match the rules control still reports the rules as expanded");
+  }
+  if (!document.getElementById("match-rules-points")?.hidden) {
+    fail("after a match the rules points are still open instead of folded");
+  }
 
   // A win grows the collection by exactly one card and names it; a loss adds
   // none. Which side wins a real match is the shuffle's choice, so each branch

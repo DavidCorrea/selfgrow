@@ -172,6 +172,28 @@
             <span data-field="minimumDeckSize">5</span>.
           </p>
 
+          <!-- How a match works, for someone who has not finished one yet: three
+               short labelled points that stand before the picker and the Start
+               match button, and fold away behind one control so a returning
+               player gets the space back. The points are written in from the one
+               list the get-match-rules tool also reads, so the page and the tool
+               cannot say different things. -->
+          <section class="match-rules" id="match-rules" aria-labelledby="match-rules-heading">
+            <div class="match-rules-head">
+              <h3 class="match-rules-heading" id="match-rules-heading">How a match works</h3>
+              <button
+                type="button"
+                class="btn btn-secondary match-rules-toggle"
+                id="action-toggle-rules"
+                aria-expanded="true"
+                aria-controls="match-rules-points"
+              >
+                Hide rules
+              </button>
+            </div>
+            <dl class="match-rules-points" id="match-rules-points"></dl>
+          </section>
+
           <fieldset class="opponent-picker" id="opponent-picker" hidden>
             <legend class="opponent-picker-legend">Choose your opponent</legend>
             <div class="opponent-options" id="opponent-options"></div>
