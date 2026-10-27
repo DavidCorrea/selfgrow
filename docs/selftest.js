@@ -7824,6 +7824,120 @@ export async function checks() {
     }
   }
 
+  // --- Two more cards that clear the opponent's table, across the cost curve --
+
+  // A sweep carried at one price is a single reward; carried at two it is a tool
+  // a deck can be built around — a cheap body a player can hold for the early
+  // turns, and a heavy one for a deck that survives into the late game. Each
+  // prints the ability in the same words as the first clearing card, each is
+  // pictured in the shared style, and each is a reward a win can add.
+  const sweepingCards = [
+    { id: "gustling", costBand: [2, 3] },
+    { id: "storm-roc", costBand: [5, 6] },
+  ];
+  for (const { id, costBand } of sweepingCards) {
+    const card = cardCatalog.CARD_BY_ID.get(id);
+    if (!card) {
+      fail(`the sweeping card "${id}" is not in the card catalog, so the ability is still carried at one price only`);
+      continue;
+    }
+    if (card.ability !== cardCatalog.CLEAR_ON_PLAY) {
+      fail(
+        `"${card.name}" carries the ability ${JSON.stringify(card.ability ?? null)} instead of ` +
+          `${JSON.stringify(cardCatalog.CLEAR_ON_PLAY)}, so it does not clear the table in the same words as the others`
+      );
+    }
+    if (card.cost < costBand[0] || card.cost > costBand[1]) {
+      fail(
+        `"${card.name}" costs ${card.cost} where a sweeping card is wanted between ${costBand[0]} and ` +
+          `${costBand[1]}, so the ability is not spread across the cost curve`
+      );
+    }
+    if (!pool.includes(id)) {
+      fail(`"${card.name}" carries the clear ability but is not in the reward pool, so a win can never add it`);
+    }
+    const art = cardArt?.cardArt(id);
+    if (!art || !(art.inner || "").trim()) {
+      fail(`the sweeping card "${card.name}" has no picture, so it cannot be known by sight`);
+    } else if (!art.description?.trim()) {
+      fail(`the sweeping card "${card.name}"'s picture is not described, so it cannot be checked against the style`);
+    }
+  }
+
+  // Both are cards a win can add: with every reward card before them held, the
+  // next-win card walks to the cheap one and then to the heavy one, and a win
+  // awards exactly the card that walk named.
+  if (typeof collection.nextRewardId !== "function") {
+    fail("collection.js does not export nextRewardId, so the sweeping cards cannot be checked as winnable");
+  } else {
+    const starters = cardCatalog.STARTER_COLLECTION.map(({ id, copies }) => ({ id, copies }));
+    const heldBefore = starters.concat(pool.slice(0, pool.indexOf("gustling")).map((id) => ({ id, copies: 1 })));
+    const promisedFirst = collection.nextRewardId(heldBefore);
+    if (promisedFirst !== "gustling") {
+      fail(
+        `with the reward cards before it held the next-win card is "${promisedFirst}" instead of "gustling", ` +
+          "so the cheap sweeping card cannot be won"
+      );
+    }
+    const sweepStore = stubStorage();
+    collection.saveCollection(heldBefore, sweepStore);
+    const wonCheap = collection.recordResult("win", "match-gustling", sweepStore);
+    if (wonCheap.awarded?.id !== "gustling") {
+      fail(`a win that should add the cheap sweeping card awarded "${wonCheap.awarded?.id}" instead of "gustling"`);
+    }
+    const promisedSecond = collection.nextRewardId(wonCheap.cards);
+    if (promisedSecond !== "storm-roc") {
+      fail(
+        `after winning "gustling" the next-win card is "${promisedSecond}" instead of "storm-roc", ` +
+          "so the heavy sweeping card cannot be won"
+      );
+    }
+    const wonHeavy = collection.recordResult("win", "match-storm-roc", sweepStore);
+    if (wonHeavy.awarded?.id !== "storm-roc") {
+      fail(`a win that should add the heavy sweeping card awarded "${wonHeavy.awarded?.id}" instead of "storm-roc"`);
+    }
+  }
+
+  // The ability reads off the list an agent is handed and off the page a player
+  // reads: both sweeping cards appear in list-collection with the same words, and
+  // the "abilities" view lists them beside the first clearing card.
+  const listForSweepers = toolNamed("list-collection");
+  if (listForSweepers) {
+    const listed = await listForSweepers.execute({});
+    const listedCards = Array.isArray(listed.cards) ? listed.cards : [];
+    for (const { id } of sweepingCards) {
+      const name = cardCatalog.CARD_BY_ID.get(id)?.name ?? id;
+      const entry = listedCards.find((card) => card.id === id);
+      if (!entry) {
+        fail(`list-collection does not return "${name}", so an agent cannot read the sweeping card it can win`);
+      } else if (entry.ability !== cardCatalog.CLEAR_ON_PLAY) {
+        fail(
+          `list-collection returns "${name}" with ability ${JSON.stringify(entry.ability ?? null)} instead of ` +
+            `${JSON.stringify(cardCatalog.CLEAR_ON_PLAY)}`
+        );
+      }
+    }
+  }
+  const abilityViewForSweepers = toolNamed("set-collection-view");
+  const sweepSetList = document.getElementById("collection-list");
+  if (abilityViewForSweepers && sweepSetList) {
+    await abilityViewForSweepers.execute({ view: "abilities" });
+    const sweepRows = [...sweepSetList.querySelectorAll("[data-card-id]")].map((row) => row.dataset.cardId);
+    if (!sweepRows.includes("thorn-gale")) {
+      fail('the "abilities" view does not list the first clearing card "thorn-gale"');
+    }
+    for (const { id } of sweepingCards) {
+      const name = cardCatalog.CARD_BY_ID.get(id)?.name ?? id;
+      if (!sweepRows.includes(id)) {
+        fail(
+          `the "abilities" view does not list "${name}" beside the other when-played cards ` +
+            `(it shows ${sweepRows.join(", ")})`
+        );
+      }
+    }
+    await abilityViewForSweepers.execute({ view: "all" });
+  }
+
   // --- A blow is shown on the table, not only in the log ---------------------
 
   // A turn's blows land as movement on the cards: the strikers lift, the cards
