@@ -390,6 +390,17 @@
               <dt class="standing-label">Energy</dt>
               <dd class="standing-value"><span id="match-energy">3 of 3</span></dd>
             </div>
+            <!-- How much of this turn is still to come: how many of your table
+                 cards will still strike when you end the turn and the total
+                 attack they hold, falling as a chosen attack spends a card and
+                 returning at the start of your next turn. It goes with the
+                 player's own turn, so no figure stands for a turn nobody is
+                 taking, and a spent table is named in words rather than a bare
+                 zero. -->
+            <div class="standing standing-ready" id="match-ready-standing" hidden>
+              <dt class="standing-label">Ready to strike</dt>
+              <dd class="standing-value"><span id="match-ready"></span></dd>
+            </div>
             <!-- Whose move it is, said in words for as long as the match runs,
                  so a player never has to work it out from the log's last line
                  or from the End turn button appearing. It is a live region, so

@@ -221,6 +221,22 @@ function beginTurn(side) {
 }
 
 /**
+ * How much of a side's own turn is still to come: the cards on its table that
+ * have not struck yet — exactly the ones ending the turn would send — and the
+ * total attack those cards hold. A chosen `attack` spends a card and drops it
+ * from both figures, and `beginTurn` clears `hasAttacked` at the start of the
+ * side's next turn, so the whole table is counted again. A side with an empty
+ * table holds none of either.
+ */
+export function readyToStrike(side) {
+  const ready = side.table.filter((card) => !card.hasAttacked);
+  return {
+    count: ready.length,
+    attack: ready.reduce((total, card) => total + card.attack, 0),
+  };
+}
+
+/**
  * Start a match from the player's deck ids, against the opponent named by
  * `opponentId` (the first opponent unless another is chosen). The player is
  * dealt their own deck and the opponent its own, each shuffled separately, and

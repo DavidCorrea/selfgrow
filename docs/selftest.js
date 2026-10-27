@@ -5492,6 +5492,150 @@ export async function checks() {
     }
   }
 
+  // --- How much of the turn is still to come --------------------------------
+
+  // Ending a turn sends every table card that has not struck yet, so the board
+  // says how much attack is still waiting: how many of your cards are ready to
+  // strike and the total attack they hold. Both figures fall as a chosen attack
+  // spends a card, come back at the start of the next turn, and are named in
+  // words rather than printed as a bare zero when nothing is left to send. The
+  // state an agent reads carries the same two numbers.
+  if (playCardTool && attackTool && endTurnTool) {
+    const readyRow = document.getElementById("match-ready-standing");
+    const readyValue = document.getElementById("match-ready");
+    if (!readyRow || !readyValue) {
+      fail(
+        "the board has no ready-to-strike line (#match-ready-standing / #match-ready), so nothing says how " +
+          "much of your turn's attack is still to come"
+      );
+    } else {
+      game.startMatch();
+      // What the table itself implies, so the board and the state are held to
+      // the cards rather than only to each other.
+      const implied = () => {
+        const table = game.readState().match.table;
+        const ready = table.filter((card) => !card.hasAttacked);
+        return {
+          count: ready.length,
+          attack: ready.reduce((total, card) => total + card.attack, 0),
+          size: table.length,
+        };
+      };
+      const wordsFor = ({ count, attack, size }) =>
+        size === 0
+          ? "No cards on the table"
+          : count === 0
+            ? "Every card has struck"
+            : `${count} ${count === 1 ? "card" : "cards"} \u00b7 ${attack} attack`;
+      const labelText = textOf(readyRow.querySelector(".standing-label"));
+
+      const live = game.readState().match;
+      const playable = live.hand.find((card) => card.cost <= live.energy);
+      if (!playable) {
+        fail("the match dealt for the ready-to-strike check held nothing affordable to put attack on the table");
+      } else {
+        await playCardTool.execute({ cardId: playable.id });
+        const ready = implied();
+        if (ready.count < 1) {
+          fail(`after playing a card the table holds ${ready.count} card(s) ready to strike, so nothing can be spent`);
+        } else {
+          if (labelText !== "Ready to strike") {
+            fail(
+              `the ready-to-strike line's label reads ${JSON.stringify(labelText)} instead of "Ready to strike", ` +
+                "so the figures beside it are read without what they are"
+            );
+          }
+          if (readyRow.hidden) {
+            fail("the board hides its ready-to-strike line during the player's own turn, when the blow is still to come");
+          }
+          const stateNow = game.readState().match;
+          if (stateNow.readyAttackers !== ready.count || stateNow.readyAttack !== ready.attack) {
+            fail(
+              `the state reports ${stateNow.readyAttackers} ready card(s) holding ${stateNow.readyAttack} attack ` +
+                `where the table holds ${ready.count} holding ${ready.attack}`
+            );
+          }
+          if (textOf(readyValue) !== wordsFor(ready)) {
+            fail(
+              `the board prints ${JSON.stringify(textOf(readyValue))} where the table holds ` +
+                `${JSON.stringify(wordsFor(ready))}`
+            );
+          }
+          // The figures are read through the tools an agent uses, not only the
+          // page's own state, so an agent sees the same count and total.
+          if (getState) {
+            const reportedMatch = (await getState.execute({})).match;
+            if (!reportedMatch || reportedMatch.readyAttackers !== ready.count || reportedMatch.readyAttack !== ready.attack) {
+              fail(
+                `get-state reports ${reportedMatch?.readyAttackers} ready card(s) holding ${reportedMatch?.readyAttack} ` +
+                  `attack where the board shows ${ready.count} holding ${ready.attack}`
+              );
+            }
+          }
+
+          // A chosen attack spends one card, so both figures fall by that card.
+          const attacker = game.readState().match.table.find((card) => !card.hasAttacked);
+          await attackTool.execute({ attackerId: attacker.id, target: "hero" });
+          const afterSpend = implied();
+          if (afterSpend.count !== ready.count - 1 || afterSpend.attack !== ready.attack - attacker.attack) {
+            fail(
+              `after "${attacker.name}" struck, the table holds ${afterSpend.count} ready card(s) with ` +
+                `${afterSpend.attack} attack instead of ${ready.count - 1} and ${ready.attack - attacker.attack}`
+            );
+          }
+          const spentState = game.readState().match;
+          if (spentState.readyAttackers !== afterSpend.count || spentState.readyAttack !== afterSpend.attack) {
+            fail(
+              `after a card struck, the state reports ${spentState.readyAttackers} ready card(s) holding ` +
+                `${spentState.readyAttack} attack where the table holds ${afterSpend.count} holding ${afterSpend.attack}`
+            );
+          }
+          if (textOf(readyValue) !== wordsFor(afterSpend)) {
+            fail(
+              `after a card struck, the board prints ${JSON.stringify(textOf(readyValue))} where the table holds ` +
+                `${JSON.stringify(wordsFor(afterSpend))}`
+            );
+          }
+          if (afterSpend.size > 0 && afterSpend.count === 0 && textOf(readyValue) !== "Every card has struck") {
+            fail(
+              `with every table card spent the board prints ${JSON.stringify(textOf(readyValue))} ` +
+                'instead of saying "Every card has struck"'
+            );
+          }
+
+          // A new own turn freshens every card, so both figures come back to the
+          // whole table rather than staying where the spending left them.
+          game.endMatchTurn();
+          const fresh = game.readState().match;
+          if (!fresh.over) {
+            const back = implied();
+            if (fresh.readyAttackers !== back.count || fresh.readyAttack !== back.attack) {
+              fail(
+                `at the start of the next turn the state reports ${fresh.readyAttackers} ready card(s) holding ` +
+                  `${fresh.readyAttack} attack where the table holds ${back.count} holding ${back.attack}`
+              );
+            }
+            if (back.count !== back.size) {
+              fail(
+                `at the start of the next turn only ${back.count} of the ${back.size} cards on the table are ready ` +
+                  "to strike, though a new turn freshens every card"
+              );
+            }
+            if (readyRow.hidden) {
+              fail("the board hides its ready-to-strike line on a fresh player turn, when the whole table is ready");
+            }
+            if (textOf(readyValue) !== wordsFor(back)) {
+              fail(
+                `at the start of the next turn the board prints ${JSON.stringify(textOf(readyValue))} where the ` +
+                  `table holds ${JSON.stringify(wordsFor(back))}`
+              );
+            }
+          }
+        }
+      }
+    }
+  }
+
   /** The record the page holds against each opponent, keyed by opponent id. */
   const opponentRecordsNow = () =>
     Object.fromEntries(
