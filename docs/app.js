@@ -33,6 +33,25 @@ const SCREEN_LABELS = {
   play: "Play",
 };
 
+// What a match asks of a player, in the three things a newcomer cannot yet read
+// for themselves: what a card costs, how the table fights, and which hero loses.
+// They are written once, here, and both the Play screen and the get-match-rules
+// tool read them, so the page and the tool cannot drift apart.
+const MATCH_RULES = [
+  {
+    label: "Cards cost energy",
+    text: "each card's face shows its price; energy readout refills and grows each turn",
+  },
+  {
+    label: "Your cards fight theirs",
+    text: "your table strikes theirs, and hits their hero once their table is empty",
+  },
+  {
+    label: "First hero to 0 loses",
+    text: "both heroes start at 20 health; the first to reach 0 ends it",
+  },
+];
+
 // The cards are read once, here, the same way a returning player's saved game
 // is: everything below works from whatever this opener produced.
 const opened = loadGame();
@@ -53,6 +72,9 @@ const state = {
   // as the cards, so a reload keeps both what was won and what was earned.
   wins: opened.wins,
   matchesPlayed: opened.matches,
+  // Whether the Play screen's how-a-match-works strip is open. A player who has
+  // not finished a match meets it open; once they have, it stays folded.
+  rulesOpen: opened.matches === 0,
   // The result of the most recently finished match, or null until one ends:
   // whether it was a win or a loss, and the card a win awarded, if any.
   result: null,
@@ -97,6 +119,9 @@ const matchIntroOpponent = document.getElementById("match-intro-opponent");
 const matchIntroDeck = document.getElementById("match-intro-deck");
 const opponentPicker = document.getElementById("opponent-picker");
 const opponentOptions = document.getElementById("opponent-options");
+const matchRulesSection = document.getElementById("match-rules");
+const matchRulesPoints = document.getElementById("match-rules-points");
+const matchRulesToggle = document.getElementById("action-toggle-rules");
 const matchOpponentName = document.getElementById("match-opponent-name");
 const matchOpponentPortrait = document.getElementById("match-opponent-portrait");
 const matchOpponentHealthLabel = document.getElementById("match-opponent-health-label");
@@ -170,6 +195,7 @@ function render() {
   if (deckSummary) deckSummary.textContent = deckSummaryText();
 
   renderMatch();
+  renderMatchRules();
   renderContinueOffer();
 
   screenStatus.textContent = `${SCREEN_LABELS[state.screen]} screen`;
@@ -741,6 +767,25 @@ function renderOpponentChoice() {
 }
 
 /**
+ * The Play screen's how-a-match-works strip: the three points open or fold with
+ * `state.rulesOpen` — open for a player who has not finished a match, folded
+ * once they have, with the one control still naming what it does.
+ */
+function renderMatchRules() {
+  if (!matchRulesSection) return;
+  // The strip belongs to standing before a match: once one has been dealt, and
+  // while its result is on the board, the strip goes with the note so the only
+  // things left to press are the ways on. A player who opens the Play screen
+  // again after a finished match meets the strip folded rather than gone.
+  matchRulesSection.hidden = Boolean(state.match);
+  if (matchRulesPoints) matchRulesPoints.hidden = !state.rulesOpen;
+  if (matchRulesToggle) {
+    matchRulesToggle.setAttribute("aria-expanded", String(state.rulesOpen));
+    matchRulesToggle.textContent = state.rulesOpen ? "Hide rules" : "Show rules";
+  }
+}
+
+/**
  * Whose turn it is, in the board's words: the player is "Your turn", the
  * opponent is named, so a player waiting on a turn that is not theirs can see
  * who it is waiting on rather than guess.
@@ -957,6 +1002,20 @@ export function selectOpponent(opponentId) {
 }
 
 /**
+ * Fold away or open the Play screen's how-a-match-works strip — what a visitor
+ * does by pressing its "Show rules"/"Hide rules" button, and what the
+ * toggle-match-rules tool does on their behalf. The fold belongs to the page,
+ * not to a match: folding it hides the points and says so to a screen reader,
+ * and a player who has finished a match opens folded. Returns the state
+ * afterwards, the same shape readState() gives.
+ */
+export function toggleMatchRules() {
+  state.rulesOpen = !state.rulesOpen;
+  render();
+  return readState();
+}
+
+/**
  * Pick up the match that was left: set it running again from the saved record —
  * both sides' health, energy, hands, tables, decks and the log exactly as they
  * were, on the same side's turn — open the Play screen and return the state.
@@ -992,6 +1051,8 @@ function finishMatch() {
   state.distinctCards = record.cards.length;
   state.wins = record.wins;
   state.matchesPlayed = record.matches;
+  // The newcomer's strip has had its say: a returning player opens it folded.
+  state.rulesOpen = false;
   state.saved = record.saved;
   state.result = { outcome: match.outcome, awarded: record.awarded, setComplete: record.setComplete };
   renderCollection();
@@ -1320,7 +1381,9 @@ function commitDeck() {
  * size, its limit, the fewest cards a match needs and the cards themselves —
  * whether it will survive closing the page, how many matches have been played and
  * won, the result of the last finished match (whether it was a win or a loss, the
- * card a win awarded, and whether that completed the set), the opponents a match
+ * card a win awarded, and whether that completed the set), the three points the
+ * Play screen tells a newcomer about a match and whether that strip is showing
+ * (`matchRules`), the opponents a match
  * can be fought against (`opponents` — each with the id to start a match with,
  * its name, its look and the kind of deck it brings) and which of them the next
  * match would be against (`selectedOpponentId`), the match the home screen offers
@@ -1349,6 +1412,12 @@ export function readState() {
     deck: listDeckCards(state.deck),
     wins: state.wins,
     matchesPlayed: state.matchesPlayed,
+    // What the Play screen tells a newcomer about a match, and whether that strip
+    // is on screen right now rather than folded away.
+    matchRules: {
+      shown: Boolean(matchRulesPoints && !matchRulesPoints.closest("[hidden]")),
+      points: MATCH_RULES.map(({ label, text }) => ({ label, text })),
+    },
     result: state.result ? { ...state.result } : null,
     saved: state.saved,
     // Who a match could be against, and which of them the next one would be —
@@ -1556,10 +1625,30 @@ for (const button of document.querySelectorAll("[data-screen-target]")) {
 if (opponentOptions) {
   opponentOptions.replaceChildren(...OPPONENTS.map(opponentOption));
 }
+
+// The rules points are written once, from the same list the tool reads, so the
+// words a visitor sees are the words an agent gets.
+if (matchRulesPoints) {
+  matchRulesPoints.replaceChildren(
+    ...MATCH_RULES.map((rule) => {
+      const point = document.createElement("div");
+      point.className = "match-rule";
+      const label = document.createElement("dt");
+      label.className = "match-rule-label";
+      label.textContent = rule.label;
+      const text = document.createElement("dd");
+      text.className = "match-rule-text";
+      text.textContent = rule.text;
+      point.append(label, text);
+      return point;
+    })
+  );
+}
 opponentPicker?.addEventListener("change", (event) => {
   if (event.target instanceof HTMLInputElement) runMatchAction(() => selectOpponent(event.target.value));
 });
 
+matchRulesToggle?.addEventListener("click", () => toggleMatchRules());
 startMatchButton?.addEventListener("click", () => runMatchAction(() => startMatch()));
 continueButton?.addEventListener("click", () => runMatchAction(() => continueMatch()));
 playAgainButton?.addEventListener("click", () => runMatchAction(() => playAgain()));

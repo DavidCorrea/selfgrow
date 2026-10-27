@@ -19,6 +19,7 @@ import {
   selectOpponent,
   showScreen,
   startMatch,
+  toggleMatchRules,
 } from "./app.js";
 
 // The screens the page has. The list is the tool's own schema as well as the
@@ -46,12 +47,36 @@ export function tools() {
       name: "get-state",
       title: "Read what the page shows",
       description:
-        "Returns everything the page shows a visitor right now: which screen is open (home, collection or play), how many cards you own, how many of them are different, and how many different cards the game holds in all (`setTotal`, so `distinctCards` of `setTotal` is how much of the set is collected), the deck — how many cards it holds, the most it may hold, the fewest a match needs, and each card in it — whether progress is saved for next time, how many matches you have finished (`matchesPlayed`) and won (`wins`), the result of the last finished match (`result`: `outcome` is \"win\" or \"loss\", `awarded` is the card a win added or null, and `setComplete` says whether that card was a duplicate added only because you already owned every card in the game), and the actions you can take from here. Its `match` field always names the opponent — `opponentName`, the character whose fixed deck a match is against, named before a match starts as well as during one. When a match is running that field carries the whole board: whether the match is over and who won (`over` and `winner`), whose turn it is (`turn`, `\"player\"` or `\"opponent\"` — the same words the board prints as \"Your turn\" or \"<opponentName>'s turn\"), both heroes' health, your energy and its maximum, your hand (with the ids play-card wants), both tables — each card with the health it has left, which drops as the tables fight — how many cards the opponent holds (`opponentHand`, shown on the board as one face-down card back per card) and how many you have left to draw, the ordered log of what has happened, naming every card that fell, its last line the blow that ended the match — and the moves available now. `canContinue` and `savedMatch` report an unfinished match the browser kept from a page left behind (`savedMatch` is a short summary — `opponentName`, `turn`, both healths and `logLength` — and is null while that match is the one loaded), which the continue-match tool picks back up. `opponents` lists every character a match can be against — each with the `id` start-match and choose-opponent take, its name, the look it cuts and the kind of deck it brings — and `selectedOpponentId` says which of them the Play screen's picker has chosen, and so which one the next match would be against. Ask it first to see where you stand, and again after every move to see what changed.",
+        "Returns everything the page shows a visitor right now: which screen is open (home, collection or play), how many cards you own, how many of them are different, and how many different cards the game holds in all (`setTotal`, so `distinctCards` of `setTotal` is how much of the set is collected), the deck — how many cards it holds, the most it may hold, the fewest a match needs, and each card in it — whether progress is saved for next time, how many matches you have finished (`matchesPlayed`) and won (`wins`), the result of the last finished match (`result`: `outcome` is \"win\" or \"loss\", `awarded` is the card a win added or null, and `setComplete` says whether that card was a duplicate added only because you already owned every card in the game), what the Play screen tells a newcomer about a match (`matchRules`: `shown`, whether the how-a-match-works strip is on screen rather than folded away, and `points`, the same three labelled lines a visitor reads), and the actions you can take from here. Its `match` field always names the opponent — `opponentName`, the character whose fixed deck a match is against, named before a match starts as well as during one. When a match is running that field carries the whole board: whether the match is over and who won (`over` and `winner`), whose turn it is (`turn`, `\"player\"` or `\"opponent\"` — the same words the board prints as \"Your turn\" or \"<opponentName>'s turn\"), both heroes' health, your energy and its maximum, your hand (with the ids play-card wants), both tables — each card with the health it has left, which drops as the tables fight — how many cards the opponent holds (`opponentHand`, shown on the board as one face-down card back per card) and how many you have left to draw, the ordered log of what has happened, naming every card that fell, its last line the blow that ended the match — and the moves available now. `canContinue` and `savedMatch` report an unfinished match the browser kept from a page left behind (`savedMatch` is a short summary — `opponentName`, `turn`, both healths and `logLength` — and is null while that match is the one loaded), which the continue-match tool picks back up. `opponents` lists every character a match can be against — each with the `id` start-match and choose-opponent take, its name, the look it cuts and the kind of deck it brings — and `selectedOpponentId` says which of them the Play screen's picker has chosen, and so which one the next match would be against. Ask it first to see where you stand, and again after every move to see what changed.",
       inputSchema: { type: "object", properties: {}, additionalProperties: false },
       annotations: { readOnlyHint: true },
       example: {},
       async execute() {
         return readState();
+      },
+    },
+    {
+      name: "get-match-rules",
+      title: "Read how a match works",
+      description:
+        "Returns the three things a match asks of a new player, exactly as the Play screen's \"How a match works\" strip prints them: each point's short `label` and its one-line `text` — that cards cost energy (the price is on the card's face, and the energy readout refills and grows every turn), that the cards on your table strike the opponent's cards and then their hero once their table is empty, and that the first hero at 0 loses — together with `shown`, whether that strip is currently on screen rather than folded away. Ask it to explain the game to a newcomer before a match; the same words are what a visitor reads on the Play screen.",
+      inputSchema: { type: "object", properties: {}, additionalProperties: false },
+      annotations: { readOnlyHint: true },
+      example: {},
+      async execute() {
+        return readState().matchRules;
+      },
+    },
+    {
+      name: "toggle-match-rules",
+      title: "Fold or open the match-rules strip",
+      description:
+        "Folds away or opens the Play screen's \"How a match works\" strip, exactly as pressing its \"Show rules\"/\"Hide rules\" button does, and returns the rules afterwards (`shown` and the three `points`) so the caller can see the strip's new state. The strip stands only while there is no match on the board; a player who has finished a match opens it folded. It changes nothing about the game itself. Ask get-match-rules first to read what the strip says.",
+      inputSchema: { type: "object", properties: {}, additionalProperties: false },
+      annotations: { readOnlyHint: false, consequentialHint: false },
+      example: {},
+      async execute() {
+        return toggleMatchRules().matchRules;
       },
     },
     {
