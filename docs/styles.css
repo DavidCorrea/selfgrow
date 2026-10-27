@@ -516,6 +516,34 @@ body {
   text-wrap: pretty;
 }
 
+/* The card the next win will add, on the home screen under the numbers it is the
+   goal of: the label, then the card itself, so it is recognised at a glance and
+   the advance to the following card after a win is visible. It stays in the same
+   column as the standings rather than spanning the card, so the action rail on a
+   wide window is left where it is. */
+.next-reward {
+  grid-column: 1;
+  display: grid;
+  gap: 0.45rem;
+}
+
+.next-reward-heading {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.next-reward .award-card {
+  margin: 0;
+}
+
+.next-reward-note {
+  margin: 0;
+  color: var(--ink-muted);
+  text-wrap: pretty;
+}
+
 /* The match left behind, offered on the home screen: a board's worth of labelled
    numbers and the one control that picks it back up, framed like the notes so it
    reads as news about the player's own game rather than a second action rail. */

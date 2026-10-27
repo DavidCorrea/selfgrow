@@ -54,6 +54,17 @@
           </div>
         </dl>
 
+        <!-- The card the next win will add, decided before the match is played:
+             the goal collecting is working toward, shown as the card itself —
+             its picture, name and three numbers — under a short label. Once
+             every reward card is held there is no next card, so the same place
+             says the set is complete instead. Filled in from the one choice a
+             win awards by, so the promise and the reward are the same card. -->
+        <section class="next-reward" id="next-reward" aria-labelledby="next-reward-heading">
+          <h3 class="next-reward-heading" id="next-reward-heading">Next win earns</h3>
+          <div class="next-reward-body" id="next-reward-body"></div>
+        </section>
+
         <!-- The saved deck, said in words: a returning player sees what they are
              about to play with before they play it. -->
         <p class="deck-summary" id="deck-summary"></p>

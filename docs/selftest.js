@@ -82,6 +82,86 @@ export async function checks() {
   const home = screen("home");
   if (!home) return [...problems, "the home screen is missing from the page (#screen-home)"];
 
+  // The home screen's next-win block as a visitor reads it: the heading, and —
+  // while a reward card remains — that card's picture, name and three numbers.
+  const readNextReward = () => {
+    const section = home.querySelector("#next-reward");
+    const figure = section?.querySelector(".award-card");
+    const stats = figure?.querySelector(".award-card-stats");
+    return {
+      section,
+      heading: textOf(section?.querySelector("h3")),
+      hasFigure: Boolean(figure),
+      cardId: figure?.dataset.cardId ?? null,
+      name: textOf(figure?.querySelector(".award-card-name")),
+      stats: textOf(stats),
+      statsLabel: stats?.getAttribute("aria-label") ?? "",
+      pictureName: figure?.querySelector(".card-art")?.getAttribute("aria-label") ?? null,
+    };
+  };
+
+  // What the home screen shows for the next win must be the same card the state
+  // reports — the card a win actually awards — so the promise and the reward
+  // cannot drift apart.
+  const checkNextRewardShown = () => {
+    const live = game.readState();
+    const shown = readNextReward();
+    if (!shown.section) {
+      fail("the home screen has no place for the card the next win will add (#next-reward)");
+      return;
+    }
+    // The state's next card must be the one shared choice a win awards by, so the
+    // home screen's promise can never drift from the reward.
+    if (typeof collection.nextRewardId === "function") {
+      const expectedId = collection.nextRewardId(game.readCollection().ownedCards);
+      if (expectedId !== (live.nextReward?.id ?? null)) {
+        fail(
+          `the state's next-win card is "${live.nextReward?.id ?? null}" while the shared reward choice ` +
+            `names "${expectedId}", so the promise and the award can disagree`
+        );
+      }
+    }
+    if (typeof game.nextRewardHeadingText === "function") {
+      const expected = game.nextRewardHeadingText(live.nextRewardComplete);
+      if (shown.heading !== expected) {
+        fail(`the home screen's next-win heading reads "${shown.heading}" instead of "${expected}"`);
+      }
+    }
+    if (live.nextRewardComplete) {
+      if (shown.hasFigure) {
+        fail("the home screen shows a next-win card although the player owns every reward card");
+      }
+      return;
+    }
+    const card = live.nextReward;
+    if (!card) {
+      fail("the home screen promises no next card while the state says one is left to earn");
+      return;
+    }
+    if (shown.cardId !== card.id) {
+      fail(`the home screen's next-win card is "${shown.cardId}" while the state says "${card.id}"`);
+    }
+    if (shown.name !== card.name) {
+      fail(`the home screen names its next-win card "${shown.name}" while the state says "${card.name}"`);
+    }
+    const numbers = `${card.cost}/${card.attack}/${card.health}`;
+    if (shown.stats !== numbers) {
+      fail(
+        `the home screen's next-win card reads "${shown.stats}" instead of "${numbers}" ` +
+          "(cost/attack/health)"
+      );
+    }
+    if (shown.statsLabel !== `cost ${card.cost}, attack ${card.attack}, health ${card.health}`) {
+      fail(`the home screen's next-win numbers are not their own labelled values: "${shown.statsLabel}"`);
+    }
+    if (shown.pictureName !== card.name) {
+      fail(
+        `the home screen's next-win picture is described as "${shown.pictureName}" instead of the ` +
+          `card's own name "${card.name}"`
+      );
+    }
+  };
+
   const wordmark = textOf(document.querySelector("h1"));
   if (!wordmark.toLowerCase().includes("selfgrow")) {
     fail(`the page's heading does not name the game: h1 reads "${wordmark || "(empty)"}"`);
@@ -593,6 +673,13 @@ export async function checks() {
     }
   }
 
+  // --- The next win's card is shown before the match -------------------------
+
+  // A win's card is already decided when the home screen is on: the same card the
+  // state reports is the one the win will add, shown as the card itself under a
+  // short heading, so a player can see the goal rather than only the count.
+  checkNextRewardShown();
+
   // --- The collection survives closing the page ------------------------------
 
   const raw = window.localStorage.getItem(collection.STORAGE_KEY);
@@ -878,6 +965,74 @@ export async function checks() {
     }
     if (newCardWords === completeWords) {
       fail("the result says the same thing whether or not a new card was earned");
+    }
+  }
+
+  // --- The card the next win will add, decided in one place -----------------
+
+  // The home screen promises the card the next win will add; a win must award
+  // exactly that card, so both read the one choice rather than each deriving it
+  // and the promise quietly drifting from the reward.
+  if (typeof collection.nextRewardId !== "function") {
+    fail(
+      "collection.js does not export nextRewardId, so the home screen's next-win card and a win's " +
+        "award cannot be one choice"
+    );
+  } else {
+    const promisedStore = stubStorage();
+    // A controlled starting point with no reward card held, so the first win has
+    // something new to earn regardless of what the browser happened to save.
+    const baseCards = cardCatalog.STARTER_COLLECTION.map(({ id, copies }) => ({ id, copies }));
+    collection.saveCollection(baseCards, promisedStore);
+    const promised = collection.nextRewardId(baseCards);
+    const award = collection.recordResult("win", "match-promise", promisedStore);
+    if (!promised || promised !== award.awarded?.id) {
+      fail(
+        `the home screen would promise "${promised}" as the next win's card while the win awarded ` +
+          `"${award.awarded?.id}", so the promise and the reward disagree`
+      );
+    }
+
+    // A win moves the goal on: the next-win card becomes the following card not
+    // yet owned, never the one just earned and never a duplicate while any remain.
+    const heldAfterWin = collection.readCollection(promisedStore) ?? [];
+    const following = collection.nextRewardId(heldAfterWin);
+    if (following === promised) {
+      fail(`after a win earned "${promised}" the next-win card is still "${following}", so the goal never moves`);
+    }
+    if (following !== null && heldAfterWin.some((card) => card.id === following)) {
+      fail(
+        `the next-win card after that win ("${following}") is one the player already owns, so it is not left ` +
+          "to earn"
+      );
+    }
+
+    // Once every reward card is held there is no next card at all — the home
+    // screen's cue to say the set is complete rather than promise a duplicate.
+    const everything = baseCards.concat(pool.map((id) => ({ id, copies: 1 })));
+    if (collection.nextRewardId(everything) !== null) {
+      fail(
+        `with every reward card held the next-win card is still ` +
+          `"${collection.nextRewardId(everything)}" instead of none`
+      );
+    }
+  }
+
+  // The word over the card says what the next win earns, and — once the whole
+  // reward pool is held — says the set is complete instead.
+  if (typeof game.nextRewardHeadingText !== "function") {
+    fail("app.js does not export nextRewardHeadingText, so the word over the next-win card cannot be checked");
+  } else {
+    const completeHeading = game.nextRewardHeadingText(true);
+    const nextHeading = game.nextRewardHeadingText(false);
+    if (!completeHeading.toLowerCase().includes("complete")) {
+      fail(`with the set complete the next-win heading reads "${completeHeading}", which does not say so`);
+    }
+    if (nextHeading.toLowerCase().includes("complete")) {
+      fail(`with a card left to earn the next-win heading reads "${nextHeading}", claiming the set is complete`);
+    }
+    if (nextHeading === completeHeading) {
+      fail("the next-win heading says the same thing whether or not the set is complete");
     }
   }
 
@@ -2442,6 +2597,21 @@ export async function checks() {
     }
     for (const card of reportedDeck) {
       if (!card.name) fail(`get-state returns a deck card "${card.id}" with no name, so an agent cannot read the deck`);
+    }
+
+    // The card the next win will add is part of what the home screen shows, so it
+    // is part of what get-state returns — the same card a win actually awards.
+    if (JSON.stringify(reported.nextReward) !== JSON.stringify(live.nextReward)) {
+      fail(
+        `get-state reports nextReward ${JSON.stringify(reported.nextReward)} while the page's state says ` +
+          `${JSON.stringify(live.nextReward)}`
+      );
+    }
+    if (reported.nextRewardComplete !== live.nextRewardComplete) {
+      fail(
+        `get-state reports nextRewardComplete ${reported.nextRewardComplete} while the page's state says ` +
+          `${live.nextRewardComplete}`
+      );
     }
   }
 
@@ -4203,6 +4373,9 @@ export async function checks() {
           "so an agent cannot tell nothing was earned"
       );
     }
+    // After the matches just played have moved the goal, the live home screen
+    // still names the same next-win card the state reports.
+    checkNextRewardShown();
   }
 
   const playAgainTool = toolNamed("play-again");

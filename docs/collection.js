@@ -418,12 +418,26 @@ function withExtraCopy(cards, cardId) {
 }
 
 /**
+ * The reward card a win would add next: the first card in `REWARD_POOL` the
+ * collection does not hold, or null once every one of them is held.
+ *
+ * This is the one place the choice is made, so the card the home screen promises
+ * under "Next win earns" and the card `recordResult` actually awards can never
+ * disagree. The starter collection holds every non-reward card, so a reward card
+ * not held is simply one left to earn.
+ */
+export function nextRewardId(cards) {
+  const owned = new Set(cards.map((card) => card.id));
+  return REWARD_POOL.find((id) => !owned.has(id)) ?? null;
+}
+
+/**
  * Record a finished match. The match counts toward the matches played; a win
  * adds exactly one reward card to the collection, and a loss adds none. A win
- * earns the first reward card the player does not hold yet, so each win keeps
- * the collection growing; only once every reward card is held does it fall back
- * to the cycle of `REWARD_POOL` by wins — a duplicate — and report the set as
- * complete.
+ * earns the first reward card the player does not hold yet — the same card
+ * `nextRewardId` names — so each win keeps the collection growing; only once
+ * every reward card is held does it fall back to the cycle of `REWARD_POOL` by
+ * wins — a duplicate — and report the set as complete.
  *
  * `matchId` is remembered so that recording the same match again — a result
  * screen asked for twice — does nothing instead of awarding a second card.
@@ -449,12 +463,10 @@ export function recordResult(outcome, matchId, storage = defaultStorage()) {
   }
 
   const won = outcome === "win";
-  // The starter collection owns every non-reward card, so a reward card the
-  // player does not hold is simply a card they do not own — and none left to
-  // earn means the whole game's set is already held.
-  const owned = new Set(cards.map((card) => card.id));
-  const unownedRewardId = REWARD_POOL.find((id) => !owned.has(id));
-  const setComplete = won && unownedRewardId === undefined;
+  // A reward card left to earn is a card the player does not own; none left
+  // means the whole game's set is already held.
+  const unownedRewardId = nextRewardId(cards);
+  const setComplete = won && unownedRewardId === null;
   const awardedId = won
     ? (unownedRewardId ?? REWARD_POOL[progress.wins % REWARD_POOL.length])
     : null;
