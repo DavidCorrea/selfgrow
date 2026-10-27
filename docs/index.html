@@ -153,16 +153,16 @@
 
         <!-- The card set, filled in from what was saved: the ones the player
              holds with the controls that put a copy in the deck, and the ones
-             still to collect, marked as such. The three view buttons above the
-             list switch it between the whole set, only what is still to collect
-             and only the cards that do something the moment they are played, so
-             a player working toward a full set can hide what they already have
-             and a player building around a when-played ability can see the cards
-             that carry one; the two order buttons read the same cards in the
-             game's own order or cheapest first, so the cheap cards and the big
-             ones land where a player building a deck expects them. A list of
-             text, so a sighted player, a screen reader and an agent read the
-             same set. -->
+             still to collect, marked as such. The view buttons above the list
+             switch it between the whole set, only what is still to collect
+             and only the cards that do something the moment they are played or
+             the moment they fall, so a player working toward a full set can hide
+             what they already have and a player building around either ability
+             can see the cards that carry one; the two order buttons read the same
+             cards in the game's own order or cheapest first, so the cheap cards
+             and the big ones land where a player building a deck expects them. A
+             list of text, so a sighted player, a screen reader and an agent read
+             the same set. -->
         <section class="set" aria-labelledby="set-heading">
           <h3 class="set-heading" id="set-heading">The card set</h3>
           <div class="collection-view" role="group" aria-label="Which cards the set lists">
@@ -174,6 +174,9 @@
             </button>
             <button type="button" class="btn btn-secondary" data-collection-view="abilities" aria-pressed="false">
               Acts when played
+            </button>
+            <button type="button" class="btn btn-secondary" data-collection-view="falls" aria-pressed="false">
+              Acts when they fall
             </button>
           </div>
           <div class="collection-view" role="group" aria-label="Which order the set lists">
