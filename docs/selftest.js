@@ -2801,6 +2801,50 @@ export async function checks() {
             `instead of the ${m.deckRemaining} the match holds`
         );
       }
+
+      // Whose turn it is stands on the board in words, so a player never has to
+      // infer it from the log's last line or from the End turn button appearing.
+      if (game.turnLabel("player", m.opponentName) !== "Your turn") {
+        fail(
+          `the turn label for the player reads ${JSON.stringify(game.turnLabel("player", m.opponentName))} ` +
+            'instead of "Your turn"'
+        );
+      }
+      if (game.turnLabel("opponent", m.opponentName) !== `${m.opponentName}'s turn`) {
+        fail(
+          `the turn label for the opponent reads ${JSON.stringify(game.turnLabel("opponent", m.opponentName))} ` +
+            `instead of naming who is being faced ("${m.opponentName}'s turn")`
+        );
+      }
+      const turnStanding = document.getElementById("match-turn-standing");
+      const turnValue = document.getElementById("match-turn");
+      if (!turnStanding || !turnValue) {
+        fail("the board has no turn indicator (#match-turn-standing / #match-turn), so whose turn it is is never said");
+      } else if (turnStanding.hidden) {
+        fail("a match is running but the board's turn indicator is hidden, so nothing says whose turn it is");
+      } else {
+        if (textOf(turnStanding.querySelector(".standing-label")) !== "Turn") {
+          fail(
+            `the turn indicator's label reads ${JSON.stringify(textOf(turnStanding.querySelector(".standing-label")))} ` +
+              'instead of "Turn", so the value beside it is read without what it is'
+          );
+        }
+        const isLive =
+          turnValue.getAttribute("role") === "status" || Boolean(turnValue.getAttribute("aria-live"));
+        if (!isLive) {
+          fail(
+            'the turn indicator is not a live region (no role="status" and no aria-live), so a screen reader ' +
+              "is never told when the turn passes"
+          );
+        }
+        const expectedTurn = game.turnLabel(m.turn, m.opponentName);
+        if (textOf(turnValue) !== expectedTurn) {
+          fail(
+            `the board says ${JSON.stringify(textOf(turnValue) || "(nothing)")} where the match is on the ` +
+              `${m.turn}'s turn ("${expectedTurn}")`
+          );
+        }
+      }
       const handRows = [...document.querySelectorAll("#match-hand .match-card")];
       if (handRows.length !== m.hand.length) {
         fail(`the board shows ${handRows.length} card(s) in hand while the match holds ${m.hand.length}`);
@@ -3432,6 +3476,10 @@ export async function checks() {
       }
       if (endTurnButton && !endTurnButton.hidden) {
         fail("a finished match still offers End turn, so a player can keep playing a match that is over");
+      }
+      const finishedTurn = document.getElementById("match-turn-standing");
+      if (finishedTurn && (!finishedTurn.hidden || getComputedStyle(finishedTurn).display !== "none")) {
+        fail("a finished match still says whose turn it is, though no side has one any more");
       }
       if (handSide && !handSide.hidden) {
         fail("a finished match still shows the hand, so a player can keep playing a match that is over");
