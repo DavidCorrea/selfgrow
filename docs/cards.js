@@ -1,5 +1,6 @@
 /**
- * The cards selfgrow knows about, and the hand a new player is dealt.
+ * The cards selfgrow knows about, the hand a new player is dealt, and the deck
+ * the opponent brings.
  *
  * Everything here is plain data defined in the product — no card is fetched, and
  * no stat is computed from another. A card is identified by its `id`, and that is
@@ -69,3 +70,36 @@ export const STARTER_COLLECTION = [
  * collection, so every reward is a card the player did not already have.
  */
 export const REWARD_POOL = ["moon-bloom", "amber-antler", "cinder-shrike"];
+
+/**
+ * The opponent the player faces: a character, with a deck of their own.
+ *
+ * The deck is fixed — the same ten cards in every match — and drawn from the
+ * same catalog a player's deck is, so every card the opponent draws and plays
+ * is a real card the player can own. It is deliberately not the player's deck:
+ * what you choose for your own deck is what you are up against, instead of a
+ * race against a copy of yourself.
+ */
+export const OPPONENT_NAME = "Thornmere";
+
+/**
+ * The fixed deck the opponent is dealt from: slow, thorned, mud-backed growth,
+ * the opposite of a deck built for speed.
+ *
+ * The order is part of the fixture, not an accident: a deal with a fixed random
+ * source leaves the second, third and fourth cards in the opponent's opening
+ * hand, so the turtle and the thornling there are what the match's own checks
+ * fight with. Reordering this list means rethinking those checks.
+ */
+export const OPPONENT_DECK = [
+  "vine-lasher",
+  "mudback-turtle",
+  "thornling",
+  "glowcap",
+  "bramble-hound",
+  "moon-bloom",
+  "cinder-shrike",
+  "sun-moth",
+  "root-colossus",
+  "elder-oak",
+];

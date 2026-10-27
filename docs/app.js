@@ -10,7 +10,7 @@
  */
 
 import { cardArtSvg } from "./cardart.js";
-import { CARD_BY_ID, DECK_LIMIT, MINIMUM_DECK_SIZE } from "./cards.js";
+import { CARD_BY_ID, DECK_LIMIT, MINIMUM_DECK_SIZE, OPPONENT_NAME } from "./cards.js";
 import {
   collectionSize,
   listDeckCards,
@@ -73,6 +73,11 @@ const deckSummary = document.getElementById("deck-summary");
 // degrades to a missing readout rather than a page that will not render.
 const matchBoard = document.getElementById("match-board");
 const matchIntro = document.getElementById("match-intro");
+const matchIntroOpponent = document.getElementById("match-intro-opponent");
+const matchOpponentName = document.getElementById("match-opponent-name");
+const matchOpponentHealthLabel = document.getElementById("match-opponent-health-label");
+const matchOpponentHandLabel = document.getElementById("match-opponent-hand-label");
+const matchOpponentTableHeading = document.getElementById("match-opponent-table-heading");
 const matchMessage = document.getElementById("match-message");
 const startMatchButton = document.getElementById("action-start-match");
 const endTurnButton = document.getElementById("action-end-turn");
@@ -262,7 +267,7 @@ function renderMatchResult(match) {
   if (matchResultHeading) matchResultHeading.textContent = won ? "You won" : "You lost";
   if (matchFinalHealth) {
     matchFinalHealth.textContent =
-      `Final health: your hero ${match.player.health}, the opponent hero ${match.opponent.health}.`;
+      `Final health: your hero ${match.player.health}, ${match.opponentName} ${match.opponent.health}.`;
   }
   if (resultReward) {
     const awarded = state.result?.awarded;
@@ -323,21 +328,30 @@ function rewardText(won) {
 }
 
 /**
- * Draw the match board: both heroes' health, the player's energy, the hand, both
- * tables and the log — all of it text, so a sighted player, a screen reader and
- * an agent read the same match. With no match in progress the board is hidden
- * and the note about the deck and the Start match button stand in its place.
- * Once a hero has fallen the hand and the End turn button go with it and the
- * result stands in their place, so there is nothing left to press.
+ * Draw the match board: who the match is against, both heroes' health, the
+ * player's energy, the hand, both tables and the log — all of it text, so a
+ * sighted player, a screen reader and an agent read the same match. With no
+ * match in progress the board is hidden and the note about the deck, the
+ * opponent and the Start match button stand in its place. Once a hero has fallen
+ * the hand and the End turn button go with it and the result stands in their
+ * place, so there is nothing left to press.
  */
 function renderMatch() {
   const match = state.match;
   if (matchBoard) matchBoard.hidden = !match;
   if (matchIntro) matchIntro.hidden = Boolean(match);
+  // The opponent is a character, named before the match and on the board, from
+  // the one place the opponent is defined.
+  if (matchIntroOpponent) matchIntroOpponent.textContent = OPPONENT_NAME;
   if (startMatchButton) startMatchButton.hidden = Boolean(match);
   if (endTurnButton) endTurnButton.hidden = !match || match.over || match.turn !== "player";
   renderMatchResult(match);
   if (!match) return;
+
+  if (matchOpponentName) matchOpponentName.textContent = `Opponent: ${match.opponentName}`;
+  if (matchOpponentHealthLabel) matchOpponentHealthLabel.textContent = `${match.opponentName} health`;
+  if (matchOpponentHandLabel) matchOpponentHandLabel.textContent = `${match.opponentName}'s hand`;
+  if (matchOpponentTableHeading) matchOpponentTableHeading.textContent = `${match.opponentName}'s table`;
 
   if (matchFields.playerHealth) matchFields.playerHealth.textContent = String(match.player.health);
   if (matchFields.opponentHealth) matchFields.opponentHealth.textContent = String(match.opponent.health);
@@ -347,7 +361,7 @@ function renderMatch() {
 
   renderMatchHand(match);
   renderMatchTable(matchTableList, match.player.table, "Your table is empty.");
-  renderMatchTable(matchOpponentTableList, match.opponent.table, "The opponent's table is empty.");
+  renderMatchTable(matchOpponentTableList, match.opponent.table, `${match.opponentName}'s table is empty.`);
   renderMatchLog(match);
 }
 
@@ -672,9 +686,12 @@ function describeMatchCard(card) {
  * is over and which hero won, whose turn it is, both heroes' health, the
  * player's energy, the hand, both tables, how many cards are left to draw, the
  * ordered log of what happened — its last line the final blow — and the moves
- * available now, of which a finished match offers none. With no match it says
- * so, so a reader can tell the difference between "nothing has happened yet"
- * and "a match with an empty hand". A finished match also carries its
+ * available now, of which a finished match offers none. `opponentName` names the
+ * character being faced, whose deck is its own rather than a copy of the
+ * player's. With no match it says so — `active` false, and `opponentName` the
+ * character a match would be against, the name the Play screen prints before one
+ * starts — so a reader can tell the difference between "nothing has happened
+ * yet" and "a match with an empty hand". A finished match also carries its
  * `outcome` — "win" or "loss" from the player's side — and whether it has been
  * recorded to the save yet.
  */
@@ -683,6 +700,7 @@ export function readMatch() {
   if (!match) {
     return {
       active: false,
+      opponentName: OPPONENT_NAME,
       over: false,
       winner: null,
       outcome: null,
@@ -703,6 +721,7 @@ export function readMatch() {
 
   return {
     active: true,
+    opponentName: match.opponentName,
     over: match.over,
     winner: match.winner,
     outcome: match.outcome,

@@ -1,6 +1,12 @@
 /**
  * A match: one game of selfgrow against the opponent, taken a turn at a time.
  *
+ * The two sides play different decks: the player plays the deck they built, and
+ * the opponent plays `OPPONENT_DECK` — a fixed deck of its own, under a name of
+ * its own — so a match is against a character rather than a mirror of the
+ * player, and the cards chosen for a deck change what is on the other side of
+ * the table.
+ *
  * The match is a plain object — two sides of numbers and card lists, whose turn
  * it is, and an ordered log of plain sentences. There is no DOM here and no
  * hidden randomness: the only random thing is the shuffle, which takes its
@@ -33,7 +39,7 @@
  * is touched.
  */
 
-import { CARDS, CARD_BY_ID, MINIMUM_DECK_SIZE } from "./cards.js";
+import { CARDS, CARD_BY_ID, MINIMUM_DECK_SIZE, OPPONENT_DECK, OPPONENT_NAME } from "./cards.js";
 
 /** Both heroes start at this much health and stay there until a match can end. */
 export const HERO_HEALTH = 20;
@@ -122,10 +128,11 @@ function beginTurn(side) {
 }
 
 /**
- * Start a match from the player's deck ids. Both sides play a mirror of the same
- * deck, each shuffled separately, and each is dealt a starting hand — then the
- * player's first turn begins at once, drawing a card while the deck holds one.
- * Refused when the deck holds fewer cards than a match needs.
+ * Start a match from the player's deck ids. The player is dealt their own deck
+ * and the opponent is dealt `OPPONENT_DECK`, each shuffled separately, and each
+ * side is dealt a starting hand — then the player's first turn begins at once,
+ * drawing a card while the deck holds one. Refused when the deck holds fewer
+ * cards than a match needs.
  */
 export function createMatch(deckIds, { rng = Math.random } = {}) {
   const held = Array.isArray(deckIds) ? deckIds.length : 0;
@@ -135,13 +142,14 @@ export function createMatch(deckIds, { rng = Math.random } = {}) {
 
   const match = {
     id: createMatchId(),
+    opponentName: OPPONENT_NAME,
     turn: "player",
     over: false,
     winner: null,
     outcome: null,
     recorded: false,
     player: createSide(deckIds, rng),
-    opponent: createSide(deckIds, rng),
+    opponent: createSide(OPPONENT_DECK, rng),
     log: [],
   };
   // The match opens on the player's first turn, which draws a card. The line is
@@ -149,7 +157,8 @@ export function createMatch(deckIds, { rng = Math.random } = {}) {
   const openingDraw = beginTurn(match.player);
   appendLog(
     match,
-    `Match started. You hold ${match.player.hand.length} cards; the opponent holds ${match.opponent.hand.length}.`
+    `Match started against ${match.opponentName}. You hold ${match.player.hand.length} cards; ` +
+      `the opponent holds ${match.opponent.hand.length}.`
   );
   if (openingDraw) {
     appendLog(match, `You draw ${openingDraw.name} — ${match.player.deck.length} left in deck.`);

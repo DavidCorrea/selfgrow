@@ -1,9 +1,11 @@
 /**
  * Check that selfgrow still opens on a home screen that says what the game is
  * and where the player stands, that every new player is dealt a starter
- * collection which survives closing the page, that a match played to the last
- * blow ends with a result both a player and an agent can read, and that an agent
- * reads and drives that same surface rather than a second one nobody can see.
+ * collection which survives closing the page, that a match is dealt against a
+ * named opponent who brings a deck of their own rather than a copy of the
+ * player's, that a match played to the last blow ends with a result both a
+ * player and an agent can read, and that an agent reads and drives that same
+ * surface rather than a second one nobody can see.
  *
  * Runs on the real page, in the real browser. Returns plain-language failures,
  * empty when everything holds.
@@ -899,16 +901,50 @@ export async function checks() {
 
     // A draw moves a card rather than making one: after dealing and the opening
     // draw — and before any card can be fought off a table — each side's cards
-    // still add up to the deck it was dealt from.
-    for (const [who, side] of [
-      ["player", dealt.player],
-      ["opponent", dealt.opponent],
+    // still add up to the deck it was dealt from: the player's own deck, and the
+    // opponent's fixed one.
+    for (const [who, side, dealtFrom] of [
+      ["player", dealt.player, cheapDeck],
+      ["opponent", dealt.opponent, cardCatalog.OPPONENT_DECK ?? []],
     ]) {
       const held = side.hand.length + side.table.length + side.deck.length;
-      if (held !== cheapDeck.length) {
+      if (held !== dealtFrom.length) {
         fail(
-          `the ${who}'s cards add up to ${held} after dealing, instead of the ${cheapDeck.length} it was dealt ` +
+          `the ${who}'s cards add up to ${held} after dealing, instead of the ${dealtFrom.length} it was dealt ` +
             "— a draw duplicated or dropped one"
+        );
+      }
+    }
+
+    // The opponent is a character with a deck of its own: fixed, built from the
+    // same catalog a player's deck is, and not the player's deck. A mirror is
+    // what this ticket removed — with one, the cards chosen for your own deck
+    // change nothing about the match.
+    const opponentDeck = cardCatalog.OPPONENT_DECK;
+    if (typeof cardCatalog.OPPONENT_NAME !== "string" || cardCatalog.OPPONENT_NAME.trim() === "") {
+      fail("docs/cards.js names no opponent, so the Play screen cannot say who a match is against");
+    }
+    if (!Array.isArray(opponentDeck) || !opponentDeck.length) {
+      fail("docs/cards.js declares no OPPONENT_DECK, so the opponent has no deck of its own to be dealt from");
+    } else {
+      for (const id of opponentDeck) {
+        if (!cardCatalog.CARD_BY_ID.has(id)) {
+          fail(`the opponent's deck names "${id}", which is not a card in the catalog`);
+        }
+      }
+      const opponentCards = [...dealt.opponent.hand, ...dealt.opponent.table, ...dealt.opponent.deck];
+      const stray = opponentCards.filter((card) => !opponentDeck.includes(card.id)).map((card) => card.id);
+      if (stray.length) {
+        fail(
+          `the opponent was dealt ${JSON.stringify(stray)}, which is not in the opponent's own deck ` +
+            JSON.stringify(opponentDeck)
+        );
+      }
+      const borrowed = opponentCards.filter((card) => cheapDeck.includes(card.id));
+      if (opponentCards.length && borrowed.length === opponentCards.length) {
+        fail(
+          `every card the opponent was dealt (${JSON.stringify(borrowed.map((card) => card.id))}) comes from the ` +
+            "player's own deck, so the opponent is playing a mirror instead of a deck of its own"
         );
       }
     }
@@ -1082,8 +1118,10 @@ export async function checks() {
     // A table is fought over. A known board — one card each side, taken from the
     // hands the fixed shuffle deals — makes the arithmetic exact: your card hits
     // the front card of the opponent's table, the hero behind it is untouched,
-    // and a card worn to zero leaves the table with the log naming it. The deck
-    // is chosen so both hands hold a Sprout, a Thornling and a Mudback Turtle.
+    // and a card worn to zero leaves the table with the log naming it. The
+    // player's deck below is chosen so that hand holds a Sprout; the opponent's
+    // own deck (docs/cards.js) leads with a Mudback Turtle and a Thornling for
+    // the same reason.
     const fightDeck = ["sprout", "thornling", "mudback-turtle", "sprout", "sprout"];
     const takeFromHand = (side, id) => {
       const at = side.hand.findIndex((card) => card.id === id);
@@ -1476,6 +1514,26 @@ export async function checks() {
 
   // --- A match on the page: dealt, played and turned over -------------------
 
+  // Before a match begins, the Play screen names who the player is about to
+  // face, and the state an agent reads names the same character — the opponent
+  // is a character rather than a copy of the player.
+  const introBeforeMatch = textOf(document.getElementById("match-intro"));
+  if (typeof cardCatalog.OPPONENT_NAME === "string") {
+    if (!introBeforeMatch.includes(cardCatalog.OPPONENT_NAME)) {
+      fail(
+        `the Play screen does not name the opponent before a match: the note reads ` +
+          `"${introBeforeMatch || "(nothing)"}"`
+      );
+    }
+    const beforeAnyMatch = game.readState().match;
+    if (!beforeAnyMatch.active && beforeAnyMatch.opponentName !== cardCatalog.OPPONENT_NAME) {
+      fail(
+        `with no match running the state reports the opponent as ${JSON.stringify(beforeAnyMatch.opponentName)} ` +
+          `instead of the character the Play screen names (${JSON.stringify(cardCatalog.OPPONENT_NAME)})`
+      );
+    }
+  }
+
   const deckAtStart = deckIds();
   let started = null;
   try {
@@ -1527,6 +1585,30 @@ export async function checks() {
       }
       if (!Array.isArray(m.log) || m.log.length === 0) {
         fail("a new match has an empty log, so nothing it has done can be read back");
+      }
+
+      // The opponent is a named character, and the Play screen says who it is —
+      // in the match a tool reads and in the board a visitor looks at.
+      if (m.opponentName !== cardCatalog.OPPONENT_NAME) {
+        fail(
+          `the match reports its opponent as ${JSON.stringify(m.opponentName)} instead of the character ` +
+            `docs/cards.js names (${JSON.stringify(cardCatalog.OPPONENT_NAME)})`
+        );
+      } else {
+        const boardText = textOf(document.getElementById("match-board"));
+        if (!boardText.includes(m.opponentName)) {
+          fail(
+            `the Play screen never names the opponent being faced ("${m.opponentName}"): the board reads ` +
+              `"${boardText}"`
+          );
+        }
+        const opponentLine = textOf(document.getElementById("match-opponent-name"));
+        if (!opponentLine.includes(m.opponentName)) {
+          fail(
+            `the board's own line for the opponent reads "${opponentLine || "(nothing)"}" instead of naming ` +
+              `"${m.opponentName}"`
+          );
+        }
       }
 
       // The board prints that same match.
@@ -1667,6 +1749,16 @@ export async function checks() {
       }
       if (afterEnd.opponentTable.length === 0) {
         fail("the opponent took its turn without playing any affordable card");
+      }
+      // And what it played comes from its own deck, not the player's: the same
+      // catalog, a different set of cards.
+      const opponentPlayed = afterEnd.opponentTable.map((card) => card.id);
+      const outsideOpponentDeck = opponentPlayed.filter((id) => !(cardCatalog.OPPONENT_DECK ?? []).includes(id));
+      if (outsideOpponentDeck.length) {
+        fail(
+          `the opponent played ${JSON.stringify(outsideOpponentDeck)}, which is not in the deck it was dealt from ` +
+            JSON.stringify(cardCatalog.OPPONENT_DECK)
+        );
       }
       if (afterEnd.log.length <= beforeEnd.log.length) {
         fail("ending the turn added no lines to the match log");
@@ -2161,6 +2253,12 @@ export async function checks() {
     }
     if (!Array.isArray(reported?.log) || reported.log.length !== live.log.length) {
       fail(`get-match returns ${reported?.log?.length} log lines while the page holds ${live.log.length}`);
+    }
+    if (reported?.opponentName !== live.opponentName) {
+      fail(
+        `get-match reports the opponent as ${JSON.stringify(reported?.opponentName)} while the page says ` +
+          `${JSON.stringify(live.opponentName)}`
+      );
     }
     if (reported?.outcome !== live.outcome || reported?.recorded !== live.recorded) {
       fail(
