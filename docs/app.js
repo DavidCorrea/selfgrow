@@ -431,23 +431,40 @@ function tableOccurrenceKey(seen, cardId) {
 }
 
 /**
+ * The two lines a when-played draw and mend write, each naming the card that
+ * fired and the side it acted for — "you" for the player, "the opponent" for
+ * the other. They are matched whole so the turn's own draw ("You draw X — …"),
+ * which names no card of its own and no beneficiary, is never read as an
+ * ability. A when-played strike needs no line of its own: it lands through the
+ * same blow line a turn's strikes use, and the strikers pass already catches it.
+ */
+const DRAW_FIRED = /^(.+?) draws .+ for (you|the opponent) — \d+ left in deck\.$/;
+const MEND_FIRED = /^(.+?) heals (you|the opponent) for \d+ — .+\.$/;
+
+/**
  * What changed on the board since it was last drawn: for each side, which of its
- * cards have just been struck or have just struck, and which cards have left the
- * table. Empty when this is a different match than the one drawn last — a new,
- * continued or replaced game has no blow to show.
+ * cards have just been struck, have just struck, or have just fired a when-played
+ * draw or mend as they landed, and which cards have left the table. Empty when
+ * this is a different match than the one drawn last — a new, continued or
+ * replaced game has no blow to show.
  */
 function reactionsToShow(board, match) {
   const reactions = { player: {}, opponent: {}, fallen: { player: [], opponent: [] } };
   if (!board || board.id !== match.id) return reactions;
 
-  // Who struck is read from the blows the turn just added to the log. A card's
-  // `hasAttacked` cannot be used for it: the turn ends by freshening every card
-  // on the surviving side's table, so by the time the board is drawn a card that
-  // struck and has attacked again reads as unspent. The log keeps the blow.
+  // Who struck, and which card fired an ability as it landed, is read from the
+  // lines the turn just added to the log. A card's `hasAttacked` cannot be used
+  // for the strike: the turn ends by freshening every card on the surviving
+  // side's table, so by the time the board is drawn a card that struck and has
+  // attacked again reads as unspent. The log keeps the blow.
   const strikers = { player: new Set(), opponent: new Set() };
+  const abilityFirers = { player: new Set(), opponent: new Set() };
   for (const line of match.log.slice(board.logLength)) {
     const blow = /^(Your|Opponent's) (.+?) deals \d+ to /.exec(line);
     if (blow) strikers[blow[1] === "Your" ? "player" : "opponent"].add(blow[2]);
+
+    const fired = DRAW_FIRED.exec(line) ?? MEND_FIRED.exec(line);
+    if (fired) abilityFirers[fired[2] === "you" ? "player" : "opponent"].add(fired[1]);
   }
 
   for (const side of ["player", "opponent"]) {
@@ -455,13 +472,15 @@ function reactionsToShow(board, match) {
     const now = snapshotTable(match[side].table);
     const standing = new Set(now.map((entry) => entry.key));
     const struck = strikers[side];
+    const fired = abilityFirers[side];
 
     for (const entry of now) {
       const was = before.get(entry.key);
       const reaction = {};
       if (was && entry.health < was.health) reaction.hit = true;
       if (struck.has(entry.name)) reaction.striking = true;
-      if (reaction.hit || reaction.striking) reactions[side][entry.key] = reaction;
+      if (fired.has(entry.name)) reaction.ability = true;
+      if (reaction.hit || reaction.striking || reaction.ability) reactions[side][entry.key] = reaction;
     }
     reactions.fallen[side] = board[side].filter((entry) => !standing.has(entry.key));
   }
@@ -489,11 +508,15 @@ function snapshotTable(table) {
   }));
 }
 
-/** Mark a freshly drawn card with the classes of the blow it just took or struck. */
+/**
+ * Mark a freshly drawn card with the classes of the blow it just took or struck,
+ * or of the when-played ability it just fired as it landed.
+ */
 function markCardReaction(item, reaction) {
   if (!reaction) return;
   if (reaction.hit) item.classList.add("is-hit");
   if (reaction.striking) item.classList.add("is-striking");
+  if (reaction.ability) item.classList.add("is-ability");
 }
 
 /**

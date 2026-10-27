@@ -6931,6 +6931,23 @@ export async function checks() {
         if (!document.querySelector('#match-hand [data-card-id="pebble-toad"]')) {
           fail("the card drawn by Glowcap is not in the hand on the board, though the state says it is held");
         }
+
+        // The card that drew as it landed is marked on the table it landed on,
+        // so the ability is seen on the board and not only read in the log.
+        const drawer = document.querySelector('#match-table [data-card-id="glowcap"]');
+        if (!drawer?.classList.contains("is-ability")) {
+          fail(
+            "the card that drew a card as it landed is not marked on the table, so its ability is only " +
+              "read in the log"
+          );
+        }
+
+        // The mark lasts one action and no longer: the next turn clears it, so
+        // no card ever reads as permanently marked.
+        game.endMatchTurn();
+        if (document.querySelector('#match-table .match-card.is-ability')) {
+          fail("the mark for a card that drew as it landed outlived the action, so a card stays marked");
+        }
       }
 
       // The same trigger for the opponent: a Moon Bloom in its hand is played on
@@ -7098,14 +7115,27 @@ export async function checks() {
           energy: 3,
           maxEnergy: 3,
           turns: 1,
-          hand: [
-            { id: "sprout", health: 1, hasAttacked: false },
-            { id: "pebble-toad", health: 2, hasAttacked: false },
-          ],
-          table: [],
+          hand: [{ id: "sprout", health: 1, hasAttacked: false }],
+          // A Toad in front of the healer, so the healer is still standing when
+          // the mark it carried is checked for after the next turn.
+          table: [{ id: "pebble-toad", health: 2, hasAttacked: false }],
           deck: [{ id: "sun-moth", health: 3, hasAttacked: false }],
         },
-        opponent: { health: 20, energy: 1, maxEnergy: 1, turns: 0, hand: [], table: [], deck: [] },
+        // A healer of its own in hand and a deck far too dear for the one energy
+        // it will hold, so its healer is the one card it plays on its turn — and
+        // the mark for it belongs on its own table, not the player's.
+        opponent: {
+          health: 20,
+          energy: 1,
+          maxEnergy: 1,
+          turns: 0,
+          hand: [{ id: "dewdrop-nymph", health: 3, hasAttacked: false }],
+          table: [],
+          deck: [
+            { id: "elder-oak", health: 9, hasAttacked: false },
+            { id: "elder-oak", health: 9, hasAttacked: false },
+          ],
+        },
         log: ["A match set up to play a card that heals its hero."],
       });
       if (!savedHealBoard) {
@@ -7178,6 +7208,37 @@ export async function checks() {
             fail(
               `the healer on the table does not say "${healText}" on its face, so the card reads differently ` +
                 "there than in the collection"
+            );
+          }
+
+          // The healer that mended your hero as it landed is marked on the table
+          // it landed on, so the mend is seen on the board and not only read in
+          // the log; the mark goes on the next action; and it names the side the
+          // card belongs to — the opponent's own healer is marked on its table.
+          const markedHealer = document.querySelector('#match-table [data-card-id="sprout"]');
+          if (!markedHealer?.classList.contains("is-ability")) {
+            fail(
+              "the card that mended your hero as it landed is not marked on the table, so its ability is " +
+                "only read in the log"
+            );
+          }
+          game.endMatchTurn();
+          const healerAfterTurn = document.querySelector('#match-table [data-card-id="sprout"]');
+          if (!healerAfterTurn) {
+            fail("the healer left the table before the mark it carried could be checked for a second time");
+          } else if (healerAfterTurn.classList.contains("is-ability")) {
+            fail("the mark for a card that mended as it landed outlived the action, so a card stays marked");
+          }
+          const opponentHealer = document.querySelector('#match-opponent-table [data-card-id="dewdrop-nymph"]');
+          if (!opponentHealer) {
+            fail(
+              "the opponent did not play its healer on the turn, so the mark cannot be seen on the table " +
+                "that owns the card"
+            );
+          } else if (!opponentHealer.classList.contains("is-ability")) {
+            fail(
+              "the opponent's healer is not marked on the opponent's table after it mended its hero, so the " +
+                "mark does not land on the side that owns the card"
             );
           }
         }
@@ -7688,7 +7749,10 @@ export async function checks() {
     }
 
     // Reduced motion: one media block turns every reaction off and hides the
-    // leaving card, so nothing moves and the numbers and log carry the turn.
+    // leaving card, so nothing moves and the numbers and log carry the turn. The
+    // ability's mark is not motion, so it must survive the block — a mark that
+    // was only an animation would leave the card reading as an ordinary one.
+    const pageRules = [];
     const reducedRules = [];
     for (const sheet of document.styleSheets) {
       let rules;
@@ -7698,10 +7762,16 @@ export async function checks() {
         continue; // a stylesheet this page does not own is not this page's to answer for
       }
       for (const rule of rules) {
+        pageRules.push(rule);
         if (rule.media?.mediaText?.includes("prefers-reduced-motion")) reducedRules.push(...rule.cssRules);
       }
     }
-    for (const selector of [".match-card.is-striking", ".match-card.is-hit", ".match-card-falling"]) {
+    for (const selector of [
+      ".match-card.is-striking",
+      ".match-card.is-hit",
+      ".match-card.is-ability",
+      ".match-card-falling",
+    ]) {
       const off = reducedRules.some(
         (rule) => rule.selectorText?.includes(selector) && /(^|\s)none(\s|$|,)/.test(rule.style.animation ?? "")
       );
@@ -7711,6 +7781,17 @@ export async function checks() {
             "who asked it not to"
         );
       }
+    }
+    const staticAbilityMark = pageRules.some(
+      (rule) =>
+        rule.selectorText?.includes(".match-card.is-ability") &&
+        /(border-color|box-shadow|outline)\s*:/.test(rule.style?.cssText ?? "")
+    );
+    if (!staticAbilityMark) {
+      fail(
+        "the mark for a card that fired a when-played ability is animation-only, so with reduced motion the " +
+          "card would read as an ordinary one"
+      );
     }
     const hidesFalling = reducedRules.some(
       (rule) =>
