@@ -1520,11 +1520,12 @@ export async function checks() {
   // an agent asks for, and as the labelled totals a visitor sees.
   const attackValue = () => document.getElementById("deck-total-attack");
   const healthValue = () => document.getElementById("deck-total-health");
-  // How many of the deck's cards act when played or when they fall, read the
-  // same two ways: from the state an agent asks for, and from the labelled
-  // counts a visitor sees beside the totals.
+  // How many of the deck's cards act when played, act when they fall or grow
+  // each turn, read the same two ways: from the state an agent asks for, and
+  // from the labelled counts a visitor sees beside the totals.
   const whenPlayedValue = () => document.getElementById("deck-total-when-played");
   const whenFallsValue = () => document.getElementById("deck-total-when-falls");
+  const growsValue = () => document.getElementById("deck-total-grows");
   // The sum over the deck the state holds, derived here so a wrong total on the
   // page or in the state fails rather than agreeing with itself.
   const deckSum = (field) => game.readState().deck.reduce((total, card) => total + card[field], 0);
@@ -1534,10 +1535,11 @@ export async function checks() {
   if (!curveBlock()) {
     fail("the collection screen has no cost curve under the deck (#deck-curve), so the deck's shape cannot be read");
   }
-  if (!whenPlayedValue() || !whenFallsValue()) {
+  if (!whenPlayedValue() || !whenFallsValue() || !growsValue()) {
     fail(
-      "the deck panel shows no counts of its when-played and when-falls cards " +
-        "(#deck-total-when-played / #deck-total-when-falls), so a player building around either ability cannot read them"
+      "the deck panel shows no counts of its when-played, when-falls and growing cards " +
+        "(#deck-total-when-played / #deck-total-when-falls / #deck-total-grows), so a player building around any " +
+        "ability cannot read them"
     );
   }
   if (!attackValue() || !healthValue()) {
@@ -1681,19 +1683,25 @@ export async function checks() {
         "instead of only its own empty note"
     );
   }
-  // An empty deck has no cards to count either: both ability counts are null in
-  // the state and blank on the page, so zero is never printed where there is
-  // nothing to count.
-  if (game.readState().deckWhenPlayed !== null || game.readState().deckWhenFalls !== null) {
+  // An empty deck has no cards to count either: all three ability counts are
+  // null in the state and blank on the page, so zero is never printed where
+  // there is nothing to count.
+  if (
+    game.readState().deckWhenPlayed !== null ||
+    game.readState().deckWhenFalls !== null ||
+    game.readState().deckGrows !== null
+  ) {
     fail(
       "an empty deck reports ability counts instead of null: " +
         `deckWhenPlayed ${JSON.stringify(game.readState().deckWhenPlayed)}, ` +
-        `deckWhenFalls ${JSON.stringify(game.readState().deckWhenFalls)}`
+        `deckWhenFalls ${JSON.stringify(game.readState().deckWhenFalls)}, ` +
+        `deckGrows ${JSON.stringify(game.readState().deckGrows)}`
     );
   }
-  if (textOf(whenPlayedValue()) || textOf(whenFallsValue())) {
+  if (textOf(whenPlayedValue()) || textOf(whenFallsValue()) || textOf(growsValue())) {
     fail(
-      `an empty deck still shows ability counts ("${textOf(whenPlayedValue())}" played, "${textOf(whenFallsValue())}" falls) ` +
+      `an empty deck still shows ability counts ("${textOf(whenPlayedValue())}" played, ` +
+        `"${textOf(whenFallsValue())}" falls, "${textOf(growsValue())}" grow) ` +
         "instead of only its own empty note"
     );
   }
@@ -1744,13 +1752,20 @@ export async function checks() {
     fail(`a one-card deck shows a total health of ${textOf(healthValue())} instead of the summed ${loneHealth}`);
   }
   // A one-card deck's ability counts are that card's own: one for a face it
-  // carries, zero for the one it does not, both in the state and on the page.
+  // carries, zero for the one it does not, all three in the state and on the
+  // page.
   const lonePlayed = abilityCount("ability");
   const loneFalls = abilityCount("fallAbility");
-  if (game.readState().deckWhenPlayed !== lonePlayed || game.readState().deckWhenFalls !== loneFalls) {
+  const loneGrows = abilityCount("growthAbility");
+  if (
+    game.readState().deckWhenPlayed !== lonePlayed ||
+    game.readState().deckWhenFalls !== loneFalls ||
+    game.readState().deckGrows !== loneGrows
+  ) {
     fail(
-      `a one-card deck reports ${JSON.stringify(game.readState().deckWhenPlayed)}/${JSON.stringify(game.readState().deckWhenFalls)} ` +
-        `when-played/when-falls instead of the counted ${lonePlayed}/${loneFalls}`
+      `a one-card deck reports ${JSON.stringify(game.readState().deckWhenPlayed)}/` +
+        `${JSON.stringify(game.readState().deckWhenFalls)}/${JSON.stringify(game.readState().deckGrows)} ` +
+        `when-played/when-falls/growing instead of the counted ${lonePlayed}/${loneFalls}/${loneGrows}`
     );
   }
   if (shownTotal(whenPlayedValue()) !== lonePlayed) {
@@ -1758,6 +1773,9 @@ export async function checks() {
   }
   if (shownTotal(whenFallsValue()) !== loneFalls) {
     fail(`a one-card deck shows ${textOf(whenFallsValue())} when-falls card(s) instead of the counted ${loneFalls}`);
+  }
+  if (shownTotal(growsValue()) !== loneGrows) {
+    fail(`a one-card deck shows ${textOf(growsValue())} growing card(s) instead of the counted ${loneGrows}`);
   }
 
   // Taking that card back out returns the deck to empty: the block hides again.
@@ -1781,10 +1799,14 @@ export async function checks() {
   }
   // Emptying the deck again takes its ability counts with it too: back to null
   // in the state and blank on the page, matching the totals beside them.
-  if (game.readState().deckWhenPlayed !== null || game.readState().deckWhenFalls !== null) {
+  if (
+    game.readState().deckWhenPlayed !== null ||
+    game.readState().deckWhenFalls !== null ||
+    game.readState().deckGrows !== null
+  ) {
     fail("emptying the deck again left ability counts on the state instead of null");
   }
-  if (textOf(whenPlayedValue()) || textOf(whenFallsValue())) {
+  if (textOf(whenPlayedValue()) || textOf(whenFallsValue()) || textOf(growsValue())) {
     fail("emptying the deck again left its ability counts printed on the page");
   }
 
@@ -1909,14 +1931,21 @@ export async function checks() {
     fail(`the deck panel shows a total health of ${textOf(healthValue())} instead of the summed ${fullHealth}`);
   }
   // The ability counts stand beside the totals: how many of the ten cards carry
-  // a when-played face and how many carry a when-falls one, each the count over
-  // the deck the state holds and printed the same on the page.
+  // a when-played face, how many carry a when-falls one and how many grow each
+  // turn, each the count over the deck the state holds and printed the same on
+  // the page.
   const fullPlayed = abilityCount("ability");
   const fullFalls = abilityCount("fallAbility");
-  if (game.readState().deckWhenPlayed !== fullPlayed || game.readState().deckWhenFalls !== fullFalls) {
+  const fullGrows = abilityCount("growthAbility");
+  if (
+    game.readState().deckWhenPlayed !== fullPlayed ||
+    game.readState().deckWhenFalls !== fullFalls ||
+    game.readState().deckGrows !== fullGrows
+  ) {
     fail(
-      `a ten-card deck reports ${JSON.stringify(game.readState().deckWhenPlayed)}/${JSON.stringify(game.readState().deckWhenFalls)} ` +
-        `when-played/when-falls instead of the counted ${fullPlayed}/${fullFalls}`
+      `a ten-card deck reports ${JSON.stringify(game.readState().deckWhenPlayed)}/` +
+        `${JSON.stringify(game.readState().deckWhenFalls)}/${JSON.stringify(game.readState().deckGrows)} ` +
+        `when-played/when-falls/growing instead of the counted ${fullPlayed}/${fullFalls}/${fullGrows}`
     );
   }
   if (shownTotal(whenPlayedValue()) !== fullPlayed) {
@@ -1924,6 +1953,9 @@ export async function checks() {
   }
   if (shownTotal(whenFallsValue()) !== fullFalls) {
     fail(`the deck panel shows ${textOf(whenFallsValue())} when-falls card(s) instead of the counted ${fullFalls}`);
+  }
+  if (shownTotal(growsValue()) !== fullGrows) {
+    fail(`the deck panel shows ${textOf(growsValue())} growing card(s) instead of the counted ${fullGrows}`);
   }
 
   // Each card in the deck is shown as its picture — the same name as its text
@@ -2133,6 +2165,78 @@ export async function checks() {
   const savedPayload = JSON.parse(window.localStorage.getItem(collection.STORAGE_KEY) ?? "null");
   if (!savedPayload || !Array.isArray(savedPayload.deck)) {
     fail("the saved record holds no deck, so the deck is lost when the page closes");
+  }
+
+  // No card in the dealt collection grows, so a deck built from it can only ever
+  // report zero growing cards. Put one growth card into the live collection
+  // through the save-code path, add it to the deck, and prove the count rises by
+  // exactly one — then take it back out and prove it falls again. This is the
+  // only way the count can be shown to follow the deck rather than always read
+  // zero.
+  const deckGrowthCard = cardCatalog.CARDS.find((card) => card.growthAbility);
+  if (!deckGrowthCard) {
+    fail("no card in the game carries the growth ability, so a deck's growing cards cannot be checked");
+  } else {
+    const originalCode = collection.saveCode();
+    const baseCards = Array.isArray(savedPayload?.cards)
+      ? savedPayload.cards
+      : owned.cards.map(({ id, copies }) => ({ id, copies }));
+    const baseDeck = Array.isArray(savedPayload?.deck) ? savedPayload.deck : deckIds();
+    const growthCode = collection.saveCode(
+      stubStorage({
+        [collection.STORAGE_KEY]: JSON.stringify({
+          version: 1,
+          cards: [...baseCards, { id: deckGrowthCard.id, copies: 1 }],
+          deck: baseDeck,
+        }),
+      })
+    );
+    let grewBefore = null;
+    try {
+      game.restoreSaveCode(growthCode);
+      grewBefore = game.readState().deckGrows;
+    } catch (error) {
+      fail(`restoring a save code that owns the growth card "${deckGrowthCard.id}" was refused: ${error.message}`);
+    }
+    if (grewBefore !== 0) {
+      fail(`a deck holding no growing cards reports deckGrows ${JSON.stringify(grewBefore)} instead of 0`);
+    } else {
+      game.addCardToDeck(deckGrowthCard.id);
+      const grewAfter = game.readState().deckGrows;
+      if (grewAfter !== grewBefore + 1) {
+        fail(
+          `adding the growth card "${deckGrowthCard.id}" to the deck changed deckGrows from ` +
+            `${JSON.stringify(grewBefore)} to ${JSON.stringify(grewAfter)} instead of ${grewBefore + 1}`
+        );
+      }
+      if (shownTotal(growsValue()) !== grewAfter) {
+        fail(
+          `the deck panel shows ${textOf(growsValue())} growing card(s) after adding "${deckGrowthCard.id}" ` +
+            `instead of the counted ${grewAfter}`
+        );
+      }
+      game.removeCardFromDeck(deckGrowthCard.id);
+      const grewBack = game.readState().deckGrows;
+      if (grewBack !== grewBefore) {
+        fail(
+          `removing the growth card "${deckGrowthCard.id}" left deckGrows at ${JSON.stringify(grewBack)} ` +
+            `instead of ${grewBefore}`
+        );
+      }
+      if (shownTotal(growsValue()) !== grewBack) {
+        fail(
+          `the deck panel shows ${textOf(growsValue())} growing card(s) after removing "${deckGrowthCard.id}" ` +
+            `instead of the counted ${grewBack}`
+        );
+      }
+    }
+    // Put the game back exactly as it was, so the card borrowed for this check
+    // does not linger in the collection for the checks that follow.
+    try {
+      game.restoreSaveCode(originalCode);
+    } catch (error) {
+      fail(`restoring the collection after the growing-card check was refused: ${error.message}`);
+    }
   }
 
   const savedWithDeck = (deck) =>
@@ -3538,22 +3642,33 @@ export async function checks() {
       );
     }
 
-    // How many of the deck's cards act when played or when they fall is part of
-    // what the panel shows, so it is part of what get-state returns: the counts
-    // over the deck the page holds.
+    // How many of the deck's cards act when played, act when they fall or grow
+    // each turn is part of what the panel shows, so it is part of what get-state
+    // returns: the counts over the deck the page holds.
     const livePlayedCount = live.deck.filter((card) => card.ability).length;
     const liveFallsCount = live.deck.filter((card) => card.fallAbility).length;
-    if (reported.deckWhenPlayed !== live.deckWhenPlayed || reported.deckWhenFalls !== live.deckWhenFalls) {
+    const liveGrowsCount = live.deck.filter((card) => card.growthAbility).length;
+    if (
+      reported.deckWhenPlayed !== live.deckWhenPlayed ||
+      reported.deckWhenFalls !== live.deckWhenFalls ||
+      reported.deckGrows !== live.deckGrows
+    ) {
       fail(
-        `get-state reports ${JSON.stringify(reported.deckWhenPlayed)}/${JSON.stringify(reported.deckWhenFalls)} ` +
-          `when-played/when-falls counts while the page says ` +
-          `${JSON.stringify(live.deckWhenPlayed)}/${JSON.stringify(live.deckWhenFalls)}`
+        `get-state reports ${JSON.stringify(reported.deckWhenPlayed)}/` +
+          `${JSON.stringify(reported.deckWhenFalls)}/${JSON.stringify(reported.deckGrows)} ` +
+          `when-played/when-falls/growing counts while the page says ` +
+          `${JSON.stringify(live.deckWhenPlayed)}/${JSON.stringify(live.deckWhenFalls)}/${JSON.stringify(live.deckGrows)}`
       );
     }
-    if (reported.deckWhenPlayed !== livePlayedCount || reported.deckWhenFalls !== liveFallsCount) {
+    if (
+      reported.deckWhenPlayed !== livePlayedCount ||
+      reported.deckWhenFalls !== liveFallsCount ||
+      reported.deckGrows !== liveGrowsCount
+    ) {
       fail(
-        `get-state reports ${JSON.stringify(reported.deckWhenPlayed)}/${JSON.stringify(reported.deckWhenFalls)} ` +
-          `when-played/when-falls counts instead of the counted ${livePlayedCount}/${liveFallsCount}`
+        `get-state reports ${JSON.stringify(reported.deckWhenPlayed)}/` +
+          `${JSON.stringify(reported.deckWhenFalls)}/${JSON.stringify(reported.deckGrows)} ` +
+          `when-played/when-falls/growing counts instead of the counted ${livePlayedCount}/${liveFallsCount}/${liveGrowsCount}`
       );
     }
 

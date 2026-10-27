@@ -2322,10 +2322,10 @@ function deckCostCurve() {
 
 /**
  * The deck's strength as two sums — the attack it brings and the health it can
- * absorb — beside how many of its cards act when played and how many act when
- * they fall, over the same cards the deck panel draws, so the totals and the
- * deck can never disagree. Null for an empty deck, so nothing is shown where
- * there is nothing to total.
+ * absorb — beside how many of its cards act when played, how many act when they
+ * fall and how many grow each turn, over the same cards the deck panel draws, so
+ * the totals and the deck can never disagree. Null for an empty deck, so nothing
+ * is shown where there is nothing to total.
  */
 function deckTotals() {
   const cards = listDeckCards(state.deck);
@@ -2336,8 +2336,9 @@ function deckTotals() {
       health: totals.health + card.health,
       whenPlayed: totals.whenPlayed + (card.ability ? 1 : 0),
       whenFalls: totals.whenFalls + (card.fallAbility ? 1 : 0),
+      grows: totals.grows + (card.growthAbility ? 1 : 0),
     }),
-    { attack: 0, health: 0, whenPlayed: 0, whenFalls: 0 }
+    { attack: 0, health: 0, whenPlayed: 0, whenFalls: 0, grows: 0 }
   );
 }
 
@@ -2384,10 +2385,12 @@ function renderDeckCurve() {
   const health = document.getElementById("deck-total-health");
   const whenPlayed = document.getElementById("deck-total-when-played");
   const whenFalls = document.getElementById("deck-total-when-falls");
+  const grows = document.getElementById("deck-total-grows");
   if (attack) attack.textContent = totals ? String(totals.attack) : "";
   if (health) health.textContent = totals ? String(totals.health) : "";
   if (whenPlayed) whenPlayed.textContent = totals ? String(totals.whenPlayed) : "";
   if (whenFalls) whenFalls.textContent = totals ? String(totals.whenFalls) : "";
+  if (grows) grows.textContent = totals ? String(totals.grows) : "";
 }
 
 /** Draw the whole Collection screen: the card set, which view it is in, and the deck beside it. */
@@ -2448,8 +2451,9 @@ function commitDeck() {
  * size, its limit, the fewest cards a match needs, the cards themselves, its
  * `deckCurve` shape (one `{ cost, count }` per energy cost the deck holds) and
  * its strength as two sums (`deckAttack` and `deckHealth`) beside how many of
- * its cards act when played (`deckWhenPlayed`) and how many act when they fall
- * (`deckWhenFalls`) — all four null for an empty deck — whether it will survive closing the page, how many matches have
+ * its cards act when played (`deckWhenPlayed`), how many act when they fall
+ * (`deckWhenFalls`) and how many grow each turn (`deckGrows`) — all five null
+ * for an empty deck — whether it will survive closing the page, how many matches have
  * been played and won, the result of the last finished match (whether it was a win or a loss, the
  * card a win awarded, whether that completed the set, and `firstWin` — whether
  * that win was the player's first against that opponent), which card the
@@ -2548,14 +2552,16 @@ export function readState() {
     // The deck's strength as two sums: the attack it brings (`deckAttack`) and
     // the health it can absorb (`deckHealth`), over the same cards the deck panel
     // draws and shown beside its cost curve. Beside them, how many of the deck's
-    // cards act when played (`deckWhenPlayed`) and how many act when they fall
-    // (`deckWhenFalls`), so a player building around either ability reads the
-    // same counts the panel prints. All four are null for an empty deck,
-    // matching the note the screen shows instead of totals of zero.
+    // cards act when played (`deckWhenPlayed`), how many act when they fall
+    // (`deckWhenFalls`) and how many grow each turn (`deckGrows`), so a player
+    // building around any of the three abilities reads the same counts the panel
+    // prints. All five are null for an empty deck, matching the note the screen
+    // shows instead of totals of zero.
     deckAttack: deckTotal ? deckTotal.attack : null,
     deckHealth: deckTotal ? deckTotal.health : null,
     deckWhenPlayed: deckTotal ? deckTotal.whenPlayed : null,
     deckWhenFalls: deckTotal ? deckTotal.whenFalls : null,
+    deckGrows: deckTotal ? deckTotal.grows : null,
     wins: state.wins,
     matchesPlayed: state.matchesPlayed,
     // What the Play screen tells a newcomer about a match, and whether that strip
