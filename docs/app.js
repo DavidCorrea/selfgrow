@@ -12,13 +12,16 @@
 import { cardArtSvg, cardBackSvg } from "./cardart.js";
 import { CARDS, CARD_BY_ID, DECK_LIMIT, MINIMUM_DECK_SIZE, OPPONENT_NAME } from "./cards.js";
 import {
+  clearSavedMatch,
   collectionSize,
   listAllCards,
   listDeckCards,
   listOwnedCards,
   loadGame,
+  readSavedMatch,
   recordResult,
   saveDeck,
+  saveMatch,
 } from "./collection.js";
 import { attack, createMatch, endTurn, HERO_TARGET, playCard } from "./match.js";
 
@@ -53,9 +56,13 @@ const state = {
   // The result of the most recently finished match, or null until one ends:
   // whether it was a win or a loss, and the card a win awarded, if any.
   result: null,
-  // The match in progress, or null before one is started. It lives only in this
-  // page session: closing the page ends the match, the way leaving the table does.
+  // The match in progress, or null before one is started. It is saved to the
+  // browser as it changes, so a match left behind can be picked up again.
   match: null,
+  // The unfinished match read back from the browser, or null when there is none.
+  // It is what the home screen offers to continue until a match is loaded, at
+  // which point it is the live match itself and there is nothing to continue.
+  savedMatch: readSavedMatch(),
   // Which of the player's table cards the next chosen attack comes from, or null
   // when none is picked — so End turn still sends the whole table at the front
   // card by default. It is a page-only choice, cleared with each new turn.
@@ -109,6 +116,15 @@ const matchFinalHealth = document.getElementById("match-final-health");
 const resultReward = document.getElementById("result-reward");
 const playAgainButton = document.getElementById("action-play-again");
 
+// The home screen's offer to pick up a match left behind, with the few numbers
+// that say which match it is and the one control that resumes it.
+const continueSection = document.getElementById("continue-match");
+const continueOpponent = document.getElementById("continue-opponent");
+const continuePlayerHealth = document.getElementById("continue-player-health");
+const continueOpponentHealth = document.getElementById("continue-opponent-health");
+const continueTurn = document.getElementById("continue-turn");
+const continueButton = document.getElementById("action-continue-match");
+
 /**
  * The counts the page prints, with the deck size derived from the deck itself so
  * the number can never drift from the cards it counts.
@@ -136,6 +152,7 @@ function render() {
   if (deckSummary) deckSummary.textContent = deckSummaryText();
 
   renderMatch();
+  renderContinueOffer();
 
   screenStatus.textContent = `${SCREEN_LABELS[state.screen]} screen`;
 }
@@ -564,13 +581,106 @@ function runMatchAction(action) {
 }
 
 /**
+ * The saved match the home screen offers to continue: the one read back from the
+ * browser that is not the match already loaded and being played. A live match is
+ * saved as it changes, so while it is loaded the record is that same match — the
+ * game is in hand, and there is nothing to continue back into.
+ */
+function offerableSavedMatch() {
+  const saved = state.savedMatch;
+  if (!saved) return null;
+  // The loaded match is the one on the board — finished or not, there is nothing
+  // to continue back into. Only a match that is not the live one is offered.
+  if (state.match && state.match.id === saved.id) return null;
+  return saved;
+}
+
+/** The few numbers that say which match the home screen is offering to continue. */
+function savedMatchSummary(saved) {
+  if (!saved) return null;
+  return {
+    opponentName: saved.opponentName,
+    turn: saved.turn,
+    playerHealth: saved.player.health,
+    opponentHealth: saved.opponent.health,
+    logLength: saved.log.length,
+  };
+}
+
+/**
+ * Show or hide the home screen's offer to pick up the match that was left, with
+ * the labels that say which match it is: who it is against, both heroes' health
+ * and whose turn it is. With no saved match the whole section is hidden.
+ */
+function renderContinueOffer() {
+  const saved = offerableSavedMatch();
+  if (continueSection) continueSection.hidden = !saved;
+  if (!saved) return;
+  if (continueOpponent) continueOpponent.textContent = saved.opponentName;
+  if (continuePlayerHealth) continuePlayerHealth.textContent = String(saved.player.health);
+  if (continueOpponentHealth) continueOpponentHealth.textContent = String(saved.opponent.health);
+  // A saved match always sits on the player's turn: the opponent takes its whole
+  // turn inside one move, so a save is never taken mid-turn.
+  if (continueTurn) continueTurn.textContent = "You";
+}
+
+/**
+ * Write the match in progress to the browser, or clear the record once it is
+ * over, so the home screen can offer exactly the match a player could still pick
+ * up — and no finished one. A browser that refuses the write leaves nothing to
+ * offer, rather than an offer that cannot be kept.
+ */
+function persistMatch() {
+  const match = state.match;
+  if (!match || match.over) {
+    clearSavedMatch();
+    state.savedMatch = null;
+    return;
+  }
+  state.savedMatch = saveMatch(match) ? match : null;
+}
+
+/**
+ * Re-read the saved match from the browser and redraw the offer — the state a
+ * page freshly opened finds itself in. Exported so the page's own checks can put
+ * the offer back in step with storage after writing a match to it directly.
+ */
+export function refreshSavedMatch() {
+  state.savedMatch = readSavedMatch();
+  render();
+  return readState();
+}
+
+/**
  * Start a match from the saved deck — what a visitor does by pressing Start
  * match, and what the start-match tool does on their behalf. Refused, with the
  * reason, when the deck holds fewer cards than a match needs. Opens the Play
- * screen and returns the state afterwards.
+ * screen, replaces any saved match with this new one, and returns the state
+ * afterwards.
  */
 export function startMatch() {
   state.match = createMatch(state.deck);
+  state.result = null;
+  state.screen = "play";
+  state.selectedAttacker = null;
+  setMatchMessage("");
+  persistMatch();
+  render();
+  return readState();
+}
+
+/**
+ * Pick up the match that was left: set it running again from the saved record —
+ * both sides' health, energy, hands, tables, decks and the log exactly as they
+ * were, on the same side's turn — open the Play screen and return the state.
+ * Refused, with the reason, when there is no unfinished match to continue.
+ */
+export function continueMatch() {
+  const saved = offerableSavedMatch();
+  if (!saved) {
+    throw new Error("there is no unfinished match to continue — start a new one");
+  }
+  state.match = saved;
   state.result = null;
   state.screen = "play";
   state.selectedAttacker = null;
@@ -619,6 +729,7 @@ export function playMatchCard(cardId) {
   if (!state.match) throw new Error("no match is in progress — start one first");
   playCard(state.match, cardId);
   finishMatch();
+  persistMatch();
   render();
   return readState();
 }
@@ -633,6 +744,7 @@ export function endMatchTurn() {
   endTurn(state.match);
   state.selectedAttacker = null;
   finishMatch();
+  persistMatch();
   render();
   return readState();
 }
@@ -651,6 +763,7 @@ export function attackMatch(attackerId, target) {
   attack(state.match, attackerId, target);
   state.selectedAttacker = null;
   finishMatch();
+  persistMatch();
   render();
   return readState();
 }
@@ -901,15 +1014,20 @@ function commitDeck() {
  * size, its limit, the fewest cards a match needs and the cards themselves —
  * whether it will survive closing the page, how many matches have been played and
  * won, the result of the last finished match (whether it was a win or a loss, the
- * card a win awarded, and whether that completed the set), and the actions they
- * can take from here. This is what the get-state tool returns.
+ * card a win awarded, and whether that completed the set), the match the home
+ * screen offers to continue (`canContinue` and the `savedMatch` summary of an
+ * unfinished game left in the browser), and the actions they can take from here.
+ * This is what the get-state tool returns.
  */
 export function readState() {
   // Only the actions a visitor can actually reach: a control this screen hides
-  // is not something they can press, so an agent should not be told it can.
+  // — on its own or inside a hidden section — is not something they can press,
+  // so an agent should not be told it can.
   const actions = [...screens.get(state.screen).querySelectorAll("button")]
-    .filter((button) => !button.hidden)
+    .filter((button) => !button.hidden && !button.closest("[hidden]"))
     .map((button) => button.textContent.trim());
+
+  const offerable = offerableSavedMatch();
 
   return {
     screen: state.screen,
@@ -925,6 +1043,8 @@ export function readState() {
     result: state.result ? { ...state.result } : null,
     saved: state.saved,
     match: readMatch(),
+    canContinue: Boolean(offerable),
+    savedMatch: savedMatchSummary(offerable),
     actions,
   };
 }
@@ -1107,6 +1227,7 @@ for (const button of document.querySelectorAll("[data-screen-target]")) {
 }
 
 startMatchButton?.addEventListener("click", () => runMatchAction(() => startMatch()));
+continueButton?.addEventListener("click", () => runMatchAction(() => continueMatch()));
 playAgainButton?.addEventListener("click", () => runMatchAction(() => playAgain()));
 endTurnButton?.addEventListener("click", () => runMatchAction(() => endMatchTurn()));
 

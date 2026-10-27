@@ -7,6 +7,7 @@
 import {
   addCardToDeck,
   attackMatch,
+  continueMatch,
   endMatchTurn,
   playAgain,
   playMatchCard,
@@ -43,7 +44,7 @@ export function tools() {
       name: "get-state",
       title: "Read what the page shows",
       description:
-        "Returns everything the page shows a visitor right now: which screen is open (home, collection or play), how many cards you own, how many of them are different, and how many different cards the game holds in all (`setTotal`, so `distinctCards` of `setTotal` is how much of the set is collected), the deck — how many cards it holds, the most it may hold, the fewest a match needs, and each card in it — whether progress is saved for next time, how many matches you have finished (`matchesPlayed`) and won (`wins`), the result of the last finished match (`result`: `outcome` is \"win\" or \"loss\", `awarded` is the card a win added or null, and `setComplete` says whether that card was a duplicate added only because you already owned every card in the game), and the actions you can take from here. Its `match` field always names the opponent — `opponentName`, the character whose fixed deck a match is against, named before a match starts as well as during one. When a match is running that field carries the whole board: whether the match is over and who won (`over` and `winner`), whose turn it is, both heroes' health, your energy and its maximum, your hand (with the ids play-card wants), both tables — each card with the health it has left, which drops as the tables fight — how many cards the opponent holds (`opponentHand`, shown on the board as one face-down card back per card) and how many you have left to draw, the ordered log of what has happened, naming every card that fell, its last line the blow that ended the match — and the moves available now. Ask it first to see where you stand, and again after every move to see what changed.",
+        "Returns everything the page shows a visitor right now: which screen is open (home, collection or play), how many cards you own, how many of them are different, and how many different cards the game holds in all (`setTotal`, so `distinctCards` of `setTotal` is how much of the set is collected), the deck — how many cards it holds, the most it may hold, the fewest a match needs, and each card in it — whether progress is saved for next time, how many matches you have finished (`matchesPlayed`) and won (`wins`), the result of the last finished match (`result`: `outcome` is \"win\" or \"loss\", `awarded` is the card a win added or null, and `setComplete` says whether that card was a duplicate added only because you already owned every card in the game), and the actions you can take from here. Its `match` field always names the opponent — `opponentName`, the character whose fixed deck a match is against, named before a match starts as well as during one. When a match is running that field carries the whole board: whether the match is over and who won (`over` and `winner`), whose turn it is, both heroes' health, your energy and its maximum, your hand (with the ids play-card wants), both tables — each card with the health it has left, which drops as the tables fight — how many cards the opponent holds (`opponentHand`, shown on the board as one face-down card back per card) and how many you have left to draw, the ordered log of what has happened, naming every card that fell, its last line the blow that ended the match — and the moves available now. `canContinue` and `savedMatch` report an unfinished match the browser kept from a page left behind (`savedMatch` is a short summary — `opponentName`, `turn`, both healths and `logLength` — and is null while that match is the one loaded), which the continue-match tool picks back up. Ask it first to see where you stand, and again after every move to see what changed.",
       inputSchema: { type: "object", properties: {}, additionalProperties: false },
       annotations: { readOnlyHint: true },
       example: {},
@@ -202,6 +203,18 @@ export function tools() {
       example: {},
       async execute() {
         return attempted(playAgain);
+      },
+    },
+    {
+      name: "continue-match",
+      title: "Pick up the match you left",
+      description:
+        "Restores the unfinished match saved in the browser and opens the Play screen on it, exactly as pressing \"Continue match\" on the home screen does: both heroes' health, energy, hands, tables and decks come back exactly as they were and the ordered log is restored whole, with play carrying on from the same turn. The match is written to the browser as it changes, so this is how a caller picks up a game that was left behind when the page was closed. A finished match is never saved, and starting a new one replaces the record, so this is refused — with an `error` field — when there is no unfinished match to continue. Ask get-state for `canContinue` to see whether there is one before calling it.",
+      inputSchema: { type: "object", properties: {}, additionalProperties: false },
+      annotations: { readOnlyHint: false, consequentialHint: false },
+      example: {},
+      async execute() {
+        return attempted(continueMatch);
       },
     },
     {

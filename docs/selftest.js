@@ -3,9 +3,10 @@
  * and where the player stands, that every new player is dealt a starter
  * collection which survives closing the page, that a match is dealt against a
  * named opponent who brings a deck of their own rather than a copy of the
- * player's, that a match played to the last blow ends with a result both a
- * player and an agent can read, and that an agent reads and drives that same
- * surface rather than a second one nobody can see.
+ * player's, that a match in progress is saved as it changes so the home screen
+ * can offer to continue it, that a match played to the last blow ends with a
+ * result both a player and an agent can read, and that an agent reads and drives
+ * that same surface rather than a second one nobody can see.
  *
  * Runs on the real page, in the real browser. Returns plain-language failures,
  * empty when everything holds.
@@ -3205,6 +3206,344 @@ export async function checks() {
         fail(`the play-again tool left "${openScreens().join(", ")}" open instead of the match`);
       }
     }
+  }
+
+  // --- A match left behind is saved, offered and picked back up -------------
+
+  // A half-played match is progress, so it is written to the browser as it
+  // changes and offered again on the home screen when the page is reopened.
+  // These checks drive the page, then read storage back the way a reload does.
+  if (matchEngine && typeof collection.readSavedMatch === "function") {
+    // Play one card in a fresh match, then read the saved match back.
+    game.showScreen("home");
+    game.startMatch();
+    const dealSize = game.readState().deckSize;
+    const liveStart = game.readState().match;
+    const firstPlayable = liveStart.hand.find((card) => card.cost <= liveStart.energy);
+    if (!firstPlayable) {
+      fail("the match-persistence checks found no affordable card to play, so a saved match cannot be checked");
+    } else {
+      game.playMatchCard(firstPlayable.id);
+    }
+    const liveMatch = game.readState().match;
+
+    if (typeof collection.saveMatch !== "function" || typeof collection.clearSavedMatch !== "function") {
+      fail("docs/collection.js does not save, read and clear an unfinished match, so a reload loses the game in progress");
+    }
+
+    const savedNow = collection.readSavedMatch();
+    if (!savedNow) {
+      fail(`after playing a card nothing is saved under "${collection.MATCH_STORAGE_KEY}", so reloading loses the match`);
+    } else {
+      // The saved match is the live board: both healths, energy, whose turn, the
+      // hand, both tables, both decks and the log.
+      if (
+        savedNow.player.health !== liveMatch.playerHealth ||
+        savedNow.opponent.health !== liveMatch.opponentHealth ||
+        savedNow.turn !== liveMatch.turn ||
+        savedNow.player.energy !== liveMatch.energy ||
+        savedNow.player.maxEnergy !== liveMatch.maxEnergy
+      ) {
+        fail(
+          `the saved match reads ${savedNow.player.health}/${savedNow.opponent.health} health on the ${savedNow.turn}'s ` +
+            `turn with ${savedNow.player.energy} energy, while the page holds ${liveMatch.playerHealth}/` +
+            `${liveMatch.opponentHealth} on the ${liveMatch.turn}'s turn with ${liveMatch.energy}`
+        );
+      }
+      if (JSON.stringify(savedNow.log) !== JSON.stringify(liveMatch.log)) {
+        fail(`the saved match log does not match the live one: ${JSON.stringify(savedNow.log)} vs ${JSON.stringify(liveMatch.log)}`);
+      }
+      if (JSON.stringify(savedNow.player.hand.map((card) => card.id)) !== JSON.stringify(liveMatch.hand.map((card) => card.id))) {
+        fail("the saved match's hand does not match the hand the page holds");
+      }
+      if (JSON.stringify(savedNow.player.table.map((card) => card.id)) !== JSON.stringify(liveMatch.table.map((card) => card.id))) {
+        fail("the saved match's table does not match the table the page holds");
+      }
+      for (const card of savedNow.player.table) {
+        const shown = liveMatch.table.find((live) => live.id === card.id);
+        if (!shown || shown.health !== card.health || Boolean(shown.hasAttacked) !== card.hasAttacked) {
+          fail(`the saved table card "${card.id}" does not match the page's ${JSON.stringify(shown)}`);
+        }
+      }
+      if (savedNow.opponent.hand.length !== liveMatch.opponentHand) {
+        fail(
+          `the saved opponent hand holds ${savedNow.opponent.hand.length} cards instead of the ` +
+            `${liveMatch.opponentHand} the page shows`
+        );
+      }
+      if (savedNow.player.deck.length !== liveMatch.deckRemaining) {
+        fail(
+          `the saved deck holds ${savedNow.player.deck.length} cards instead of the ${liveMatch.deckRemaining} left to draw`
+        );
+      }
+      // No card is lost or duplicated across a side's three piles, so a reload
+      // deals exactly the deck the match was dealt from.
+      for (const [who, side, total] of [
+        ["player", savedNow.player, dealSize],
+        ["opponent", savedNow.opponent, (cardCatalog.OPPONENT_DECK || []).length],
+      ]) {
+        const held = side.hand.length + side.table.length + side.deck.length;
+        if (held !== total) {
+          fail(`the saved ${who}'s cards add up to ${held} instead of the ${total} dealt, so a reload would lose or duplicate one`);
+        }
+      }
+      // Every restored card is looked up in the catalog again: a save names only
+      // ids, and the page rebuilds the card from the game's own data.
+      const rebuilt = [
+        ...savedNow.player.hand,
+        ...savedNow.player.deck,
+        ...savedNow.opponent.hand,
+        ...savedNow.opponent.deck,
+      ];
+      for (const card of rebuilt) {
+        const known = cardCatalog.CARD_BY_ID.get(card.id);
+        if (!known || card.name !== known.name || card.cost !== known.cost || card.attack !== known.attack || card.health !== known.health) {
+          fail(`a restored card "${card.id}" does not carry the catalog's own stats`);
+        }
+      }
+    }
+
+    // A card on the table keeps the health it is down to and whether it has
+    // struck; a card in hand or in the deck takes its catalog stats back, so a
+    // wounded card comes back wounded rather than healed.
+    const storedPayload = JSON.parse(window.localStorage.getItem(collection.MATCH_STORAGE_KEY) ?? "null");
+    if (!storedPayload) {
+      fail("no match payload is in storage, so nothing about restoring one can be checked");
+    } else {
+      const wounded = {
+        version: 1,
+        id: "check-match-wounded",
+        opponentName: "Thornmere",
+        turn: "player",
+        over: false,
+        winner: null,
+        outcome: null,
+        recorded: false,
+        player: {
+          health: 17,
+          energy: 2,
+          maxEnergy: 4,
+          turns: 3,
+          hand: [{ id: "sprout" }],
+          table: [{ id: "glowcap", health: 2, hasAttacked: true }],
+          deck: [{ id: "elder-oak" }],
+        },
+        opponent: {
+          health: 12,
+          energy: 1,
+          maxEnergy: 5,
+          turns: 2,
+          hand: [],
+          table: [{ id: "mudback-turtle", health: 4, hasAttacked: false }],
+          deck: [],
+        },
+        log: ["a line from earlier"],
+      };
+      const healed = collection.readSavedMatch(
+        stubStorage({ [collection.MATCH_STORAGE_KEY]: JSON.stringify(wounded) })
+      );
+      if (!healed) {
+        fail("a whole, unfinished match was not restored from storage");
+      } else {
+        const tableCard = healed.player.table[0];
+        if (tableCard.health !== 2 || tableCard.hasAttacked !== true) {
+          fail(
+            `a wounded table card came back at ${tableCard.health} health (spent ${tableCard.hasAttacked}) instead of 2 and spent`
+          );
+        }
+        const handCard = healed.player.hand[0];
+        const sprout = cardCatalog.CARD_BY_ID.get("sprout");
+        if (handCard.health !== sprout.health || handCard.attack !== sprout.attack) {
+          fail(`a restored hand card reads ${handCard.health}/${handCard.attack} instead of the catalog's ${sprout.health}/${sprout.attack}`);
+        }
+      }
+
+      // What cannot be an unfinished match is read as no match at all.
+      const withPayload = (change) =>
+        collection.readSavedMatch(
+          stubStorage({ [collection.MATCH_STORAGE_KEY]: JSON.stringify({ ...storedPayload, ...change }) })
+        );
+      for (const [what, change] of [
+        ["from another version", { version: 99 }],
+        ["already finished", { over: true }],
+        ["already recorded", { recorded: true }],
+        ["on nobody's turn", { turn: "nobody" }],
+        ["naming a card that does not exist", { player: { ...storedPayload.player, hand: [{ id: "not-a-real-card" }] } }],
+        ["with impossible health", { opponent: { ...storedPayload.opponent, health: 9999 } }],
+        ["with impossible energy", { player: { ...storedPayload.player, energy: 1e21 } }],
+        ["with a log that is not words", { log: [{ not: "a line" }] }],
+      ]) {
+        if (withPayload(change) !== null) {
+          fail(`a saved match ${what} was restored instead of read as no match`);
+        }
+      }
+      if (collection.readSavedMatch(stubStorage()) !== null) {
+        fail("an absent match key was read as a saved match");
+      }
+      if (collection.readSavedMatch(stubStorage({ [collection.MATCH_STORAGE_KEY]: "}{ not json" })) !== null) {
+        fail("an unreadable saved match was restored instead of ignored");
+      }
+      if (collection.readSavedMatch(blockedStorage()) !== null) {
+        fail("a browser that refuses storage still reported a saved match to continue");
+      }
+      if (collection.saveMatch(storedPayload, blockedStorage())) {
+        fail("saving a match to blocked storage reported success, so a lost match is treated as saved");
+      }
+      if (collection.clearSavedMatch(blockedStorage())) {
+        fail("clearing a match from blocked storage reported success");
+      }
+    }
+
+    // A match left behind — a different one from the live match — is written to
+    // storage, then offered on the home screen and picked back up from it.
+    const left = matchEngine.createMatch(
+      ["sprout", "pebble-toad", "thornling", "sun-moth", "bramble-hound"],
+      { rng: () => 0 }
+    );
+    matchEngine.playCard(left, left.player.hand.find((card) => card.cost <= left.player.energy).id);
+    matchEngine.endTurn(left);
+    collection.saveMatch(left);
+    game.showScreen("home");
+    game.refreshSavedMatch();
+
+    const offeredState = game.readState();
+    if (!offeredState.canContinue) {
+      fail("a match is saved in the browser but the page does not report one to continue");
+    }
+    const summary = offeredState.savedMatch;
+    if (!summary || summary.opponentName !== left.opponentName) {
+      fail(`the page offers ${JSON.stringify(summary)} instead of the saved match against "${left.opponentName}"`);
+    } else if (
+      summary.playerHealth !== left.player.health ||
+      summary.opponentHealth !== left.opponent.health ||
+      summary.turn !== left.turn ||
+      summary.logLength !== left.log.length
+    ) {
+      fail(
+        `the offered match summary reads ${JSON.stringify(summary)} instead of ${JSON.stringify({
+          opponentName: left.opponentName,
+          turn: left.turn,
+          playerHealth: left.player.health,
+          opponentHealth: left.opponent.health,
+          logLength: left.log.length,
+        })}`
+      );
+    }
+    if (!offeredState.actions.includes("Continue match")) {
+      fail(`the home screen offers ${JSON.stringify(offeredState.actions)} with an unfinished match saved, so no continue action is reachable`);
+    }
+
+    const offerSection = document.getElementById("continue-match");
+    if (!offerSection || offerSection.hidden) {
+      fail("the home screen shows nothing to continue a match saved in the browser");
+    } else {
+      const opponentShown = textOf(document.getElementById("continue-opponent"));
+      if (!opponentShown.includes(left.opponentName)) {
+        fail(`the continue offer names "${opponentShown}" instead of the opponent "${left.opponentName}"`);
+      }
+      if (textOf(document.getElementById("continue-player-health")) !== String(left.player.health)) {
+        fail(`the continue offer shows your health as "${textOf(document.getElementById("continue-player-health"))}" instead of ${left.player.health}`);
+      }
+      if (textOf(document.getElementById("continue-opponent-health")) !== String(left.opponent.health)) {
+        fail(`the continue offer shows the opponent's health as "${textOf(document.getElementById("continue-opponent-health"))}" instead of ${left.opponent.health}`);
+      }
+      if (textOf(document.getElementById("continue-turn")) !== "You") {
+        fail(`the continue offer says "${textOf(document.getElementById("continue-turn"))}" instead of naming whose turn it is`);
+      }
+      const offerButton = buttonNamed("home", "Continue match");
+      if (!offerButton) {
+        fail("the continue offer has no control to pick the match back up");
+      }
+    }
+
+    // Continue restores exactly that board and turn, through the tool an agent
+    // would use as well as through the page's own function.
+    const continueTool = toolNamed("continue-match");
+    if (!continueTool) {
+      fail('no "continue-match" tool is declared, so an agent cannot pick up a match a visitor can');
+    } else if (!continueTool.annotations || continueTool.annotations.readOnlyHint !== false) {
+      fail('"continue-match" changes the page but is not marked as changing anything (readOnlyHint: false)');
+    }
+    if (continueTool) {
+      const m = (await continueTool.execute({})).match;
+      if (!m || !m.active) {
+        fail("the continue-match tool did not leave a live match running");
+      } else {
+        const tableOf = (cards) =>
+          cards.map((card) => ({ id: card.id, health: card.health, spent: Boolean(card.hasAttacked) }));
+        for (const [what, expected, found] of [
+          ["opponent", left.opponentName, m.opponentName],
+          ["turn", left.turn, m.turn],
+          ["your health", left.player.health, m.playerHealth],
+          ["the opponent's health", left.opponent.health, m.opponentHealth],
+          ["your energy", left.player.energy, m.energy],
+          ["your energy maximum", left.player.maxEnergy, m.maxEnergy],
+          ["hand", left.player.hand.map((card) => card.id), (m.hand || []).map((card) => card.id)],
+          ["table", tableOf(left.player.table), tableOf(m.table || [])],
+          ["opponent table", tableOf(left.opponent.table), tableOf(m.opponentTable || [])],
+          ["log", left.log, m.log],
+        ]) {
+          if (JSON.stringify(found) !== JSON.stringify(expected)) {
+            fail(
+              `the continued match's ${what} reads ${JSON.stringify(found)} instead of the saved ` +
+                `${JSON.stringify(expected)}`
+            );
+          }
+        }
+        if (m.deckRemaining !== left.player.deck.length) {
+          fail(
+            `the continued match has ${m.deckRemaining} cards left to draw instead of the saved ${left.player.deck.length}`
+          );
+        }
+        if (m.opponentHand !== left.opponent.hand.length) {
+          fail(
+            `the continued opponent holds ${m.opponentHand} cards instead of the saved ${left.opponent.hand.length}`
+          );
+        }
+        if (openScreens().join(", ") !== "play") {
+          fail(`continuing a match left "${openScreens().join(", ")}" open instead of the match`);
+        }
+        if (textOf(document.getElementById("match-player-health")) !== String(left.player.health)) {
+          fail(
+            `the board prints your health as "${textOf(document.getElementById("match-player-health"))}" ` +
+              `after continuing, instead of the saved ${left.player.health}`
+          );
+        }
+      }
+    }
+
+    // Starting a new match replaces whatever was saved, and a match left in
+    // progress is not offered once it is the one already on the board.
+    const leftId = left.id;
+    game.startMatch();
+    const replaced = collection.readSavedMatch();
+    if (!replaced || replaced.id === leftId) {
+      fail("starting a new match did not replace the match saved in the browser");
+    }
+    if (game.readState().canContinue) {
+      fail("the page still offers to continue an older match after a new one is started");
+    }
+
+    // A finished match is never saved or offered: playing one out clears the
+    // record and leaves the home screen with nothing to continue.
+    const finishedMatch = playToResult();
+    if (!finishedMatch?.over) {
+      fail("a match could not be played to an end, so a finished match leaving nothing saved cannot be checked");
+    } else if (collection.readSavedMatch() !== null) {
+      fail("a finished match was left saved, so reopening the page would offer to continue a game that is over");
+    }
+    game.showScreen("home");
+    const afterFinish = game.readState();
+    if (afterFinish.canContinue) {
+      fail("the home screen offers to continue a match that is already finished");
+    }
+    if (offerSection && !offerSection.hidden) {
+      fail("the continue offer is still shown on the home screen though the match is finished");
+    }
+
+    // Leave a fresh live match, so the checks that follow measure a board rather
+    // than a finished game.
+    game.startMatch();
   }
 
   // --- Every screen fits the window it is opened in -------------------------

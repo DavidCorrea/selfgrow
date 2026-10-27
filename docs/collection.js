@@ -1,18 +1,21 @@
 /**
- * The player's collection and deck, and the one place both are read from and
- * written to.
+ * The player's collection and deck, the match in progress, and the one place
+ * all of them are read from and written to.
  *
  * A collection is a list of `{ id, copies }` entries in catalog order; a deck is
  * a flat list of owned card ids, one entry per copy, never holding more copies of
  * an id than the player owns and never more than `DECK_LIMIT` in all. Both live
  * in one versioned record under a single key, so closing the page and
- * coming back is the same collection and the same deck. Storage is never assumed
- * to work: when the browser refuses it, the collection is kept in memory for the
- * session and reported as not saved, rather than the page losing the player's
- * cards.
+ * coming back is the same collection and the same deck. The match in progress is
+ * saved whole under a key of its own and read back by rebuilding it, so a half-
+ * played game is progress that survives the page closing too. Storage is never
+ * assumed to work: when the browser refuses it, the collection is kept in memory
+ * for the session and reported as not saved, rather than the page losing the
+ * player's cards — and a match that cannot be written is simply not offered back.
  */
 
 import { CARDS, CARD_BY_ID, DECK_LIMIT, REWARD_POOL, STARTER_COLLECTION } from "./cards.js";
+import { ENERGY_CAP, HERO_HEALTH } from "./match.js";
 
 /**
  * The single key a save lives under — the collection, the deck and the progress
@@ -176,6 +179,173 @@ export function readDeck(storage = defaultStorage()) {
   const cards = normalizeCollection(payload);
   if (!cards) return [];
   return normalizeDeck(payload, cards);
+}
+
+// --------------------------------------------------------------------------
+// The match in progress
+// --------------------------------------------------------------------------
+
+/**
+ * The key an unfinished match is saved under, kept apart from the collection
+ * save so the shape of one is never read as if it were the other. A change to a
+ * match's shape needs a new key; the match is written whole, so a save from
+ * before a field existed reads as a match without it.
+ */
+export const MATCH_STORAGE_KEY = "selfgrow.match.v1";
+
+// The version stamped into a saved match, so a future shape can be told apart
+// from this one instead of being read as if it were the same.
+const MATCH_STORAGE_VERSION = 1;
+
+/** A whole, sane number within `[min, max]`, or false — how a saved count is judged. */
+function isWholeInRange(value, min, max) {
+  return Number.isSafeInteger(value) && value >= min && value <= max;
+}
+
+/** A card copied out of the catalog, so a restored match never hands out the catalog's own object. */
+function catalogCard(cardId) {
+  const card = CARD_BY_ID.get(cardId);
+  return {
+    id: card.id,
+    name: card.name,
+    cost: card.cost,
+    attack: card.attack,
+    health: card.health,
+    hasAttacked: false,
+  };
+}
+
+/**
+ * One pile of a restored side, or null when a card in it is not one a match
+ * could hold. A card in hand or in the deck takes its catalog stats, as it was
+ * dealt; a card on the table keeps the health it is down to and whether it has
+ * already struck, so a wounded card comes back wounded rather than healed.
+ */
+function restorePile(cards, onTable) {
+  if (!Array.isArray(cards)) return null;
+
+  const restored = [];
+  for (const entry of cards) {
+    const known = CARD_BY_ID.get(entry?.id);
+    if (!known) return null;
+    const card = catalogCard(known.id);
+    if (onTable) {
+      if (!isWholeInRange(entry.health, 1, known.health)) return null;
+      card.health = entry.health;
+      card.hasAttacked = Boolean(entry.hasAttacked);
+    }
+    restored.push(card);
+  }
+  return restored;
+}
+
+/** One side of a restored match, or null when any of its numbers could not be on a board. */
+function restoreSide(saved) {
+  if (!saved || typeof saved !== "object") return null;
+  if (!isWholeInRange(saved.health, 1, HERO_HEALTH)) return null;
+  if (!isWholeInRange(saved.maxEnergy, 1, ENERGY_CAP)) return null;
+  // A side never holds more energy than its maximum: it is refilled to it at the
+  // start of its own turn, and cards only spend from there.
+  if (!isWholeInRange(saved.energy, 0, saved.maxEnergy)) return null;
+  if (!Number.isSafeInteger(saved.turns) || saved.turns < 0) return null;
+
+  const hand = restorePile(saved.hand, false);
+  const table = restorePile(saved.table, true);
+  const deck = restorePile(saved.deck, false);
+  if (!hand || !table || !deck) return null;
+
+  return {
+    health: saved.health,
+    energy: saved.energy,
+    maxEnergy: saved.maxEnergy,
+    turns: saved.turns,
+    hand,
+    table,
+    deck,
+  };
+}
+
+/**
+ * Rebuild a match from the payload the browser stored, or null when it is not an
+ * unfinished match this version can restore. It is a rebuild rather than a
+ * replay: every card is looked up in the catalog again, so a save naming a card
+ * that no longer exists — or a hero with impossible health — reads as no match at
+ * all instead of a broken board.
+ */
+function rehydrateMatch(saved) {
+  if (!saved || saved.version !== MATCH_STORAGE_VERSION) return null;
+  // A finished match is never saved; one that says it is finished is a record,
+  // not a game to pick back up.
+  if (saved.over === true || saved.recorded === true) return null;
+  // An unfinished match always sits on the player's turn: the opponent takes its
+  // whole turn inside one move, so no save is ever taken mid-turn.
+  if (saved.turn !== "player") return null;
+  if (typeof saved.id !== "string" || !saved.id) return null;
+  if (typeof saved.opponentName !== "string" || !saved.opponentName.trim()) return null;
+  if (!Array.isArray(saved.log) || !saved.log.every((line) => typeof line === "string")) return null;
+
+  const player = restoreSide(saved.player);
+  const opponent = restoreSide(saved.opponent);
+  if (!player || !opponent) return null;
+
+  return {
+    id: saved.id,
+    opponentName: saved.opponentName,
+    turn: "player",
+    over: false,
+    winner: null,
+    outcome: null,
+    recorded: false,
+    player,
+    opponent,
+    log: [...saved.log],
+  };
+}
+
+/**
+ * The unfinished match saved in the browser, or null when there is none to
+ * restore — the key is absent, the text will not parse, or it is not an
+ * unfinished match this version holds. A browser that refuses storage reads as
+ * no match, so nothing is ever offered that could not be read back.
+ */
+export function readSavedMatch(storage = defaultStorage()) {
+  let raw;
+  try {
+    raw = storage.getItem(MATCH_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+  if (raw == null) return null;
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  return rehydrateMatch(parsed);
+}
+
+/**
+ * Save the match in progress, returning false when the write fails so the page
+ * can tell a match the browser will keep from one it would not.
+ */
+export function saveMatch(match, storage = defaultStorage()) {
+  try {
+    storage.setItem(MATCH_STORAGE_KEY, JSON.stringify({ version: MATCH_STORAGE_VERSION, ...match }));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Forget the saved match — a finished one, or one a new deal has replaced. */
+export function clearSavedMatch(storage = defaultStorage()) {
+  try {
+    storage.removeItem(MATCH_STORAGE_KEY);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /** Write a collection, a deck and progress to storage, returning false when the write fails. */

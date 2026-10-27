@@ -509,6 +509,45 @@ body {
   text-wrap: pretty;
 }
 
+/* The match left behind, offered on the home screen: a board's worth of labelled
+   numbers and the one control that picks it back up, framed like the notes so it
+   reads as news about the player's own game rather than a second action rail. */
+.continue-match {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 0.9rem;
+  padding: 0.9rem 1.1rem 1.1rem;
+  border: 1px solid var(--edge);
+  border-left: 3px solid var(--foil);
+  border-radius: var(--radius-control);
+  background-color: rgba(168, 177, 212, 0.05);
+}
+
+.continue-match[hidden] {
+  display: none;
+}
+
+.continue-match-heading {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.continue-match .standings {
+  gap: clamp(1rem, 2.5vw, 2rem);
+}
+
+/* Quieter than the standings above: this is a reminder of a board, not the
+   headline numbers of the whole game. */
+.continue-match .standing-value {
+  font-size: clamp(1.1rem, 0.95rem + 0.6vw, 1.5rem);
+}
+
+.continue-match .btn {
+  justify-self: start;
+}
+
 /* What just happened to the deck. The live region is always in the page — never
    display: none, or a screen reader may not announce the change — but only
    draws its frame once it has something to say. */
@@ -1242,6 +1281,12 @@ body {
 
   .actions {
     display: grid;
+  }
+
+  /* On a phone the continue offer's control is a full-width target like the
+     screen's own actions, so a thumb does not have to find a smaller button. */
+  .continue-match .btn {
+    justify-self: stretch;
   }
 
   /* The bar covers the foot of the window, so the card keeps enough room under
