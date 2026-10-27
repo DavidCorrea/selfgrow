@@ -719,12 +719,14 @@ function renderMatchOpponentPortrait(match) {
 /**
  * One opponent in the picker, as a radio a keyboard can reach and a thumb can
  * tap: the opponent's portrait, their name, their look and the kind of deck they
- * bring, with the whole option as the radio's label so pressing any part of it
- * picks that opponent.
+ * bring, with all of that as the radio's label so pressing any part of it picks
+ * that opponent — and, under it, the deck itself, so who to face is not chosen on
+ * words alone.
  */
 function opponentOption(opponent) {
-  const option = document.createElement("label");
+  const option = document.createElement("div");
   option.className = "opponent-option";
+  option.dataset.opponentId = opponent.id;
   // The accent names a token in styles.css, so the colour itself stays written
   // in the one place the page writes colours.
   option.style.setProperty("--opponent-accent", `var(${opponent.accent})`);
@@ -751,9 +753,54 @@ function opponentOption(opponent) {
   deck.textContent = opponent.description;
 
   text.append(name, look, deck);
+
+  const choice = document.createElement("label");
+  choice.className = "opponent-choice";
   const portrait = opponentPortraitSvg(opponent);
-  option.append(radio, ...(portrait ? [portrait] : []), text);
+  choice.append(radio, ...(portrait ? [portrait] : []), text);
+
+  option.append(choice, opponentDeckFold(opponent));
   return option;
+}
+
+/**
+ * The cards an opponent brings, folded into their option: the ten faces a match
+ * against them is dealt, each its picture with a name and three numbers, so an
+ * opponent is chosen with the deck in sight instead of on the promise of a
+ * sentence.
+ *
+ * Folded rather than always drawn because ten faces under each of three
+ * opponents would push the picker, and Start match with it, off the first
+ * screen — and the line above still says the kind of deck each one brings for a
+ * player who never opens it.
+ */
+function opponentDeckFold(opponent) {
+  const cards = listDeckCards(opponent.deck);
+
+  const fold = document.createElement("details");
+  fold.className = "opponent-deck-fold";
+
+  const toggle = document.createElement("summary");
+  toggle.className = "opponent-deck-toggle";
+  toggle.textContent = `Their deck, ${cards.length} cards`;
+
+  const list = document.createElement("ul");
+  list.className = "opponent-deck-cards";
+  list.replaceChildren(...cards.map(deckCardRow));
+
+  fold.append(toggle, list);
+  return fold;
+}
+
+/**
+ * One opponent's deck fold in the picker, out of the options built once at load:
+ * what both the page and the state read to say whether that deck is open.
+ */
+function opponentDeckFoldFor(opponentId) {
+  // An id no option answers to is a caller's mistake rather than a page fault,
+  // so it is escaped rather than left to break the selector.
+  const option = opponentOptions?.querySelector(`[data-opponent-id="${CSS.escape(String(opponentId))}"]`);
+  return option?.querySelector("details.opponent-deck-fold") ?? null;
 }
 
 /**
@@ -1056,6 +1103,23 @@ export function selectOpponent(opponentId) {
   }
   state.opponentId = opponentId;
   render();
+  return readState();
+}
+
+/**
+ * Open or fold away one opponent's deck in the picker — what a visitor does by
+ * pressing that character's "Their deck" line, and what the toggle-opponent-deck
+ * tool does on their behalf. It only changes what the picker shows, never who the
+ * next match is against. Returns the state afterwards, the same shape readState()
+ * gives.
+ */
+export function toggleOpponentDeck(opponentId) {
+  const fold = opponentDeckFoldFor(opponentId);
+  if (!fold) {
+    const known = OPPONENTS.map((opponent) => opponent.id).join(", ");
+    throw new Error(`there is no opponent called "${opponentId}" to show the deck of — pick one of: ${known}`);
+  }
+  fold.open = !fold.open;
   return readState();
 }
 
@@ -1444,16 +1508,17 @@ function commitDeck() {
  * won, the result of the last finished match (whether it was a win or a loss, the
  * card a win awarded, and whether that completed the set), the three points the
  * Play screen tells a newcomer about a match and whether that strip is showing
- * (`matchRules`), the opponents a match
- * can be fought against (`opponents` — each with the id to start a match with,
- * its name, its look and the kind of deck it brings) and which of them the next
- * match would be against (`selectedOpponentId`), the match the home screen offers
- * to continue (`canContinue` and the `savedMatch` summary of an unfinished game
- * left in the browser), the choice a Start match is waiting on rather than
- * throwing that match away (`startConflict` — null unless a start is pending, and
- * otherwise a `reason` naming the waiting opponent beside the same `savedMatch`
- * summary), and the actions they can take from here. This is what the get-state
- * tool returns.
+ * (`matchRules`), the opponents a match can be fought against (`opponents` — each
+ * with the id to start a match with, its name, its look, the kind of deck it
+ * brings, the `deck` of card ids it is dealt, whose cards list-collection names
+ * the costs and numbers of, and whether that deck's cards are open in the picker,
+ * `deckShown`) and which of them the next match would be against
+ * (`selectedOpponentId`), the match the home screen offers to continue
+ * (`canContinue` and the `savedMatch` summary of an unfinished game left in the
+ * browser), the choice a Start match is waiting on rather than throwing that
+ * match away (`startConflict` — null unless a start is pending, and otherwise a
+ * `reason` naming the waiting opponent beside the same `savedMatch` summary), and
+ * the actions they can take from here. This is what the get-state tool returns.
  */
 export function readState() {
   // Only the actions a visitor can actually reach: a control this screen hides
@@ -1498,8 +1563,21 @@ export function readState() {
     result: state.result ? { ...state.result } : null,
     saved: state.saved,
     // Who a match could be against, and which of them the next one would be —
-    // the picker the Play screen offers, as plain data.
-    opponents: OPPONENTS.map(({ id, name, look, description }) => ({ id, name, look, description })),
+    // the picker the Play screen offers, as plain data. Each brings the fixed
+    // deck the match will deal it, as the card ids list-collection describes, so
+    // the cards the picker promises and the ones played are one list; `deckShown`
+    // says whether those cards are open in the picker right now.
+    opponents: OPPONENTS.map(({ id, name, look, description, deck }) => {
+      const fold = opponentDeckFoldFor(id);
+      return {
+        id,
+        name,
+        look,
+        description,
+        deck: [...deck],
+        deckShown: Boolean(fold && fold.open && !fold.closest("[hidden]")),
+      };
+    }),
     selectedOpponentId: state.opponentId,
     match: readMatch(),
     canContinue: Boolean(offerable),
