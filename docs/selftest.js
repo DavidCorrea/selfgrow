@@ -1342,6 +1342,20 @@ export async function checks() {
   const addControl = (id) => document.querySelector(`[data-deck-add="${id}"]`);
   const removeControl = (id) => document.querySelector(`[data-deck-remove="${id}"]`);
 
+  // The deck's cost curve, read the two ways the change promises: as the state
+  // an agent asks for, and as the labelled rows a visitor sees under the deck.
+  const curveBlock = () => document.getElementById("deck-curve");
+  const curve = () => game.readState().deckCurve;
+  const curveRows = () => {
+    const block = curveBlock();
+    return block ? [...block.querySelectorAll(".deck-curve-row")] : [];
+  };
+  const curveSum = () => (curve() ?? []).reduce((total, row) => total + row.count, 0);
+
+  if (!curveBlock()) {
+    fail("the collection screen has no cost curve under the deck (#deck-curve), so the deck's shape cannot be read");
+  }
+
   // A visit with no save at all is dealt the starter collection and a
   // ready-to-play deck built from it — the state a reload builds from nothing.
   const fresh = collection.loadGame(stubStorage());
@@ -1447,6 +1461,64 @@ export async function checks() {
     fail(`the dealt deck could not be emptied on the collection screen: ${deckIds().length} card(s) remain`);
   }
 
+  // An empty deck shows its own empty note and no curve at all: there is no
+  // shape to read, and a block left on screen with no rows would say otherwise.
+  const emptyNote = deckList ? textOf(deckList.querySelector(".deck-empty")) : "";
+  if (!emptyNote) {
+    fail("an empty deck no longer shows its empty note, so the screen reads as a deck with cards but no contents");
+  }
+  if (curve().length !== 0) {
+    fail(`an empty deck reports a cost curve: ${JSON.stringify(curve())}`);
+  }
+  if (curveBlock() && !curveBlock().hidden) {
+    fail("a deck holding no cards still shows a cost curve instead of only the empty-deck note");
+  }
+  if (curveRows().length !== 0) {
+    fail(`an empty deck draws ${curveRows().length} cost-curve row(s) although it holds no cards`);
+  }
+
+  // One card in the deck puts exactly one row on the curve, at that card's cost
+  // and counting one — the curve follows the deck the moment it changes.
+  const loneId = ownedIds[0];
+  game.addCardToDeck(loneId);
+  const loneCardCost = game.readState().deck.find((card) => card.id === loneId).cost;
+  if (JSON.stringify(curve()) !== JSON.stringify([{ cost: loneCardCost, count: 1 }])) {
+    fail(
+      `adding one card to an empty deck should put one row on the curve at cost ${loneCardCost} counting 1, ` +
+        `but the curve reads ${JSON.stringify(curve())}`
+    );
+  }
+  if (curveSum() !== 1) {
+    fail(`a one-card deck's cost curve counts ${curveSum()} card(s) instead of 1`);
+  }
+  if (curveBlock() && curveBlock().hidden) {
+    fail("adding a card to an empty deck leaves the cost curve hidden");
+  }
+  const loneRows = curveRows();
+  if (loneRows.length !== 1) {
+    fail(`a one-card deck draws ${loneRows.length} cost-curve row(s) instead of 1`);
+  } else {
+    const loneText = textOf(loneRows[0]);
+    if (!loneText.includes(`Cost ${loneCardCost}`)) {
+      fail(`a one-card deck's cost-curve row does not name its cost ${loneCardCost}: it reads "${loneText}"`);
+    }
+    if (!/\b1 card\b/.test(loneText)) {
+      fail(`a one-card deck's cost-curve row does not say 1 card in the singular: it reads "${loneText}"`);
+    }
+  }
+
+  // Taking that card back out returns the deck to empty: the block hides again.
+  game.removeCardFromDeck(loneId);
+  if (curve().length !== 0 || curveRows().length !== 0) {
+    fail(
+      `removing the deck's only card left the curve reading ${JSON.stringify(curve())} with ` +
+        `${curveRows().length} row(s) drawn`
+    );
+  }
+  if (curveBlock() && !curveBlock().hidden) {
+    fail("a deck emptied again still shows a cost curve instead of only the empty-deck note");
+  }
+
   // A card owned in several copies can be put in the deck that many times, so a
   // collection of duplicates is worth building around. The starter collection
   // holds three Sprouts, which is a real owned card rather than a fixture.
@@ -1505,6 +1577,49 @@ export async function checks() {
     fail(
       `the deck list on the page reads ${JSON.stringify(deckNames)} while the state holds ${JSON.stringify(expectedDeckNames)}`
     );
+  }
+
+  // The cost curve under the deck reads that same deck: one row per energy cost
+  // it holds, each naming the cost and how many of the deck's cards are at it,
+  // and the counts adding up to the deck's size.
+  const fullCurve = curve();
+  if (curveBlock() && curveBlock().hidden) {
+    fail("a ten-card deck hides its cost curve, so the deck's shape cannot be seen while building");
+  }
+  const drawnCosts = curveRows().map((row) => Number(row.dataset.cost));
+  const expectedCosts = fullCurve.map((row) => row.cost);
+  if (JSON.stringify(drawnCosts) !== JSON.stringify(expectedCosts)) {
+    fail(
+      `the cost curve on the page draws costs ${JSON.stringify(drawnCosts)} while the state holds ` +
+        `${JSON.stringify(expectedCosts)}`
+    );
+  }
+  for (const row of curveRows()) {
+    const cost = Number(row.dataset.cost);
+    const entry = fullCurve.find((curveRow) => curveRow.cost === cost);
+    const rowText = textOf(row);
+    if (!entry) {
+      fail(`the cost curve draws a row for cost ${cost}, which the state's curve does not hold`);
+      continue;
+    }
+    if (!rowText.includes(`Cost ${cost}`)) {
+      fail(`the cost-curve row for cost ${cost} does not name its cost: it reads "${rowText}"`);
+    }
+    const countWords = entry.count === 1 ? "1 card" : `${entry.count} cards`;
+    if (!rowText.includes(countWords)) {
+      fail(
+        `the cost-curve row for cost ${cost} does not say "${countWords}": it reads "${rowText}"`
+      );
+    }
+  }
+  if (curveSum() !== game.readState().deckSize) {
+    fail(
+      `the cost curve counts ${curveSum()} card(s) across its costs while the deck holds ` +
+        `${game.readState().deckSize}`
+    );
+  }
+  if (curveSum() !== 10) {
+    fail(`a ten-card deck's cost curve counts ${curveSum()} card(s) instead of 10`);
   }
 
   // Each card in the deck is shown as its picture — the same name as its text
@@ -1652,6 +1767,17 @@ export async function checks() {
         `after removing a card the deck holds ${game.readState().deck.length} card(s) but ` +
           `${deckPictureRows().length} are shown as a picture`
       );
+    }
+    // The curve follows the deck on the spot: a removal drops its count with it
+    // rather than waiting for the screen to be reopened.
+    if (curveSum() !== game.readState().deckSize) {
+      fail(
+        `after removing a card the cost curve counts ${curveSum()} card(s) while the deck holds ` +
+          `${game.readState().deckSize}`
+      );
+    }
+    if (curveSum() !== 9) {
+      fail(`after removing a card the cost curve counts ${curveSum()} card(s) instead of nine`);
     }
   }
 
@@ -2952,6 +3078,26 @@ export async function checks() {
             `where its face says ${JSON.stringify(catalogAbility(card.id))}`
         );
       }
+    }
+
+    // The deck's shape while it is built is part of what the page shows, so it is
+    // part of what get-state returns: one row per energy cost the deck holds,
+    // whose counts add up to the deck's size.
+    if (JSON.stringify(reported.deckCurve) !== JSON.stringify(live.deckCurve)) {
+      fail(
+        `get-state reports the deck curve as ${JSON.stringify(reported.deckCurve)} while the page says ` +
+          `${JSON.stringify(live.deckCurve)}`
+      );
+    }
+    const reportedCurveSum = (Array.isArray(reported.deckCurve) ? reported.deckCurve : []).reduce(
+      (total, row) => total + row.count,
+      0
+    );
+    if (reportedCurveSum !== live.deckSize) {
+      fail(
+        `get-state's deck curve counts ${reportedCurveSum} card(s) across its costs while the deck holds ` +
+          `${live.deckSize}`
+      );
     }
 
     // The card the next win will add is part of what the home screen shows, so it
