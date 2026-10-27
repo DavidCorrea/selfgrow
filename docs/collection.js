@@ -263,6 +263,7 @@ function catalogCard(cardId) {
     cost: card.cost,
     attack: card.attack,
     health: card.health,
+    ability: card.ability ?? null,
     hasAttacked: false,
   };
 }
@@ -616,19 +617,31 @@ export function collectionSize(cards) {
   return cards.reduce((total, card) => total + card.copies, 0);
 }
 
-/** The collection with each card's name, cost, attack and health filled in. */
+/**
+ * The collection with each card's name, cost, attack, health and ability filled
+ * in — the ability text `null` for a card whose face carries none.
+ */
 export function listOwnedCards(cards) {
   return cards.map(({ id, copies }) => {
     const card = CARD_BY_ID.get(id);
-    return { id, name: card.name, cost: card.cost, attack: card.attack, health: card.health, copies };
+    return {
+      id,
+      name: card.name,
+      cost: card.cost,
+      attack: card.attack,
+      health: card.health,
+      ability: card.ability ?? null,
+      copies,
+    };
   });
 }
 
 /**
- * Every card in the game, in catalog order, each with its name, cost, attack
- * and health, how many copies the collection holds, and whether it holds any at
- * all. A card the player does not own appears too — zero copies, `owned` false —
- * so the whole set can be shown beside what has been collected from it.
+ * Every card in the game, in catalog order, each with its name, cost, attack,
+ * health and ability (the text on its face, or `null` when it has none), how many
+ * copies the collection holds, and whether it holds any at all. A card the player
+ * does not own appears too — zero copies, `owned` false — so the whole set can be
+ * shown beside what has been collected from it.
  */
 export function listAllCards(cards) {
   const copiesById = new Map(cards.map((card) => [card.id, card.copies]));
@@ -640,16 +653,27 @@ export function listAllCards(cards) {
       cost: card.cost,
       attack: card.attack,
       health: card.health,
+      ability: card.ability ?? null,
       copies,
       owned: copies > 0,
     };
   });
 }
 
-/** The deck as full card descriptions, in the order the player chose them. */
+/**
+ * The deck as full card descriptions, in the order the player chose them, each
+ * with its ability text or `null`.
+ */
 export function listDeckCards(deck) {
   return deck.map((id) => {
     const card = CARD_BY_ID.get(id);
-    return { id, name: card.name, cost: card.cost, attack: card.attack, health: card.health };
+    return {
+      id,
+      name: card.name,
+      cost: card.cost,
+      attack: card.attack,
+      health: card.health,
+      ability: card.ability ?? null,
+    };
   });
 }

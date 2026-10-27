@@ -235,6 +235,20 @@ function cardName(cardId) {
   return CARD_BY_ID.get(cardId)?.name ?? String(cardId);
 }
 
+/**
+ * The line that prints the ability on a card's face, in the same words on every
+ * card everywhere it is shown, or null when the card carries none. The caller
+ * adds it to the face it builds, so a card reads the same in the collection, the
+ * deck, the hand and on the match table.
+ */
+function cardAbilityNote(card) {
+  if (!card.ability) return null;
+  const note = document.createElement("p");
+  note.className = "card-ability";
+  note.textContent = card.ability;
+  return note;
+}
+
 /** A card in the match as the page prints it: its name, then cost/attack/health. */
 function matchCardItem(card, { playable = false, affordable = true } = {}) {
   const item = document.createElement("li");
@@ -261,6 +275,9 @@ function matchCardItem(card, { playable = false, affordable = true } = {}) {
   head.append(name, stats);
   item.append(head);
 
+  const ability = cardAbilityNote(card);
+  if (ability) item.append(ability);
+
   // A card in hand is also the control that plays it, labelled with what it
   // costs, so a keyboard visitor never has to guess which card a button means.
   if (playable) {
@@ -275,6 +292,7 @@ function matchCardItem(card, { playable = false, affordable = true } = {}) {
     button.setAttribute(
       "aria-label",
       `Play ${card.name} — cost ${card.cost}, attack ${card.attack}, health ${card.health}` +
+        (card.ability ? `, ${card.ability}` : "") +
         (affordable ? "" : ", which you cannot afford yet")
     );
     button.addEventListener("click", () => runMatchAction(() => playMatchCard(card.id)));
@@ -671,6 +689,8 @@ export function awardCardFigure(card) {
   stats.textContent = `${card.cost}/${card.attack}/${card.health}`;
 
   caption.append(name, stats);
+  const ability = cardAbilityNote(card);
+  if (ability) caption.append(ability);
   figure.append(caption);
   return figure;
 }
@@ -1497,6 +1517,8 @@ function collectionCardRow(card) {
   }
 
   item.append(head, stats);
+  const ability = cardAbilityNote(card);
+  if (ability) item.append(ability);
   item.append(card.owned ? deckControls(card) : notCollectedNote());
   return item;
 }
@@ -1536,6 +1558,8 @@ function deckCardRow(card) {
   stats.textContent = `${card.cost}/${card.attack}/${card.health}`;
 
   item.append(name, stats);
+  const ability = cardAbilityNote(card);
+  if (ability) item.append(ability);
   return item;
 }
 
@@ -1732,6 +1756,7 @@ function describeMatchCard(card) {
     cost: card.cost,
     attack: card.attack,
     health: card.health,
+    ability: card.ability ?? null,
     hasAttacked: Boolean(card.hasAttacked),
   };
 }

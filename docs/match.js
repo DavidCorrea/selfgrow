@@ -49,6 +49,14 @@
  * hero, so a wall of cards is worn down card by card before the hero behind it
  * is touched.
  *
+ * A card can also do something as it lands. A card whose face says "When
+ * played: draw a card" takes the top card of its owner's deck into that hand
+ * the moment it is played — by the player or by the opponent, by one shared
+ * trigger — and the log names the card drawn. The cost still leaves that side's
+ * energy, so the card trades energy for a fresh option rather than being free;
+ * a side whose deck is spent simply draws nothing and the log says nothing
+ * extra.
+ *
  * The front card is only the default. During their own turn the player may send
  * one of their table cards at a card of their choosing on the opponent's table —
  * or at the hero, once that table is empty — with `attack`. A card that has
@@ -56,7 +64,15 @@
  * turn is ended and neither player nor opponent strikes twice with one card.
  */
 
-import { CARDS, CARD_BY_ID, DEFAULT_OPPONENT, MINIMUM_DECK_SIZE, OPPONENT_BY_ID, OPPONENTS } from "./cards.js";
+import {
+  CARDS,
+  CARD_BY_ID,
+  DEFAULT_OPPONENT,
+  DRAW_ON_PLAY,
+  MINIMUM_DECK_SIZE,
+  OPPONENT_BY_ID,
+  OPPONENTS,
+} from "./cards.js";
 
 /** Both heroes start at this much health and stay there until a match can end. */
 export const HERO_HEALTH = 20;
@@ -103,6 +119,9 @@ function cardOf(cardId) {
     cost: card.cost,
     attack: card.attack,
     health: card.health,
+    // The ability printed on the card's face, or null when it carries none, so
+    // the trigger below reads the card a match holds rather than the catalog.
+    ability: card.ability ?? null,
     // Whether the card has already struck during its owner's current turn. It
     // is reset as each of that side's own turns begins, so a card strikes at
     // most once per turn whichever way the player directs it.
@@ -288,9 +307,31 @@ function appendLog(match, line) {
 }
 
 /**
+ * Fire the ability a card carries the moment it is played: a card that says it
+ * draws a card takes the top card of its owner's deck into that hand, and the
+ * log gains a line naming the card drawn. `beneficiary` is how the log's words
+ * name the side that benefits — "you" for the player, "the opponent" for the
+ * other — so one trigger serves both and a match stays symmetric.
+ *
+ * A side whose deck is spent draws nothing, and nothing extra is logged: the
+ * card still lands on the table and its cost still left its energy. Doing
+ * nothing when there is nothing to draw keeps a card from being a worse play
+ * than its numbers — the match never stalls on a trigger it cannot pay out.
+ */
+function firePlayAbility(match, side, card, beneficiary) {
+  if (card.ability !== DRAW_ON_PLAY) return;
+  if (side.deck.length === 0) return;
+
+  const drawn = side.deck.shift();
+  side.hand.push(drawn);
+  appendLog(match, `${card.name} draws ${drawn.name} for ${beneficiary} — ${side.deck.length} left in deck.`);
+}
+
+/**
  * Play the card named by `cardId` from the player's hand: it moves to the table,
- * its cost leaves the player's energy, and the log gains a line. When `cardId`
- * is omitted the best card the player can afford is played instead. Refused,
+ * its cost leaves the player's energy, the log gains a line, and any ability on
+ * the card's face fires (see `firePlayAbility`). When `cardId` is omitted the best
+ * card the player can afford is played instead. Refused,
  * with a reason and without changing anything, when the match is over, it is not
  * the player's turn, the named card is not in hand, or it costs more energy than
  * the player has.
@@ -328,6 +369,7 @@ export function playCard(match, cardId) {
     match,
     `You play ${card.name} (cost ${card.cost}) — energy ${match.player.energy} of ${match.player.maxEnergy}.`
   );
+  firePlayAbility(match, match.player, card, "you");
   return match;
 }
 
@@ -476,6 +518,7 @@ function takeOpponentTurn(match) {
       match,
       `Opponent plays ${card.name} (cost ${card.cost}) — energy ${opponent.energy} of ${opponent.maxEnergy}.`
     );
+    firePlayAbility(match, opponent, card, "the opponent");
   }
   if (played === 0) appendLog(match, "Opponent plays no cards.");
 
