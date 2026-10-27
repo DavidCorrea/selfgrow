@@ -351,6 +351,27 @@ body {
   letter-spacing: 0.02em;
 }
 
+/* The card the most recent win added, marked where the set is listed: the word
+   carries it for a screen reader, and the foil keyline and wash carry it for a
+   player scanning the set for what they just earned. */
+.owned-card.newly-collected {
+  border-color: rgba(242, 193, 78, 0.55);
+  background-color: rgba(242, 193, 78, 0.1);
+}
+
+.newly-collected-note {
+  /* Held beside the card's name rather than floated into the middle of the head,
+     so the mark reads as part of the card and the copy count keeps the edge. */
+  margin-right: auto;
+  padding: 0.05rem 0.5rem;
+  border: 1px solid rgba(242, 193, 78, 0.5);
+  border-radius: 999px;
+  color: var(--foil);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
 /* The picture on a card face, drawn in the card's own palette by cardart.js.
    The frame is part of the drawing, so this only sizes it: full width, at the
    drawing's own 96x64 ratio, above the name it illustrates. */

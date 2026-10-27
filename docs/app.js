@@ -661,6 +661,18 @@ function renderMatchResult(match) {
 }
 
 /**
+ * The id of the card the most recent win added to the collection, or null when
+ * there is nothing to mark: no result yet, a loss, or a win whose only card was a
+ * duplicate because every card in the game was already held. A fresh win is
+ * exactly a win that awarded a card without completing the set, which is how the
+ * result itself reads the difference — so the mark and the result cannot
+ * disagree about whether anything new was earned.
+ */
+export function newlyCollectedId(result) {
+  return result?.awarded && !result?.setComplete ? result.awarded.id : null;
+}
+
+/**
  * The words beside the card a win earned. A win that had nothing left to earn
  * says so — the collection is complete, and the card it added is a duplicate —
  * instead of claiming a new card was added.
@@ -1211,12 +1223,15 @@ export function startMatch(opponentId = state.opponentId, { discardSaved = false
   // The picker follows the match that was actually dealt, so a refused start
   // leaves the choice where it was.
   state.opponentId = state.match.opponentId;
+  // The last result goes with the match it belonged to, and the mark it put on
+  // the collection goes with it — the new match has earned nothing yet.
   state.result = null;
   state.screen = "play";
   state.selectedAttacker = null;
   setMatchMessage("");
   persistMatch();
   render();
+  renderCollection();
   return readState();
 }
 
@@ -1317,6 +1332,9 @@ export function continueMatch() {
   state.startPending = false;
   setMatchMessage("");
   render();
+  // The result of the match left behind goes with it, and so does the mark it
+  // put on the collection.
+  renderCollection();
   return readState();
 }
 
@@ -1496,12 +1514,20 @@ function deckControls(card) {
  * One card in the collection, as a face that shows its picture and reads its
  * name, numbers and copy count. A card the player holds carries the deck
  * controls that put a copy in the deck or take one out; a card they do not hold
- * yet is marked as not collected and offers no way into a deck.
+ * yet is marked as not collected and offers no way into a deck. The card the most
+ * recent win added is marked as newly collected, in words as well as in the
+ * styling, so it is found again among the set it has just joined.
  */
 function collectionCardRow(card) {
   const item = document.createElement("li");
   item.className = card.owned ? "owned-card" : "unowned-card";
   item.dataset.cardId = card.id;
+
+  // What the last win added, marked where the set is listed: a player who has
+  // just earned a card comes back to the collection to find it, and the result
+  // that named it is a screen away.
+  const isNewlyCollected = card.id === newlyCollectedId(state.result);
+  if (isNewlyCollected) item.classList.add("newly-collected");
 
   // The card's picture, first, so a player learns the card by sight — whether
   // they hold it yet or are looking at what there is to collect. A card the art
@@ -1517,6 +1543,10 @@ function collectionCardRow(card) {
   name.className = "card-face-name";
   name.textContent = card.name;
   head.append(name);
+
+  // The card the last win added says so beside its own name, in the row the set
+  // is read card by card — a word, so the mark is never a colour alone.
+  if (isNewlyCollected) head.append(newlyCollectedNote());
 
   // A count only where there is more than one to count; one copy is the default.
   if (card.copies > 1) {
@@ -1561,6 +1591,18 @@ function notCollectedNote() {
   const note = document.createElement("p");
   note.className = "unowned-note";
   note.textContent = "Not yet collected";
+  return note;
+}
+
+/**
+ * What marks the card the most recent win added, read in words beside the card's
+ * own name: the styling adds the look, and the word is what a screen reader and
+ * an agent read, so the mark never rests on telling colours apart.
+ */
+function newlyCollectedNote() {
+  const note = document.createElement("span");
+  note.className = "newly-collected-note";
+  note.textContent = "Newly collected";
   return note;
 }
 
@@ -1712,9 +1754,12 @@ function commitDeck() {
  * whether it will survive closing the page, how many matches have been played and
  * won, the result of the last finished match (whether it was a win or a loss, the
  * card a win awarded, whether that completed the set, and `firstWin` — whether
- * that win was the player's first against that opponent), the card the next win
- * would add (`nextReward`, with `nextRewardComplete` true once every reward card
- * is owned), the three points the Play screen tells a newcomer about a match and
+ * that win was the player's first against that opponent), which card the
+ * Collection screen marks as newly collected (`newlyCollected` — the id of the
+ * card the last win added to the collection, or null when nothing was newly
+ * earned: no result yet, a loss, or a win whose only card was a duplicate), the
+ * card the next win would add (`nextReward`, with `nextRewardComplete` true once
+ * every reward card is owned), the three points the Play screen tells a newcomer about a match and
  * whether that strip is showing
  * (`matchRules`), the opponents a match can be fought against (`opponents` — each
  * with the id to start a match with, its name, its look, the kind of deck it
@@ -1775,6 +1820,10 @@ export function readState() {
       points: MATCH_RULES.map(({ label, text }) => ({ label, text })),
     },
     result: state.result ? { ...state.result } : null,
+    // The card the most recent win added to the collection — the one the
+    // Collection screen marks as newly collected — or null when there is nothing
+    // to mark: no result yet, a loss, or a win whose only card was a duplicate.
+    newlyCollected: newlyCollectedId(state.result),
     // The card a win would add next, as the home screen shows it under "Next win
     // earns": the first reward card not yet owned, with its name, cost, attack
     // and health — or null, with `nextRewardComplete` true, once every reward
