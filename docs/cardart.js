@@ -487,6 +487,20 @@ const OPPONENT_SIGILS = new Map([
       `,
     },
   ],
+  [
+    "reed",
+    {
+      description: "Three reeds standing in a still line of water",
+      inner: `
+        <path class="sigil-body" d="M4 20 L6 20 L5 6 Z" />
+        <path class="sigil-body" d="M11 20 L13 20 L12 1 Z" />
+        <path class="sigil-body" d="M18 20 L20 20 L19 9 Z" />
+        <path class="sigil-body" d="M2 19.5 L22 19.5 L22 22.5 L2 22.5 Z" />
+        <path class="sigil-accent" d="M7 19.5 L9 19.5 L9 22.5 L7 22.5 Z" />
+        <path class="sigil-accent" d="M15 19.5 L17 19.5 L17 22.5 L15 22.5 Z" />
+      `,
+    },
+  ],
 ]);
 
 /**

@@ -42,6 +42,7 @@
      mark and a word as well as from a colour. */
   --opponent-thornmere: #7fd6a6;
   --opponent-emberwake: #ffa06b;
+  --opponent-mistfen: #8fc7e6;
 
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
   --radius-card: 20px;

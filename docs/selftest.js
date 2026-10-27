@@ -1431,7 +1431,7 @@ export async function checks() {
         fail(`two opponents share an id, so one of them cannot be chosen: ${JSON.stringify(choiceIds)}`);
       }
       for (const opponent of opponentChoices) {
-        for (const field of ["id", "name", "look", "description"]) {
+        for (const field of ["id", "name", "look", "description", "sigil", "accent"]) {
           if (typeof opponent[field] !== "string" || !opponent[field].trim()) {
             fail(
               `the opponent ${JSON.stringify(opponent.id)} has no ${field}, so the Play screen cannot offer it ` +
@@ -1446,10 +1446,47 @@ export async function checks() {
           );
           continue;
         }
+        if (opponent.deck.length !== cardCatalog.DECK_LIMIT) {
+          fail(
+            `the opponent "${opponent.name}" brings ${opponent.deck.length} cards instead of the fixed ` +
+              `${cardCatalog.DECK_LIMIT} a deck holds`
+          );
+        }
         for (const id of opponent.deck) {
           if (!cardCatalog.CARD_BY_ID.has(id)) {
             fail(`the opponent "${opponent.name}" brings "${id}", which is not a card in the catalog`);
           }
+        }
+      }
+
+      // Every opponent is known by a mark and a colour of its own: the sigil is
+      // drawn in the same square frame as the others, and the accent names a
+      // token the stylesheet actually defines — so a character added later is
+      // recognised by sight as well as by name, instead of being a name with
+      // nothing to know it by.
+      const rootStyle = getComputedStyle(document.documentElement);
+      for (const opponent of opponentChoices) {
+        if (cardArt) {
+          const sigil = cardArt.opponentSigilSvg(opponent);
+          if (!sigil) {
+            fail(
+              `the opponent "${opponent.name}" names the mark ${JSON.stringify(opponent.sigil)}, ` +
+                "which no sigil answers to, so it has no mark of its own"
+            );
+          } else if (sigil.getAttribute("viewBox") !== "0 0 24 24") {
+            fail(
+              `the mark of "${opponent.name}" is drawn in the viewBox ` +
+                `${JSON.stringify(sigil.getAttribute("viewBox"))} instead of the square "0 0 24 24" ` +
+                "every opponent's mark uses"
+            );
+          }
+        }
+        const accent = rootStyle.getPropertyValue(opponent.accent).trim();
+        if (!accent) {
+          fail(
+            `the opponent "${opponent.name}" is coloured by the token ${JSON.stringify(opponent.accent)}, ` +
+              "which styles.css does not define, so its mark would be drawn in no colour at all"
+          );
         }
       }
       if (opponentChoices[0]?.name !== cardCatalog.OPPONENT_NAME) {
@@ -1459,16 +1496,18 @@ export async function checks() {
         );
       }
 
-      // Facing the second opponent is a different match: its id and name on the
-      // match, its name in the opening line, and cards from its own deck alone.
-      const otherOpponent = opponentChoices[1];
-      let againstOther = null;
-      try {
-        againstOther = matchEngine.createMatch(cheapDeck, { rng: fixedRng, opponentId: otherOpponent.id });
-      } catch (error) {
-        fail(`a match against "${otherOpponent.id}" was refused — ${error.message}`);
-      }
-      if (againstOther) {
+      // Facing any opponent but the first is a different match: its id and name
+      // on the match, its name in the opening line, and cards from its own deck
+      // alone. Every opponent after the first is played through, so a third
+      // added later is held to the same promise without this check changing.
+      for (const otherOpponent of opponentChoices.slice(1)) {
+        let againstOther = null;
+        try {
+          againstOther = matchEngine.createMatch(cheapDeck, { rng: fixedRng, opponentId: otherOpponent.id });
+        } catch (error) {
+          fail(`a match against "${otherOpponent.id}" was refused — ${error.message}`);
+        }
+        if (!againstOther) continue;
         if (againstOther.opponentName !== otherOpponent.name) {
           fail(
             `a match started against "${otherOpponent.id}" reports its opponent as ` +
@@ -4131,7 +4170,9 @@ export async function checks() {
   // reload picks back up.
   const opponentChoices = cardCatalog.OPPONENTS ?? [];
   if (opponentChoices.length >= 2) {
-    const chosenOpponent = opponentChoices[1];
+    // The third opponent, where there is one: the newest character is the one
+    // most likely to be half-wired in, so the picker is exercised against it.
+    const chosenOpponent = opponentChoices[2] ?? opponentChoices[1];
     const defaultOpponent = opponentChoices[0];
     const chooseTool = toolNamed("choose-opponent");
     const startTool = toolNamed("start-match");
@@ -4245,26 +4286,29 @@ export async function checks() {
       }
     }
 
-    // And the same thing through the tool an agent uses, with the id a caller
-    // would take from get-state's opponents.
+    // And the same thing through the tool an agent uses, with the ids a caller
+    // would take from get-state's opponents — the default character and the
+    // newest one, so the third is driven end to end through the tool too.
     if (startTool) {
-      const viaTool = await startTool.execute({ opponentId: defaultOpponent.id });
-      if (viaTool?.match?.opponentName !== defaultOpponent.name) {
-        fail(
-          `the start-match tool reports ${JSON.stringify(viaTool?.match?.opponentName)} after being asked for ` +
-            `"${defaultOpponent.id}"`
-        );
-      } else if (!String(viaTool.match.log?.[0] ?? "").includes(defaultOpponent.name)) {
-        fail(
-          `a match started by the tool against "${defaultOpponent.name}" opens with ` +
-            `${JSON.stringify(viaTool.match.log?.[0])}, which does not name it`
-        );
-      }
-      if (viaTool?.selectedOpponentId !== defaultOpponent.id) {
-        fail(
-          `after the start-match tool faced "${defaultOpponent.id}" the state says the chosen opponent is ` +
-            `"${viaTool?.selectedOpponentId}"`
-        );
+      for (const viaToolOpponent of [defaultOpponent, chosenOpponent]) {
+        const viaTool = await startTool.execute({ opponentId: viaToolOpponent.id });
+        if (viaTool?.match?.opponentName !== viaToolOpponent.name) {
+          fail(
+            `the start-match tool reports ${JSON.stringify(viaTool?.match?.opponentName)} after being asked for ` +
+              `"${viaToolOpponent.id}"`
+          );
+        } else if (!String(viaTool.match.log?.[0] ?? "").includes(viaToolOpponent.name)) {
+          fail(
+            `a match started by the tool against "${viaToolOpponent.name}" opens with ` +
+              `${JSON.stringify(viaTool.match.log?.[0])}, which does not name it`
+          );
+        }
+        if (viaTool?.selectedOpponentId !== viaToolOpponent.id) {
+          fail(
+            `after the start-match tool faced "${viaToolOpponent.id}" the state says the chosen opponent is ` +
+              `"${viaTool?.selectedOpponentId}"`
+          );
+        }
       }
 
       // An id no opponent answers to is refused rather than dealt as anybody.
@@ -4278,7 +4322,7 @@ export async function checks() {
       if (!refusedByTool) {
         fail('the start-match tool started a match against "no-such-opponent", which is not an opponent');
       }
-      if (game.readState().match?.opponentId !== defaultOpponent.id) {
+      if (game.readState().match?.opponentId !== chosenOpponent.id) {
         fail("a refused start-match changed which opponent the live match is against");
       }
     }
