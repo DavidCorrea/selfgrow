@@ -337,8 +337,9 @@ body {
 
 /* The toggle at the foot of each card face: which cards are chosen is shown in
    the label, and the chosen ones carry a foil keyline so the state is visible
-   even before the deck list is read. */
-.deck-toggle {
+   even before the deck list is read. Scoped as .btn.deck-toggle so these sizes
+   outrank .btn's own padding and font instead of being silently overridden. */
+.btn.deck-toggle {
   width: 100%;
   padding: 0.55rem 0.9rem;
   font-size: 0.9rem;
@@ -659,7 +660,9 @@ body {
   background-color: rgba(168, 177, 212, 0.03);
 }
 
-.match-play {
+/* Sized like .deck-toggle, and scoped under .btn for the same reason: at equal
+   specificity .btn's padding and font would win wherever it lands in the sheet. */
+.btn.match-play {
   padding: 0.45rem 0.8rem;
   font-size: 0.85rem;
 }
@@ -722,7 +725,8 @@ body {
   font-weight: 600;
   padding: 0.8rem 1.35rem;
   /* A control a thumb can hit: WCAG asks 44px at AAA, and a phone game is tapped
-     repeatedly, so the height is held whatever the padding works out to. */
+     repeatedly. This floor, not the padding, is what holds the tap target — the
+     smaller component paddings below shrink the control no further than this. */
   min-height: 2.75rem;
   border: 1px solid transparent;
   border-radius: var(--radius-control);
