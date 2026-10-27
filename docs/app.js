@@ -41,7 +41,7 @@ import {
   saveDeck,
   saveMatch,
 } from "./collection.js";
-import { attack, concede, createMatch, endTurn, HERO_TARGET, playCard } from "./match.js";
+import { attack, concede, createMatch, endTurn, HERO_TARGET, playCard, readyToStrike } from "./match.js";
 
 // The screens the page has, and the word each is announced by. A screen name is
 // also the value an agent passes to the show-screen tool.
@@ -270,6 +270,8 @@ const endTurnButton = document.getElementById("action-end-turn");
 const concedeButton = document.getElementById("action-concede");
 const matchTurnStanding = document.getElementById("match-turn-standing");
 const matchTurn = document.getElementById("match-turn");
+const matchReadyStanding = document.getElementById("match-ready-standing");
+const matchReady = document.getElementById("match-ready");
 const matchFields = {
   playerHealth: document.getElementById("match-player-health"),
   opponentHealth: document.getElementById("match-opponent-health"),
@@ -1301,6 +1303,24 @@ function renderMatch() {
     // Written only when it changes, so the live region speaks on the turn
     // passing rather than on every redraw of the board.
     if (matchTurn.textContent !== label) matchTurn.textContent = label;
+  }
+  // How much of this turn is still to come: the cards that will strike when the
+  // turn is ended and the attack they hold, so the ending is planned rather than
+  // guessed. It goes with the player's own turn, so no figure stands for a turn
+  // nobody is taking — and nothing is said of a bare zero: an empty table and a
+  // spent one are named in words instead.
+  if (matchReadyStanding) {
+    const readyTurn = Boolean(match) && !match.over && match.turn === "player";
+    matchReadyStanding.hidden = !readyTurn;
+    if (readyTurn && matchReady) {
+      const { count, attack } = readyToStrike(match.player);
+      matchReady.textContent =
+        match.player.table.length === 0
+          ? "No cards on the table"
+          : count === 0
+            ? "Every card has struck"
+            : `${count} ${count === 1 ? "card" : "cards"} · ${attack} attack`;
+    }
   }
   // Giving up is offered right up until a match is over, so a player who is
   // losing, or who picked the wrong deck, always has a way out that keeps the
@@ -2508,7 +2528,11 @@ function describeMatchCard(card) {
  * front card of the opponent's table as `{ kind: "card", cardId, name }`, or the
  * opponent's hero as `{ kind: "hero", cardId: null, name }` once that table is
  * empty — the same fact the board prints as a mark on that card or hero, and
- * null when it is not the player's turn or the match is over. `opponentId` and
+ * null when it is not the player's turn or the match is over. `readyAttackers`
+ * is how many of the player's table cards have not struck yet, and `readyAttack`
+ * the total attack they hold — the cards an ending turn would still send — the
+ * same two figures the board prints as "Ready to strike", both null when it is
+ * not the player's turn or the match is over. `opponentId` and
  * `opponentName` name the character being faced, whose deck is its own rather
  * than a copy of the player's. With no match it says so — `active` false, and
  * `opponentId`/`opponentName` the character the picker has chosen, the name the
@@ -2533,6 +2557,8 @@ export function readMatch() {
       turn: null,
       selectedAttacker: null,
       endOfTurnTarget: null,
+      readyAttackers: null,
+      readyAttack: null,
       playerHealth: null,
       opponentHealth: null,
       energy: null,
@@ -2547,6 +2573,13 @@ export function readMatch() {
     };
   }
 
+  // How much of the player's own turn is still to come: how many of their table
+  // cards have not struck yet and the total attack they hold — the same two
+  // figures the board prints as "Ready to strike". Both are null unless the
+  // player's own turn is live, so the figures belong to the turn they describe
+  // and a caller can tell that no turn of the player's is running.
+  const ready = !match.over && match.turn === "player" ? readyToStrike(match.player) : null;
+
   return {
     active: true,
     opponentId: match.opponentId,
@@ -2559,6 +2592,8 @@ export function readMatch() {
     turn: match.turn,
     selectedAttacker: state.selectedAttacker,
     endOfTurnTarget: endOfTurnTarget(match),
+    readyAttackers: ready ? ready.count : null,
+    readyAttack: ready ? ready.attack : null,
     playerHealth: match.player.health,
     opponentHealth: match.opponent.health,
     energy: match.player.energy,

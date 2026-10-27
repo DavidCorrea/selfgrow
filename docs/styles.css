@@ -1257,6 +1257,14 @@ body {
   font-size: clamp(1.4rem, 1.1rem + 1vw, 2rem);
 }
 
+/* The ready-to-strike line carries a phrase where the rest of the row carries a
+   single number, so it reads a size down and keeps the figures beside it from
+   stretching the row. */
+.match-standings .standing-ready .standing-value {
+  font-size: clamp(0.95rem, 0.8rem + 0.5vw, 1.25rem);
+  line-height: 1.3;
+}
+
 /* A standing that is not being shown must give up its place in the row: it is
    laid out with `display: flex`, which outweighs what `hidden` does on its own,
    so the turn would stay on the board once the match is over. */
