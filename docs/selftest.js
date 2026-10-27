@@ -1794,6 +1794,9 @@ export async function checks() {
   // layout viewport and shrinks the page to fit it, so `innerWidth` grows to
   // match the overflow and hides the fault being looked for.
   const PHONE_WIDTH = 719; // where the page's own phone layout begins
+  // A control a thumb can hit: the page holds this floor on every button, so the
+  // card controls' smaller padding never shrinks one below it.
+  const MIN_TAP_TARGET_PX = 44;
   const root = document.documentElement;
   const viewportWidth = root.clientWidth;
   const viewportHeight = root.clientHeight;
@@ -1895,6 +1898,56 @@ export async function checks() {
       }
       if (control.tabIndex < 0) {
         fail(`"${label}" on the "${name}" screen cannot be reached with Tab, so it is unusable without a mouse`);
+      }
+    }
+
+    // And it has to be hittable by a thumb. The height is what promises that,
+    // whatever a button's own padding works out to, so the smallest card control
+    // has to clear it as well as the rail's big actions.
+    for (const button of screen(name).querySelectorAll("button")) {
+      const height = rectOf(button).height;
+      if (height === 0) continue;
+      const label = controlName(button) || "a button";
+      const floor = parseFloat(getComputedStyle(button).minHeight) || 0;
+      if (floor < MIN_TAP_TARGET_PX || height < MIN_TAP_TARGET_PX) {
+        fail(
+          `the "${label}" button on the "${name}" screen is ${Math.round(height)}px tall with a ` +
+            `${floor}px floor, so a thumb cannot hit it reliably — every button needs to reach ` +
+            `${MIN_TAP_TARGET_PX}px`
+        );
+      }
+    }
+
+    // The controls that sit on a card face — a deck toggle, a card's Play — get
+    // their own smaller padding and font, because a card holds many of them and
+    // each has to read as quieter than the screen's own actions. Those sizes only
+    // take effect if they outrank `.btn` in the cascade; when they do not, the
+    // card control renders at exactly the rail's size and its size rules are dead.
+    const cardControl = { collection: ".deck-toggle", play: ".match-play" }[name];
+    const railButtons = [...screen(name).querySelectorAll(".actions .btn")].filter(
+      (button) => rectOf(button).height > 0
+    );
+    if (cardControl && railButtons.length) {
+      // The rail's largest button is the one a card control has to sit under: on
+      // the play screen that is End turn, on the collection it is Back to home.
+      const railSizes = railButtons.map((button) => parseFloat(getComputedStyle(button).fontSize));
+      const railSize = Math.max(...railSizes);
+      const railLabel = controlName(railButtons[railSizes.indexOf(railSize)]);
+      const cardControls = [...screen(name).querySelectorAll(cardControl)].filter(
+        (button) => rectOf(button).height > 0
+      );
+      if (!cardControls.length) {
+        fail(`the "${name}" screen shows no ${cardControl} control, so its smaller size cannot be checked`);
+      }
+      const overridden = cardControls.filter(
+        (button) => !(parseFloat(getComputedStyle(button).fontSize) < railSize)
+      );
+      if (overridden.length) {
+        fail(
+          `${overridden.length} of the ${cardControls.length} card controls on the "${name}" screen, such as ` +
+            `"${controlName(overridden[0])}", render at ${railSize}px like the rail's "${railLabel}", so the ` +
+            "smaller font-size they are given is being overridden by .btn"
+        );
       }
     }
   }
