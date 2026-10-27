@@ -1468,7 +1468,7 @@ export async function checks() {
         fail(`two opponents share an id, so one of them cannot be chosen: ${JSON.stringify(choiceIds)}`);
       }
       for (const opponent of opponentChoices) {
-        for (const field of ["id", "name", "look", "description", "sigil", "accent"]) {
+        for (const field of ["id", "name", "look", "description", "accent"]) {
           if (typeof opponent[field] !== "string" || !opponent[field].trim()) {
             fail(
               `the opponent ${JSON.stringify(opponent.id)} has no ${field}, so the Play screen cannot offer it ` +
@@ -1496,33 +1496,130 @@ export async function checks() {
         }
       }
 
-      // Every opponent is known by a mark and a colour of its own: the sigil is
-      // drawn in the same square frame as the others, and the accent names a
-      // token the stylesheet actually defines — so a character added later is
-      // recognised by sight as well as by name, instead of being a name with
-      // nothing to know it by.
+      // Every opponent is a character a player can see: a portrait of its own,
+      // drawn in the one shape language the whole set is drawn in and in that
+      // opponent's own accent — so a character added later is recognised by sight
+      // as well as by name, instead of being a name with nothing to know it by.
+      // The style it is drawn to is written down beside the drawings, so the next
+      // opponent is drawn to match rather than guessed at.
+      const portraitStyle = cardArt?.ART_STYLE?.portrait;
+      if (portraitStyle?.viewBox !== "0 0 64 64") {
+        fail(
+          "the art style does not say what frame a portrait is drawn in (no viewBox 0 0 64 64), " +
+            "so the next opponent's portrait would be guessed at"
+        );
+      }
+      if (!/y=56/.test(portraitStyle?.groundLine ?? "")) {
+        fail(
+          "the art style does not say where a portrait stands (no shared ground line at y=56), " +
+            "so the figures of different opponents would sit differently"
+        );
+      }
+      if (!portraitStyle?.palette?.body || !portraitStyle?.palette?.detail) {
+        fail(
+          "the art style does not say what a portrait is painted in (no body and detail tokens), " +
+            "so a character added later could be drawn in colours of its own"
+        );
+      }
+
       const rootStyle = getComputedStyle(document.documentElement);
+      // A drawing without its class names is the shapes themselves, so two
+      // different pictures of the same figure come out the same whatever each is
+      // painted in — the way a portrait borrowing a card's creature would.
+      const shapesOf = (markup) =>
+        (markup || "").replace(/\s+/g, " ").replace(/class="[^"]*"\s*/g, "").trim();
+      // The figures the cards are drawn from, so a portrait cannot be a card's
+      // creature used a second time.
+      const cardShapes = new Map();
+      for (const card of cardCatalog.CARDS) {
+        const shapes = shapesOf(cardArt?.cardArt(card.id)?.inner);
+        if (shapes) cardShapes.set(shapes, card.name);
+      }
+      const portraitShapes = new Map();
       for (const opponent of opponentChoices) {
-        if (cardArt) {
-          const sigil = cardArt.opponentSigilSvg(opponent);
-          if (!sigil) {
-            fail(
-              `the opponent "${opponent.name}" names the mark ${JSON.stringify(opponent.sigil)}, ` +
-                "which no sigil answers to, so it has no mark of its own"
-            );
-          } else if (sigil.getAttribute("viewBox") !== "0 0 24 24") {
-            fail(
-              `the mark of "${opponent.name}" is drawn in the viewBox ` +
-                `${JSON.stringify(sigil.getAttribute("viewBox"))} instead of the square "0 0 24 24" ` +
-                "every opponent's mark uses"
-            );
-          }
-        }
         const accent = rootStyle.getPropertyValue(opponent.accent).trim();
         if (!accent) {
           fail(
             `the opponent "${opponent.name}" is coloured by the token ${JSON.stringify(opponent.accent)}, ` +
-              "which styles.css does not define, so its mark would be drawn in no colour at all"
+              "which styles.css does not define, so its portrait would be drawn in no colour at all"
+          );
+        }
+        if (!cardArt) continue;
+
+        const portrait = cardArt.opponentPortrait(opponent.id);
+        if (!portrait) {
+          fail(
+            `the opponent "${opponent.name}" has no portrait, so a player choosing who to face never ` +
+              "sees the character they are up against"
+          );
+          continue;
+        }
+        const drawing = (portrait.inner || "").replace(/\s+/g, " ").trim();
+        if (!drawing) {
+          fail(`the portrait of "${opponent.name}" has nothing drawn in it`);
+          continue;
+        }
+        if (!portrait.description?.trim()) {
+          fail(
+            `the portrait of "${opponent.name}" is not described, so it cannot be checked against ` +
+              "the written style"
+          );
+        }
+        // Every portrait is drawn from the same shape classes as the others, so
+        // the characters stay one set however many are added.
+        const classes = [...drawing.matchAll(/class="([^"]+)"/g)].flatMap((match) => match[1].split(/\s+/));
+        const stray = classes.filter((name) => name !== "portrait-body" && name !== "portrait-accent");
+        if (stray.length) {
+          fail(
+            `the portrait of "${opponent.name}" uses the shape class(es) ${stray.join(", ")} that no ` +
+              "other portrait uses, so it would not match the rest of the set"
+          );
+        }
+        if (!classes.includes("portrait-body")) {
+          fail(`the portrait of "${opponent.name}" has no figure in it (nothing carries the portrait-body shape)`);
+        }
+        // A portrait that points anywhere would be fetched, and this page loads
+        // with nothing leaving its own origin.
+        if (/https?:|<image|href=/i.test(drawing)) {
+          fail(`the portrait of "${opponent.name}" points outside the page, so showing it would need a request`);
+        }
+        const shapes = shapesOf(drawing);
+        const otherPortrait = portraitShapes.get(shapes);
+        if (otherPortrait) {
+          fail(
+            `the portraits of "${otherPortrait}" and "${opponent.name}" are drawn identically, so the ` +
+              "two characters cannot be told apart by sight"
+          );
+        } else {
+          portraitShapes.set(shapes, opponent.name);
+        }
+        const sameCard = cardShapes.get(shapes);
+        if (sameCard) {
+          fail(
+            `the portrait of "${opponent.name}" is the drawing of the card "${sameCard}", so the ` +
+              "character is shown as a card rather than as itself"
+          );
+        }
+
+        const svg = cardArt.opponentPortraitSvg(opponent);
+        if (!svg) {
+          fail(
+            `the portrait of "${opponent.name}" is drawn but the page is handed no picture for it, ` +
+              "so the picker would show the name alone"
+          );
+          continue;
+        }
+        if (svg.getAttribute("viewBox") !== portraitStyle?.viewBox) {
+          fail(
+            `the portrait of "${opponent.name}" is drawn in the viewBox ` +
+              `${JSON.stringify(svg.getAttribute("viewBox"))} instead of the ` +
+              `${JSON.stringify(portraitStyle?.viewBox)} the style names`
+          );
+        }
+        if (svg.getAttribute("aria-hidden") !== "true") {
+          fail(
+            `the portrait of "${opponent.name}" is not hidden from assistive technology, though its ` +
+              "name, look and deck are written beside it"
           );
         }
       }
@@ -2545,8 +2642,48 @@ export async function checks() {
             `${JSON.stringify(opponent.description)})`
         );
       }
-      if (!option?.querySelector("svg")) {
-        fail(`the picker's option for "${opponent.name}" has no mark, only its name`);
+      if (!words.includes(opponent.look)) {
+        fail(
+          `the picker's option for "${opponent.name}" does not read the look of the character ` +
+            `(${JSON.stringify(opponent.look)}), so a sighted player and a screen reader do not read the same opponent`
+        );
+      }
+
+      // The character is seen, not only named: the option carries a portrait of
+      // the opponent, painted in that opponent's own accent, and the portrait is
+      // hidden from assistive technology because the name and look are written
+      // beside it. A portrait in the wrong colour or a missing one is a character
+      // a player cannot tell from the others.
+      const portrait = option?.querySelector("svg.opponent-portrait");
+      if (!portrait) {
+        fail(`the picker's option for "${opponent.name}" shows no portrait of the character, only its name`);
+      } else {
+        if (portrait.getAttribute("aria-hidden") !== "true") {
+          fail(
+            `the picker's portrait of "${opponent.name}" is not hidden from assistive technology, so its ` +
+              "shape would be read out beside the name and look it already has"
+          );
+        }
+        const body = portrait.querySelector(".portrait-body");
+        if (!body) {
+          fail(`the picker's portrait of "${opponent.name}" has no figure in it`);
+        } else {
+          // The accent token is the catalog's, read as a colour the way the page
+          // resolves it: the state carries a name and a look, not a palette.
+          const accentToken = cardCatalog.OPPONENT_BY_ID.get(opponent.id)?.accent;
+          const probe = document.createElement("span");
+          probe.style.color = `var(${accentToken})`;
+          option.append(probe);
+          const accent = getComputedStyle(probe).color;
+          probe.remove();
+          const painted = getComputedStyle(body).fill;
+          if (painted !== accent) {
+            fail(
+              `the picker's portrait of "${opponent.name}" is filled ${painted} where that opponent's ` +
+                `accent (${accentToken}) is ${accent}, so the character is not drawn in its own colour`
+            );
+          }
+        }
       }
     }
   }

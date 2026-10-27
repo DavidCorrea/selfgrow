@@ -9,7 +9,7 @@
  * page says is what a tool returns, and what a tool does is what the page shows.
  */
 
-import { cardArtSvg, cardBackSvg, opponentSigilSvg } from "./cardart.js";
+import { cardArtSvg, cardBackSvg, opponentPortraitSvg } from "./cardart.js";
 import { CARDS, CARD_BY_ID, DECK_LIMIT, DEFAULT_OPPONENT, MINIMUM_DECK_SIZE, OPPONENTS } from "./cards.js";
 import {
   clearSavedMatch,
@@ -645,7 +645,7 @@ function selectedOpponent() {
 
 /**
  * One opponent in the picker, as a radio a keyboard can reach and a thumb can
- * tap: the opponent's mark, their name, their look and the kind of deck they
+ * tap: the opponent's portrait, their name, their look and the kind of deck they
  * bring, with the whole option as the radio's label so pressing any part of it
  * picks that opponent.
  */
@@ -654,7 +654,7 @@ function opponentOption(opponent) {
   option.className = "opponent-option";
   // The accent names a token in styles.css, so the colour itself stays written
   // in the one place the page writes colours.
-  option.style.setProperty("--sigil-accent", `var(${opponent.accent})`);
+  option.style.setProperty("--opponent-accent", `var(${opponent.accent})`);
 
   const radio = document.createElement("input");
   radio.type = "radio";
@@ -678,8 +678,8 @@ function opponentOption(opponent) {
   deck.textContent = opponent.description;
 
   text.append(name, look, deck);
-  const sigil = opponentSigilSvg(opponent);
-  option.append(radio, ...(sigil ? [sigil] : []), text);
+  const portrait = opponentPortraitSvg(opponent);
+  option.append(radio, ...(portrait ? [portrait] : []), text);
   return option;
 }
 
