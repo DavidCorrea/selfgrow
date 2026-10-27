@@ -309,6 +309,10 @@ const continueButton = document.getElementById("action-continue-match");
 // rather than only read in the log. It is cleared with the match it belongs to,
 // so nothing is ever reacted to across two different games.
 let shownBoard = null;
+// The reactions the last board draw marked, kept so the state an agent reads can
+// report the same "just played" fact the cards wear. It is set beside `shownBoard`
+// and cleared with it, so a fact never outlives the board it belongs to.
+let shownReactions = null;
 
 /**
  * The counts the page prints, with the deck size derived from the deck itself so
@@ -644,7 +648,14 @@ function reactionsToShow(board, match) {
       if (was && entry.health < was.health) reaction.hit = true;
       if (struck.has(entry.name)) reaction.striking = true;
       if (fired.has(entry.name)) reaction.ability = true;
-      if (reaction.hit || reaction.striking || reaction.ability) reactions[side][entry.key] = reaction;
+      // A card the opponent played on the turn just ended stands where it did not
+      // stand on the last draw: a new occurrence key on its table. The scope is
+      // the opponent's table alone, because the player's own plays are visible in
+      // their hand and energy as they happen.
+      if (side === "opponent" && !was) reaction.justPlayed = true;
+      if (reaction.hit || reaction.striking || reaction.ability || reaction.justPlayed) {
+        reactions[side][entry.key] = reaction;
+      }
     }
     reactions.fallen[side] = board[side].filter((entry) => !standing.has(entry.key));
   }
@@ -674,13 +685,25 @@ function snapshotTable(table) {
 
 /**
  * Mark a freshly drawn card with the classes of the blow it just took or struck,
- * or of the when-played ability it just fired as it landed.
+ * of the when-played ability it just fired as it landed, or of the opponent
+ * having played it on its last turn. A blow and an ability are styling only, the
+ * log naming them in words; a card the opponent just played also carries its
+ * wording on the face, because the log lists every play of a turn while the table
+ * shows only the cards as they now stand, and a player should not have to read
+ * the log back to see what is new.
  */
 function markCardReaction(item, reaction) {
   if (!reaction) return;
   if (reaction.hit) item.classList.add("is-hit");
   if (reaction.striking) item.classList.add("is-striking");
   if (reaction.ability) item.classList.add("is-ability");
+  if (reaction.justPlayed) {
+    item.classList.add("is-just-played");
+    const mark = document.createElement("span");
+    mark.className = "match-just-played-mark";
+    mark.textContent = "Just played";
+    item.append(mark);
+  }
 }
 
 /**
@@ -1344,6 +1367,7 @@ function renderMatch() {
   }
   if (!match) {
     shownBoard = null;
+    shownReactions = null;
     return;
   }
 
@@ -1374,6 +1398,7 @@ function renderMatch() {
   renderOpponentTable(match, canAttack, reactions);
   renderMatchLog(match);
   shownBoard = snapshotBoard(match);
+  shownReactions = reactions;
 }
 
 /** Put the refusal or confirmation in the match's always-present status line. */
@@ -2502,6 +2527,22 @@ export function readState() {
   };
 }
 
+/**
+ * The opponent's table as plain data, each card also saying whether the last
+ * board draw marked it as one the opponent just played — the same class and
+ * wording the card wears, so an agent reads what a player sees. The occurrence
+ * keys are built in table order, the same way the board builds them, so a
+ * duplicate card is told from its twin.
+ */
+function describeOpponentTable(match) {
+  const seen = new Map();
+  const reactions = shownReactions?.opponent ?? {};
+  return match.opponent.table.map((card) => ({
+    ...describeMatchCard(card),
+    justPlayed: Boolean(reactions[tableOccurrenceKey(seen, card.id)]?.justPlayed),
+  }));
+}
+
 /** A match card as plain data, so a tool can carry it across the JSON boundary. */
 function describeMatchCard(card) {
   return {
@@ -2524,7 +2565,10 @@ function describeMatchCard(card) {
  * is over and which hero won, whose turn it is, which of the player's table
  * cards is picked to attack with (`selectedAttacker`, a card id or null), both
  * heroes' health, the player's energy, the hand, both tables — each table card
- * saying whether it has already attacked this turn (`hasAttacked`) — how many
+ * saying whether it has already attacked this turn (`hasAttacked`), and each
+ * card of the opponent's table also saying whether the board marks it as one the
+ * opponent just played on its last turn (`justPlayed`, true only on the draw
+ * that follows that turn) — how many
  * cards the opponent holds (`opponentHand`, the face-down backs the board shows)
  * with the energy the opponent has to spend on its own turn and its maximum
  * (`opponentEnergy`/`opponentMaxEnergy`, the same "X of Y" the board prints
@@ -2612,7 +2656,7 @@ export function readMatch() {
     opponentMaxEnergy: match.opponent.maxEnergy,
     hand: match.player.hand.map(describeMatchCard),
     table: match.player.table.map(describeMatchCard),
-    opponentTable: match.opponent.table.map(describeMatchCard),
+    opponentTable: describeOpponentTable(match),
     opponentHand: match.opponent.hand.length,
     deckRemaining: match.player.deck.length,
     log: [...match.log],
