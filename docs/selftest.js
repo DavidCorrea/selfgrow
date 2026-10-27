@@ -106,26 +106,63 @@ export async function checks() {
 
   // --- Where the player stands, as a labelled number -------------------------
 
-  for (const [field, label] of [
-    ["cardsOwned", "cards owned"],
-    ["deckSize", "deck size"],
-  ]) {
-    const value = home.querySelector(`[data-field="${field}"]`);
-    if (!value) {
-      fail(`the home screen does not show ${label} (nothing carries data-field="${field}")`);
-      continue;
+  // Collecting is the point of the game, so how much of the set is collected
+  // sits on the first screen — the same number the Collection screen prints.
+  const homeCollected = home.querySelector('[data-field="distinctCards"]')?.closest(".standing");
+  if (!homeCollected) {
+    fail('the home screen does not show how many different cards are collected (nothing carries data-field="distinctCards")');
+  } else {
+    const homeCollectedValue = textOf(homeCollected.querySelector(".standing-value"));
+    const homeCollectedLabel = textOf(homeCollected.querySelector(".standing-label"));
+    const expectedCollected = `${owned.distinctCards} of ${cardCatalog.CARDS.length}`;
+    if (!homeCollected.closest("dl")) {
+      fail(
+        "the cards-collected number is not in a description list beside a label, so it is read without what it counts"
+      );
     }
-    if (!value.closest("dl")) {
-      fail(`the ${label} number is not in a description list beside a label, so it is read without what it counts`);
+    if (!homeCollectedLabel.toLowerCase().includes("collect")) {
+      fail(
+        `the home screen's count of cards collected is labelled "${homeCollectedLabel || "(nothing)"}", which does not say what it counts`
+      );
     }
-    if (!home.textContent.toLowerCase().includes(label)) {
-      fail(`the home screen gives a number for ${label} without naming it anywhere`);
+    if (homeCollectedValue !== expectedCollected) {
+      fail(
+        `the home screen says "${homeCollectedValue || "(nothing)"}" where the player has collected ` +
+          `${expectedCollected} different cards`
+      );
     }
-    const shown = Number(textOf(value));
+
+    // The Collection screen shows the same figure, so the two screens a player
+    // reads the set on can never tell them different things.
+    const shownOnCollection = textOf(
+      document
+        .querySelector('#screen-collection [data-field="distinctCards"]')
+        ?.closest(".standing")
+        ?.querySelector(".standing-value")
+    );
+    if (shownOnCollection && shownOnCollection !== homeCollectedValue) {
+      fail(
+        `the home screen says "${homeCollectedValue}" cards collected while the Collection screen says ` +
+          `"${shownOnCollection}" — the two disagree`
+      );
+    }
+  }
+
+  const deckSizeValue = home.querySelector('[data-field="deckSize"]');
+  if (!deckSizeValue) {
+    fail('the home screen does not show deck size (nothing carries data-field="deckSize")');
+  } else {
+    if (!deckSizeValue.closest("dl")) {
+      fail("the deck size number is not in a description list beside a label, so it is read without what it counts");
+    }
+    if (!home.textContent.toLowerCase().includes("deck size")) {
+      fail("the home screen gives a number for deck size without naming it anywhere");
+    }
+    const shown = Number(textOf(deckSizeValue));
     if (!Number.isInteger(shown)) {
-      fail(`${label} shows "${textOf(value)}" — a count has to be a whole number`);
-    } else if (shown !== state[field]) {
-      fail(`${label} shows ${shown} while the page's state says ${state[field]} — the card and the state have drifted apart`);
+      fail(`deck size shows "${textOf(deckSizeValue)}" — a count has to be a whole number`);
+    } else if (shown !== state.deckSize) {
+      fail(`deck size shows ${shown} while the page's state says ${state.deckSize} — the card and the state have drifted apart`);
     }
   }
 
