@@ -7822,6 +7822,137 @@ export async function checks() {
         }
       }
     }
+
+    // The sweep is met from both sides of the table, so a player learns to hold
+    // back against it and not only to hold it: the slow, wearing opponent brings
+    // the clearing card in its fixed deck, and the picker promises it by name
+    // before a match against that character is dealt.
+    const thornmere = cardCatalog.OPPONENT_BY_ID.get("thornmere");
+    const thornmereDeck = thornmere?.deck ?? [];
+    const stateThornmereDeck = () =>
+      game.readState().opponents.find((entry) => entry.id === "thornmere")?.deck ?? [];
+    if (!thornmereDeck.includes(clearer.id)) {
+      fail(
+        `Thornmere's fixed deck ${JSON.stringify(thornmereDeck)} does not hold "${clearer.name}", so the opponent ` +
+          "never answers the player's table with the sweep the player can hold"
+      );
+    } else if (!stateThornmereDeck().includes(clearer.id)) {
+      fail(
+        `an agent reading the state sees Thornmere's deck as ${JSON.stringify(stateThornmereDeck())}, which does ` +
+          `not name "${clearer.name}"`
+      );
+    } else {
+      const deckToolForClear = toolNamed("toggle-opponent-deck");
+      if (!deckToolForClear) {
+        fail(
+          'no "toggle-opponent-deck" tool is declared, so an agent cannot open the sweep-bringing deck a visitor can'
+        );
+      } else {
+        const openedClearDeck = await deckToolForClear.execute({ opponentId: "thornmere" });
+        if (!(openedClearDeck?.deck ?? []).includes(clearer.id)) {
+          fail(
+            `opening Thornmere's deck reports ${JSON.stringify(openedClearDeck?.deck ?? null)}, which does not name ` +
+              `"${clearer.name}"`
+          );
+        }
+        // Fold it away again, so the picker is left as it was found.
+        await deckToolForClear.execute({ opponentId: "thornmere" });
+      }
+    }
+
+    // The picker shows the sweep on the face of the very card Thornmere promises,
+    // so a player reads it before the match is dealt.
+    const thornmereClearFace = document.querySelector(
+      '#opponent-options [data-opponent-id="thornmere"] .opponent-deck-cards [data-card-id="thorn-gale"]'
+    );
+    if (faceAbility(thornmereClearFace) !== clearText) {
+      fail(
+        `the clearer in Thornmere's deck fold does not say "${clearText}" on its face ` +
+          `(it reads ${JSON.stringify(faceAbility(thornmereClearFace))})`
+      );
+    }
+
+    // The opponent's own turn, through the same engine the board runs on: a
+    // Thornmere holding only its clear card sweeps a mixed player's table, so the
+    // sweep is met from the other side of the table — every card takes the damage
+    // on its face, each card worn to 0 leaves on the usual fall line, and the hero
+    // behind the cards is never touched.
+    if (matchEngine) {
+      const sweptAgainst = matchEngine.createMatch(
+        ["sprout", "pebble-toad", "thornling", "sun-moth", "bramble-hound"],
+        { opponentId: "thornmere" }
+      );
+      sweptAgainst.player.table = [
+        { ...cardCatalog.CARD_BY_ID.get("sprout"), health: 1, hasAttacked: false },
+        { ...cardCatalog.CARD_BY_ID.get("thornling"), health: 2, hasAttacked: false },
+        { ...cardCatalog.CARD_BY_ID.get("mudback-turtle"), health: 5, hasAttacked: false },
+      ];
+      sweptAgainst.player.deck = [];
+      sweptAgainst.opponent.hand = [{ ...clearer, hasAttacked: false }];
+      sweptAgainst.opponent.deck = [];
+      sweptAgainst.opponent.energy = clearer.cost;
+      sweptAgainst.opponent.maxEnergy = clearer.cost;
+      sweptAgainst.opponent.table = [];
+
+      const yourHealthBefore = sweptAgainst.player.health;
+      const yourTableBefore = sweptAgainst.player.table.map((card) => ({ id: card.id, health: card.health }));
+      const turnLogBefore = sweptAgainst.log.length;
+      matchEngine.endTurn(sweptAgainst);
+      const sweepLines = sweptAgainst.log.slice(turnLogBefore);
+      const sweepPrefix = `Opponent's ${clearer.name} deals ${clearAmount} to `;
+
+      if (!sweptAgainst.opponent.table.some((card) => card.id === clearer.id)) {
+        fail(
+          `Thornmere did not play "${clearer.name}", the only card in its hand, on its turn (its table holds ` +
+            `${JSON.stringify(sweptAgainst.opponent.table.map((card) => card.id))})`
+        );
+      }
+
+      const sweptBlows = sweepLines.filter((line) => line.startsWith(sweepPrefix));
+      if (sweptBlows.length !== yourTableBefore.length) {
+        fail(
+          `Thornmere's sweep logged ${sweptBlows.length} blow(s) for your table of ${yourTableBefore.length} ` +
+            `card(s): ${JSON.stringify(sweepLines)}`
+        );
+      }
+      // Each card the sweep crosses takes exactly the damage on the face, read off
+      // its own blow line rather than the table afterwards: the cards still
+      // standing then strike the opponent's table, so what is left there at the
+      // end of the turn is not only the sweep's doing.
+      for (const card of yourTableBefore) {
+        const name = cardCatalog.CARD_BY_ID.get(card.id)?.name ?? card.id;
+        const expected = Math.max(0, card.health - clearAmount);
+        if (!sweptBlows.some((line) => line.includes(name) && line.includes(`${expected} health left`))) {
+          fail(
+            `Thornmere's sweep never shows your "${name}" at ${expected} health left: ` +
+              JSON.stringify(sweepLines)
+          );
+        }
+        // A card the sweep wore to 0 leaves your table at once, on the match's
+        // usual fall line; a card it only wounded stays to fight the turn.
+        if (expected === 0) {
+          if (sweptAgainst.player.table.some((entry) => entry.id === card.id)) {
+            fail(`your "${name}" was worn to 0 by Thornmere's sweep but is still on your table`);
+          }
+          if (!sweepLines.some((line) => line.includes(name) && /falls/i.test(line) && /your table/i.test(line))) {
+            fail(
+              `the match log never says your "${name}", worn to 0 by Thornmere's sweep, left your table: ` +
+                JSON.stringify(sweepLines)
+            );
+          }
+        }
+      }
+
+      // The sweep crosses the cards, not the hero behind them.
+      if (sweepLines.some((line) => line.startsWith(`${sweepPrefix}you `))) {
+        fail(`Thornmere's sweep went past your table to your hero: ${JSON.stringify(sweepLines)}`);
+      }
+      if (sweptAgainst.player.health !== yourHealthBefore) {
+        fail(
+          `Thornmere's sweep left your hero at ${sweptAgainst.player.health} health instead of ${yourHealthBefore}`
+        );
+      }
+    }
   }
 
   // --- Two more cards that clear the opponent's table, across the cost curve --
