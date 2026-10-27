@@ -265,6 +265,33 @@ body {
   background-color: rgba(15, 19, 34, 0.4);
 }
 
+/* The picture on a card face, drawn in the card's own palette by cardart.js.
+   The frame is part of the drawing, so this only sizes it: full width, at the
+   drawing's own 96x64 ratio, above the name it illustrates. */
+.card-art {
+  display: block;
+  width: 100%;
+  aspect-ratio: 96 / 64;
+}
+
+/* The three shapes every card is drawn from. The frame is the picture's only
+   stroke; the body is the creature; the accent is the one detail it carries —
+   an eye, a knot — printed in the colour the card prints on foil, so it reads
+   as cut into the gold. */
+.art-frame {
+  fill: var(--table-lit);
+  stroke: var(--edge);
+  stroke-width: 1.5;
+}
+
+.art-body {
+  fill: var(--foil);
+}
+
+.art-accent {
+  fill: var(--on-foil);
+}
+
 .owned-head {
   display: flex;
   flex-wrap: wrap;
@@ -844,6 +871,21 @@ body {
   .match-side,
   .match-log-wrap {
     padding: 0.5rem 0.75rem 0.65rem;
+  }
+
+  /* A collection card that has a picture turns on its side: the picture beside
+     the name and the numbers rather than above them, so a dozen cards is a
+     couple of screens of scrolling instead of six, with the picture still big
+     enough to know the card by. A card with no drawing keeps the stacked layout
+     it falls back to. */
+  .owned-card:has(.card-art) {
+    grid-template-columns: minmax(0, 6rem) minmax(0, 1fr);
+    align-items: center;
+    column-gap: 0.75rem;
+  }
+
+  .owned-card .card-art {
+    grid-row: 1 / span 3;
   }
 
   /* A hand card face puts the card's name and numbers on one line and the
