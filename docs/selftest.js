@@ -1513,6 +1513,108 @@ export async function checks() {
       if (!unknownRefused) {
         fail('a match was started against "no-such-opponent", which is not an opponent this game has');
       }
+
+      // How an opponent plays is part of who it is: each declares whether it
+      // holds out for the dearest card it can afford or spends on the cheapest
+      // first, and not every opponent plays the same way — otherwise facing one
+      // feels exactly like facing the other, whatever the descriptions promise.
+      for (const opponent of opponentChoices) {
+        if (opponent.cardPreference !== "dearest" && opponent.cardPreference !== "cheapest") {
+          fail(
+            `the opponent "${opponent.name}" plays ${JSON.stringify(opponent.cardPreference)} — a preference has to ` +
+              'be "dearest" (its biggest affordable body) or "cheapest" (its smallest cards first)'
+          );
+        }
+      }
+      const preferences = new Set(opponentChoices.map((opponent) => opponent.cardPreference));
+      if (preferences.size < 2) {
+        fail(
+          `every opponent plays the same way (${JSON.stringify([...preferences])}), so facing one feels exactly ` +
+            "like facing the other however differently their decks are described"
+        );
+      }
+
+      // The first turn of the fixed deal shows that difference in the log: with
+      // the same shuffle Thornmere's hand holds a cost-3 Glowcap and a cost-3
+      // Mudback Turtle, so it holds out for one cost-3 body (the Glowcap, the
+      // stronger of the two), while Emberwake's holds a cost-1 Sprout and a
+      // cost-1 Pebble Toad, so it plays both cheap strikers in a single turn. The
+      // played costs are read back off the table the opponent built.
+      const firstTurnPlays = (opponentId) => {
+        const match = matchEngine.createMatch(cheapDeck, { rng: fixedRng, opponentId });
+        matchEngine.endTurn(match);
+        return {
+          costs: match.opponent.table.map((card) => card.cost),
+          lines: match.log.filter((line) => /^Opponent plays /.test(line)),
+        };
+      };
+
+      const slowTurn = firstTurnPlays("thornmere");
+      const fastTurn = firstTurnPlays("emberwake");
+      const nonDecreasing = (costs) => costs.every((cost, at) => at === 0 || costs[at - 1] <= cost);
+      const nonIncreasing = (costs) => costs.every((cost, at) => at === 0 || costs[at - 1] >= cost);
+
+      if (slowTurn.costs.length !== 1) {
+        fail(
+          `Thornmere's first turn played ${slowTurn.costs.length} card(s) (costs ${JSON.stringify(slowTurn.costs)}) — ` +
+            "the slow deck should hold out for its one biggest affordable body"
+        );
+      } else if (!nonIncreasing(slowTurn.costs)) {
+        fail(`Thornmere played its first turn's costs ${JSON.stringify(slowTurn.costs)}, which does not lead with its dearest card`);
+      }
+      if (fastTurn.costs.length < 2) {
+        fail(
+          `Emberwake's first turn played ${fastTurn.costs.length} card(s) (costs ${JSON.stringify(fastTurn.costs)}) — ` +
+            "the fast deck should fill its table with several cheap strikers in one turn"
+        );
+      } else if (!nonDecreasing(fastTurn.costs)) {
+        fail(`Emberwake played its first turn's costs ${JSON.stringify(fastTurn.costs)}, which does not lead with its cheapest cards`);
+      }
+      if (JSON.stringify(slowTurn.costs) === JSON.stringify(fastTurn.costs)) {
+        fail(
+          `Thornmere and Emberwake played the same first turn (costs ${JSON.stringify(slowTurn.costs)}), so the match ` +
+            "does not play the kind of deck each is described as"
+        );
+      }
+      for (const [name, turn] of [
+        ["Thornmere", slowTurn],
+        ["Emberwake", fastTurn],
+      ]) {
+        if (turn.lines.length !== turn.costs.length) {
+          fail(
+            `${name} played ${turn.costs.length} card(s) but the log holds ${turn.lines.length} "Opponent plays" ` +
+              `line(s): ${JSON.stringify(turn.lines)}`
+          );
+        }
+      }
+      if (JSON.stringify(slowTurn.lines) === JSON.stringify(fastTurn.lines)) {
+        fail(
+          `the match log reads the same for both opponents (${JSON.stringify(slowTurn.lines)}), so a player cannot see ` +
+            "them play differently"
+        );
+      }
+
+      // However an opponent chooses its cards, a match against it still reaches a
+      // result: a win or a loss, not a board neither side can finish.
+      for (const opponent of opponentChoices) {
+        const finishing = matchEngine.createMatch(cheapDeck, { rng: fixedRng, opponentId: opponent.id });
+        for (let move = 0; move < 120 && !finishing.over; move += 1) {
+          const playable = finishing.player.hand.find((card) => card.cost <= finishing.player.energy);
+          if (playable) matchEngine.playCard(finishing, playable.id);
+          else matchEngine.endTurn(finishing);
+        }
+        if (!finishing.over) {
+          fail(
+            `a match against "${opponent.name}" (${opponent.cardPreference}) did not reach a result in 120 moves — ` +
+              `both heroes stood at ${finishing.player.health} and ${finishing.opponent.health} health`
+          );
+        } else if (finishing.outcome !== "win" && finishing.outcome !== "loss") {
+          fail(
+            `a match against "${opponent.name}" finished with outcome ${JSON.stringify(finishing.outcome)} instead of a ` +
+              "win or a loss"
+          );
+        }
+      }
     }
 
     const affordable = dealt.player.hand.find((card) => card.cost <= dealt.player.energy);
