@@ -44,10 +44,11 @@ const SCREEN_LABELS = {
   play: "Play",
 };
 
-// The two views the Collection screen's set list can be in: every card in the
-// game, or only the ones not collected yet. The list is also the schema a tool
-// checks against, so a caller cannot ask for a view the page does not show.
-const COLLECTION_VIEWS = ["all", "missing"];
+// The three views the Collection screen's set list can be in: every card in the
+// game, only the ones not collected yet, or only the ones whose face carries a
+// when-played ability. The list is also the schema a tool checks against, so a
+// caller cannot ask for a view the page does not show.
+const COLLECTION_VIEWS = ["all", "missing", "abilities"];
 
 // The two orders the Collection screen's set list can be read in: the catalog's
 // own order, or cheapest first. The list is also the schema a tool checks
@@ -133,8 +134,9 @@ const state = {
   // card by default. It is a page-only choice, cleared with each new turn.
   selectedAttacker: null,
   // Which cards the Collection screen's set list shows: "all" for every card in
-  // the game, "missing" for only the ones not collected yet. It is a page-only
-  // choice, so switching it never touches the collection or the deck.
+  // the game, "missing" for only the ones not collected yet, "abilities" for
+  // only the ones that act when played. It is a page-only choice, so switching
+  // it never touches the collection or the deck.
   collectionView: "all",
   // How the Collection screen's set list is read: "catalog" in the game's own
   // order, "cost" cheapest first. Like the view, it is a page-only choice, so
@@ -1333,11 +1335,11 @@ export function toggleMatchRules() {
 
 /**
  * Choose which cards the Collection screen's set list shows — what a visitor
- * does by pressing the "All cards" or "Still to collect" button, and what the
- * set-collection-view tool does on their behalf. It only changes what the list
- * shows: the collection and the deck are untouched. Refused, with the reason,
- * when the view names neither "all" nor "missing". Returns the state
- * afterwards, the same shape readState() gives.
+ * does by pressing the "All cards", "Still to collect" or "Acts when played"
+ * button, and what the set-collection-view tool does on their behalf. It only
+ * changes what the list shows: the collection and the deck are untouched.
+ * Refused, with the reason, when the view is not one of COLLECTION_VIEWS.
+ * Returns the state afterwards, the same shape readState() gives.
  */
 export function setCollectionView(view) {
   if (!COLLECTION_VIEWS.includes(view)) {
@@ -1688,21 +1690,53 @@ function deckCardRow(card) {
   return item;
 }
 
+// What each view of the set list says it is showing: the words a screen reader
+// hears for the list, and the note it prints when the view has nothing to list.
+// Written once per view, so a view's label and its empty note always describe
+// the same cards.
+const COLLECTION_VIEW_TEXT = {
+  all: {
+    label: "Every card in the game, with the cards in your collection marked",
+    empty: "You have collected every card in the game.",
+  },
+  missing: {
+    label: "Cards in the game not collected yet",
+    empty: "You have collected every card in the game.",
+  },
+  abilities: {
+    label: "Cards in the game that act when played",
+    empty: "No card in the game acts when played.",
+  },
+};
+
+/**
+ * Whether a card belongs in the view the set list is showing: every card in
+ * "all", the ones not collected yet in "missing", and the ones whose face does
+ * something the moment it is played in "abilities".
+ */
+function isInCollectionView(card) {
+  if (state.collectionView === "missing") return !card.owned;
+  if (state.collectionView === "abilities") return card.ability !== null;
+  return true;
+}
+
 /**
  * Draw the card set: every card in the game — the ones the player holds with
  * their deck controls, and the ones they do not yet with a note saying so — or,
  * in the "missing" view, only the cards not collected yet, so a player working
- * toward a full set can hide what they already have. When nothing is missing,
- * the list says so rather than reading as an empty set.
+ * toward a full set can hide what they already have, or, in the "abilities"
+ * view, only the cards whose face carries a when-played ability, so the ability
+ * can be chosen for on purpose. When a view has nothing to list, it says so
+ * rather than reading as an empty set.
  */
 function renderCollectionCards() {
   const list = document.getElementById("collection-list");
   if (!list) return;
 
-  const showingMissing = state.collectionView === "missing";
+  const view = COLLECTION_VIEW_TEXT[state.collectionView];
   const catalogCards = listAllCards(state.cards);
   const catalogIndexById = new Map(catalogCards.map((card, index) => [card.id, index]));
-  const shown = catalogCards.filter((card) => !showingMissing || !card.owned);
+  const shown = catalogCards.filter(isInCollectionView);
   // Catalog order is the default reading; "cost" reorders a copy of the same
   // cards cheapest-first, ties left in catalog order so the list reads the same
   // every time. It changes nothing about the collection or the deck.
@@ -1713,17 +1747,12 @@ function renderCollectionCards() {
 
   // The list names what it is showing, so a screen reader hears the same view
   // the buttons say is selected.
-  list.setAttribute(
-    "aria-label",
-    showingMissing
-      ? "Cards in the game not collected yet"
-      : "Every card in the game, with the cards in your collection marked"
-  );
+  list.setAttribute("aria-label", view.label);
 
   if (!cards.length) {
     const empty = document.createElement("li");
     empty.className = "collection-empty";
-    empty.textContent = "You have collected every card in the game.";
+    empty.textContent = view.empty;
     list.replaceChildren(empty);
     return;
   }
@@ -2098,9 +2127,10 @@ export function readMatch() {
  * the list-collection tool returns. `ownedCards` narrows it to what is actually
  * held, and `setTotal` is how many different cards the game has, so
  * `distinctCards` of `setTotal` is how close the set is to complete. `view`
- * says which cards the Collection screen's set list is showing — every card, or
- * only the ones not collected yet — and `order` how those cards are read, in the
- * game's own catalog order or cheapest first.
+ * says which cards the Collection screen's set list is showing — every card,
+ * only the ones not collected yet, or only those that act when played — and
+ * `order` how those cards are read, in the game's own catalog order or cheapest
+ * first.
  */
 export function readCollection() {
   return {
@@ -2109,7 +2139,8 @@ export function readCollection() {
     cardsOwned: state.cardsOwned,
     distinctCards: state.distinctCards,
     setTotal: state.setTotal,
-    // Which cards the Collection screen's set list is showing: "all" or "missing".
+    // Which cards the Collection screen's set list is showing: "all", "missing"
+    // or "abilities".
     view: state.collectionView,
     // How that list is read: "catalog" for the game's own order, "cost" cheapest first.
     order: state.collectionOrder,
