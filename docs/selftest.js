@@ -1557,5 +1557,209 @@ export async function checks() {
     }
   }
 
+  // --- Every screen fits the window it is opened in -------------------------
+
+  // The suite runs in whatever window the build opened it in, so what holds at
+  // every width is checked at every width, and the checks that only mean
+  // something on one kind of screen are gated on it.
+  //
+  // The window is read from the document element rather than `innerWidth`: on a
+  // phone a page that overflows does not scroll sideways — the browser widens the
+  // layout viewport and shrinks the page to fit it, so `innerWidth` grows to
+  // match the overflow and hides the fault being looked for.
+  const PHONE_WIDTH = 719; // where the page's own phone layout begins
+  const root = document.documentElement;
+  const viewportWidth = root.clientWidth;
+  const viewportHeight = root.clientHeight;
+  const isPhone = viewportWidth <= PHONE_WIDTH;
+  const scrolling = document.scrollingElement || root;
+  const rectOf = (element) => element.getBoundingClientRect();
+
+  /**
+   * The horizontal extent of everything a screen paints: the elements carrying
+   * text or media, rather than the containers around them, so a full-width
+   * background behind a centred column still measures as a column.
+   */
+  function paintedExtent() {
+    let left = Infinity;
+    let right = -Infinity;
+    for (const element of [...document.querySelectorAll("body *")].slice(0, 1500)) {
+      const style = getComputedStyle(element);
+      if (style.display === "none" || style.visibility === "hidden") continue;
+      const carriesContent =
+        ["IMG", "SVG", "CANVAS", "VIDEO", "INPUT", "BUTTON", "SELECT", "TEXTAREA"].includes(element.tagName) ||
+        [...element.childNodes].some((node) => node.nodeType === 3 && node.textContent.trim().length > 0);
+      if (!carriesContent) continue;
+      const rect = rectOf(element);
+      if (rect.width === 0 || rect.height === 0) continue;
+      left = Math.min(left, rect.left);
+      right = Math.max(right, rect.right);
+    }
+    return { left, right };
+  }
+
+  /** What a control says it does: its own words, or the name given to it. */
+  const controlName = (control) =>
+    (control.innerText || control.value || control.getAttribute("aria-label") || "").trim();
+
+  // A match on the Play screen is what the phone layout is measured with: both
+  // heroes, the energy, the hand and the actions have to share the first screen,
+  // and an empty board would measure none of them.
+  if (!game.readState().match || game.readState().match.over) {
+    try {
+      game.startMatch();
+    } catch (error) {
+      fail(`a match could not be dealt to measure the screens with — ${error.message}`);
+    }
+  }
+
+  for (const name of SCREENS) {
+    game.showScreen(name);
+    window.scrollTo(0, 0);
+
+    // It has to fit: nothing sideways, and nothing painted past the edge.
+    if (scrolling.scrollWidth > viewportWidth + 1) {
+      fail(
+        `the "${name}" screen scrolls sideways on a ${viewportWidth}px window: its content is ` +
+          `${scrolling.scrollWidth}px wide, so part of it is off the right edge`
+      );
+    }
+    const extent = paintedExtent();
+    if (extent.right > viewportWidth + 1 && extent.left < viewportWidth) {
+      fail(
+        `the "${name}" screen paints ${Math.round(extent.right - viewportWidth)}px past the right edge of a ` +
+          `${viewportWidth}px window, so part of it is cut off`
+      );
+    }
+
+    // A large window has to be played on, not framed: the same screen in a
+    // narrow column in the middle of it is the screen a phone gets, only smaller.
+    if (!isPhone && extent.right > extent.left) {
+      const span = (Math.min(viewportWidth, extent.right) - Math.max(0, extent.left)) / viewportWidth;
+      if (span < 0.6) {
+        fail(
+          `the "${name}" screen uses ${Math.round(span * 100)}% of a ${viewportWidth}px window, so most of a ` +
+            "large screen is left empty instead of being played on"
+        );
+      }
+    }
+
+    // And it has to be usable without a mouse: every control a real one, named,
+    // and reachable with Tab.
+    const controls = [
+      ...screen(name).querySelectorAll("button, a[href], input, select, textarea, [role='button']"),
+    ].filter((control) => {
+      const rect = rectOf(control);
+      return rect.width > 0 && rect.height > 0;
+    });
+    if (!controls.length) {
+      fail(`the "${name}" screen offers no control at all, so a visitor can do nothing from it`);
+    }
+    for (const control of controls) {
+      const tag = control.tagName.toLowerCase();
+      const label = controlName(control) || tag;
+      if (!controlName(control)) {
+        fail(`a ${tag} on the "${name}" screen has no name, so nobody can tell what pressing it does`);
+      }
+      if (!["button", "a", "input", "select", "textarea"].includes(tag)) {
+        fail(
+          `"${label}" on the "${name}" screen is a ${tag} rather than a real control, ` +
+            "so a keyboard or a screen reader cannot operate it"
+        );
+      }
+      if (control.tabIndex < 0) {
+        fail(`"${label}" on the "${name}" screen cannot be reached with Tab, so it is unusable without a mouse`);
+      }
+    }
+  }
+  game.showScreen("play");
+  window.scrollTo(0, 0);
+
+  // Keyboard focus has to be visible wherever it lands. The rule is read from the
+  // stylesheet rather than a focused control measured, because this suite clicks
+  // a great deal — and after a click `:focus-visible` deliberately matches
+  // nothing on a programmatic focus, so a focused control would answer the wrong
+  // question.
+  function focusRing() {
+    const flatten = (rules) =>
+      [...rules].flatMap((rule) => (rule.cssRules && rule.cssRules.length ? flatten(rule.cssRules) : [rule]));
+    const rules = [...document.styleSheets].flatMap((sheet) => {
+      try {
+        return flatten(sheet.cssRules);
+      } catch {
+        return []; // a stylesheet this page does not own is not this page's to answer for
+      }
+    });
+    let ring = null;
+    for (const rule of rules) {
+      if (!rule.selectorText?.includes(":focus-visible")) continue;
+      const declared = rule.style.outline || rule.style.boxShadow;
+      if (declared) ring = declared; // the later rule wins, as it does in the cascade
+    }
+    return ring;
+  }
+  const ring = focusRing();
+  if (!ring) {
+    fail("no :focus-visible rule declares an outline, so a keyboard visitor cannot see which control has focus");
+  } else if (/^(none|0)(\s|$)/.test(ring)) {
+    fail(
+      `the last :focus-visible rule leaves focus invisible (${ring}), so a keyboard visitor cannot see which control has focus`
+    );
+  }
+
+  // The deck's toggle says which way it will go, so whether a card is in the
+  // deck is read from its label rather than from the colour of its keyline.
+  const deckToggles = [...document.querySelectorAll(".deck-toggle")];
+  if (!deckToggles.length) {
+    fail("the collection screen offers no deck toggle, so a card cannot be added to the deck");
+  }
+  for (const toggle of deckToggles) {
+    const label = textOf(toggle);
+    if (!/^(Add|Remove) .+ (to|from) deck$/.test(label)) {
+      fail(
+        `a deck toggle does not say what pressing it will do: it reads "${label || "(nothing)"}" ` +
+          "instead of naming the card and whether it is added or removed"
+      );
+    }
+  }
+
+  // --- The match fits a phone in portrait -----------------------------------
+
+  if (isPhone) {
+    const live = game.readState().match;
+    if (!live || live.over) {
+      fail("no live match could be dealt, so the match's layout on a phone cannot be checked");
+    } else {
+      const bar = document.querySelector("#screen-play .actions");
+      const barTop = bar ? rectOf(bar).top : viewportHeight;
+      for (const [what, element] of [
+        ["your health", document.getElementById("match-player-health")],
+        ["the opponent's health", document.getElementById("match-opponent-health")],
+        ["your energy", document.getElementById("match-energy")],
+        ["your hand", document.getElementById("match-hand")],
+        ["End turn", document.getElementById("action-end-turn")],
+      ]) {
+        if (!element || element.hidden) {
+          fail(`${what} is not on the match screen, so a phone cannot show it on the first screen`);
+          continue;
+        }
+        const bottom = rectOf(element).bottom;
+        if (bottom > viewportHeight + 1) {
+          fail(
+            `${what} ends ${Math.round(bottom - viewportHeight)}px below the fold on a ` +
+              `${viewportWidth}x${viewportHeight} phone, so a match cannot be read without scrolling`
+          );
+        }
+      }
+      const hand = document.getElementById("match-hand");
+      if (hand && rectOf(hand).bottom > barTop + 1) {
+        fail(
+          `the hand reaches ${Math.round(rectOf(hand).bottom)}px while the action bar starts at ` +
+            `${Math.round(barTop)}px, so the bar covers the cards a player has to press`
+        );
+      }
+    }
+  }
+
   return problems;
 }

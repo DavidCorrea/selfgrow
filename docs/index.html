@@ -196,12 +196,13 @@
           </section>
         </div>
 
-        <!-- What just happened in the match, and why a move was refused. Always
-             present, so the reason is reachable instead of hidden behind a
-             disabled control. -->
-        <p class="match-message" id="match-message" role="status" aria-live="polite"></p>
-
+        <!-- What just happened in the match, and why a move was refused, rides in
+             the same rail as the match's controls: on a phone that rail is a bar
+             docked to the foot of the window, so the status and the actions are
+             read together without scrolling. It is always in the page, so the
+             reason stays reachable instead of hidden behind a disabled control. -->
         <div class="actions">
+          <p class="match-message" id="match-message" role="status" aria-live="polite"></p>
           <button type="button" class="btn btn-primary" id="action-start-match">Start match</button>
           <button type="button" class="btn btn-primary" id="action-end-turn" hidden>End turn</button>
           <button type="button" class="btn btn-secondary" data-screen-target="home">Back to home</button>
