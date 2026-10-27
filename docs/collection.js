@@ -3,8 +3,9 @@
  * written to.
  *
  * A collection is a list of `{ id, copies }` entries in catalog order; a deck is
- * a flat list of owned card ids, no duplicates, never more than `DECK_LIMIT`.
- * Both live in one versioned record under a single key, so closing the page and
+ * a flat list of owned card ids, one entry per copy, never holding more copies of
+ * an id than the player owns and never more than `DECK_LIMIT` in all. Both live
+ * in one versioned record under a single key, so closing the page and
  * coming back is the same collection and the same deck. Storage is never assumed
  * to work: when the browser refuses it, the collection is kept in memory for the
  * session and reported as not saved, rather than the page losing the player's
@@ -114,17 +115,23 @@ function readPayload(storage) {
 }
 
 /**
- * A deck read from a saved payload: owned card ids only, no duplicates, never
- * more than `DECK_LIMIT`. A deck naming a card the player does not own, or one
- * card twice, is cleaned up rather than reaching the screen.
+ * A deck read from a saved payload: owned card ids only, at most as many copies
+ * of each as the player owns, never more than `DECK_LIMIT` in all. A deck naming
+ * a card the player does not own, or repeating an id more times than it is owned,
+ * is cleaned up rather than reaching the screen.
  */
 function normalizeDeck(payload, cards) {
   if (!Array.isArray(payload?.deck)) return [];
 
-  const owned = new Set(cards.map((card) => card.id));
+  const ownedCopies = new Map(cards.map((card) => [card.id, card.copies]));
+  const placed = new Map();
   const deck = [];
   for (const id of payload.deck) {
-    if (typeof id !== "string" || !owned.has(id) || deck.includes(id)) continue;
+    if (typeof id !== "string") continue;
+    const owned = ownedCopies.get(id) ?? 0;
+    const already = placed.get(id) ?? 0;
+    if (already >= owned) continue;
+    placed.set(id, already + 1);
     deck.push(id);
     if (deck.length === DECK_LIMIT) break;
   }

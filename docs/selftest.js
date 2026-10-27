@@ -653,6 +653,10 @@ export async function checks() {
 
   const ownedIds = owned.cards.map((card) => card.id);
   const deckIds = () => game.readState().deck.map((card) => card.id);
+  const heldCopies = (id) => deckIds().filter((held) => held === id).length;
+  const ownedCopies = (id) => owned.cards.find((card) => card.id === id)?.copies ?? 0;
+  const addControl = (id) => document.querySelector(`[data-deck-add="${id}"]`);
+  const removeControl = (id) => document.querySelector(`[data-deck-remove="${id}"]`);
 
   // A visit with no save at all is dealt the starter collection and starts with
   // an empty deck — the state a reload builds from nothing.
@@ -664,9 +668,48 @@ export async function checks() {
     fail(`a first visit should start with an empty deck, but loadGame gave ${fresh.deck.length} card(s) in it`);
   }
 
-  for (const id of ownedIds.slice(0, 10)) game.addCardToDeck(id);
+  // A card owned in several copies can be put in the deck that many times, so a
+  // collection of duplicates is worth building around. The starter collection
+  // holds three Sprouts, which is a real owned card rather than a fixture.
+  const multipleId = owned.cards.find((card) => card.copies >= 3)?.id;
+  if (!multipleId) {
+    fail("the collection holds no card in three or more copies, so a duplicate deck cannot be built");
+  } else {
+    for (let copy = 0; copy < 3; copy++) game.addCardToDeck(multipleId);
+    if (heldCopies(multipleId) !== 3) {
+      fail(
+        `"${multipleId}" is owned in ${ownedCopies(multipleId)} copies but only ${heldCopies(multipleId)} ` +
+          "reached the deck — duplicates are still being dropped"
+      );
+    }
+
+    // A fourth copy than the player owns is refused, and the reason names how
+    // many they do own.
+    let overOwned = "";
+    try {
+      game.addCardToDeck(multipleId);
+    } catch (error) {
+      overOwned = error.message;
+    }
+    if (!overOwned) {
+      fail(`a fourth copy of "${multipleId}" was added although only ${ownedCopies(multipleId)} are owned`);
+    } else if (!overOwned.includes(String(ownedCopies(multipleId)))) {
+      fail(
+        `a fourth copy of "${multipleId}" was refused without naming the ${ownedCopies(multipleId)} owned: ` +
+          `"${overOwned}"`
+      );
+    }
+  }
+
+  // Fill the rest of the deck with the other owned cards, so the ten-card limit
+  // is reached by a real deck a player could build.
+  for (const id of ownedIds) {
+    if (deckIds().length >= 10) break;
+    if (deckIds().includes(id)) continue;
+    game.addCardToDeck(id);
+  }
   if (deckIds().length !== 10) {
-    fail(`ten cards were added to the deck but it reports ${deckIds().length}`);
+    fail(`a full deck of ten cards was built but it reports ${deckIds().length}`);
   }
   if (game.readState().deckSize !== 10) {
     fail(`the deck holds ten cards but get-state reports deckSize ${game.readState().deckSize}`);
@@ -734,39 +777,91 @@ export async function checks() {
     fail(`the home screen's deck summary does not name every card in the deck: it reads "${deckSummary}"`);
   }
 
-  // The eleventh card is refused, and the page says why.
-  const eleventhId = ownedIds[10];
-  const eleventhButton = document.querySelector(`[data-deck-toggle="${eleventhId}"]`);
-  if (!eleventhButton) {
-    fail(`the collection screen has no control to add "${eleventhId}", so a deck cannot be built from it`);
-  } else {
-    eleventhButton.click();
-    if (deckIds().length !== 10) {
-      fail(`adding an eleventh card changed the deck to ${deckIds().length} cards — a deck holds at most ten`);
-    }
-    const refusal = textOf(document.getElementById("deck-message"));
-    if (!refusal.includes("10")) {
-      fail(`an eleventh card was refused but the page does not say why: it reads "${refusal || "(nothing)"}"`);
-    }
-    // A refused add leaves the deck's pictures as they were: it redraws them
-    // together with the size it reports.
-    if (deckPictureRows().length !== game.readState().deck.length) {
+  // Every owned card says how many of its copies are in the deck, so the count a
+  // duplicate deck is read from stays on the page beside the card itself.
+  const ownedRows = list ? [...list.querySelectorAll(".owned-card")] : [];
+  for (const row of ownedRows) {
+    const id = row.dataset.cardId;
+    const shown = textOf(row.querySelector(`[data-in-deck="${id}"]`));
+    const expected = `In deck: ${heldCopies(id)} of ${ownedCopies(id)}`;
+    if (!shown) {
+      fail(`the collection screen does not say how many copies of "${id}" are in the deck`);
+    } else if (shown !== expected) {
       fail(
-        `after a refused add the deck holds ${game.readState().deck.length} card(s) but ` +
-          `${deckPictureRows().length} are shown as a picture`
+        `"${id}" is owned in ${ownedCopies(id)} copies with ${heldCopies(id)} in the deck, but the collection ` +
+          `screen reads "${shown}" instead of "${expected}"`
       );
     }
   }
 
-  // Taking one out frees a slot, and the page says what happened.
+  // The eleventh card is refused, and the page says why.
+  const eleventhId = ownedIds.find((id) => !deckIds().includes(id));
+  if (!eleventhId) {
+    fail("every owned card is already in the deck, so the ten-card limit cannot be checked");
+  } else {
+    const eleventhButton = addControl(eleventhId);
+    if (!eleventhButton) {
+      fail(`the collection screen has no control to add "${eleventhId}", so a deck cannot be built from it`);
+    } else {
+      eleventhButton.click();
+      if (deckIds().length !== 10) {
+        fail(`adding an eleventh card changed the deck to ${deckIds().length} cards — a deck holds at most ten`);
+      }
+      const refusal = textOf(document.getElementById("deck-message"));
+      if (!refusal.includes("10")) {
+        fail(`an eleventh card was refused but the page does not say why: it reads "${refusal || "(nothing)"}"`);
+      }
+      // A refused add leaves the deck's pictures as they were: it redraws them
+      // together with the size it reports.
+      if (deckPictureRows().length !== game.readState().deck.length) {
+        fail(
+          `after a refused add the deck holds ${game.readState().deck.length} card(s) but ` +
+            `${deckPictureRows().length} are shown as a picture`
+        );
+      }
+    }
+  }
+
+  // Pressing Add on a card whose every owned copy is already placed reports the
+  // refusal naming the owned count rather than quietly doing nothing.
+  if (multipleId) {
+    const atLimitButton = addControl(multipleId);
+    if (!atLimitButton) {
+      fail(`the collection screen has no Add control for "${multipleId}"`);
+    } else {
+      atLimitButton.click();
+      if (heldCopies(multipleId) !== ownedCopies(multipleId)) {
+        fail(
+          `pressing Add on "${multipleId}", all ${ownedCopies(multipleId)} of which are already placed, ` +
+            `changed the deck to ${heldCopies(multipleId)} copies`
+        );
+      }
+      const refusal = textOf(document.getElementById("deck-message"));
+      if (!refusal.includes(String(ownedCopies(multipleId)))) {
+        fail(
+          `pressing Add on "${multipleId}" with all ${ownedCopies(multipleId)} copies already placed was ` +
+            `refused without naming the owned count: "${refusal || "(nothing)"}"`
+        );
+      }
+    }
+  }
+
+  // Taking one copy out drops exactly one, and the page says what happened.
   const firstDeckId = deckIds()[0];
-  const removeButton = document.querySelector(`[data-deck-toggle="${firstDeckId}"]`);
+  const firstCopiesBefore = heldCopies(firstDeckId);
+  const removeButton = removeControl(firstDeckId);
   if (!removeButton) {
     fail(`the collection screen has no control to remove "${firstDeckId}" from the deck`);
   } else {
     removeButton.click();
     if (deckIds().length !== 9) {
       fail(`removing a card left the deck at ${deckIds().length} cards instead of nine`);
+    }
+    if (heldCopies(firstDeckId) !== firstCopiesBefore - 1) {
+      fail(
+        `removing "${firstDeckId}" left ${heldCopies(firstDeckId)} of its ${firstCopiesBefore} copies instead of ` +
+          `${firstCopiesBefore - 1} — a remove must drop exactly one copy`
+      );
     }
     if (!textOf(document.getElementById("deck-message")).toLowerCase().includes("removed")) {
       fail("removing a card did not tell the player what happened");
@@ -781,7 +876,7 @@ export async function checks() {
     }
   }
 
-  // What the page holds now is what a reload reads back.
+  // What the page holds now is what a reload reads back, duplicates included.
   const savedDeck = deckIds();
   const reloadedGame = collection.loadGame();
   if (JSON.stringify(reloadedGame.deck) !== JSON.stringify(savedDeck)) {
@@ -789,6 +884,18 @@ export async function checks() {
       `the deck did not survive a reload: the page holds ${JSON.stringify(savedDeck)} but loadGame ` +
         `read back ${JSON.stringify(reloadedGame.deck)}`
     );
+  }
+  const duplicateId = savedDeck.find((id) => savedDeck.filter((held) => held === id).length > 1);
+  if (!duplicateId) {
+    fail("the deck holds no duplicate, so duplicates surviving a reload cannot be checked");
+  } else {
+    const reloadedCopies = reloadedGame.deck.filter((id) => id === duplicateId).length;
+    const savedCopies = savedDeck.filter((id) => id === duplicateId).length;
+    if (reloadedCopies !== savedCopies) {
+      fail(
+        `a deck holding "${duplicateId}" ${savedCopies} times read back with ${reloadedCopies} copies`
+      );
+    }
   }
   const savedPayload = JSON.parse(window.localStorage.getItem(collection.STORAGE_KEY) ?? "null");
   if (!savedPayload || !Array.isArray(savedPayload.deck)) {
@@ -806,17 +913,27 @@ export async function checks() {
       })
     );
 
-  // A saved deck naming a card the player does not own, or one card twice, is
-  // cleaned up on the way in rather than reaching the page.
-  const dirtyDeck = savedWithDeck([ownedIds[0], ownedIds[0], "not-a-real-card", ownedIds[1], ownedIds[2]]);
-  if (JSON.stringify(dirtyDeck.deck) !== JSON.stringify(ownedIds.slice(0, 3))) {
+  // A saved deck is trimmed on the way in: an unowned id is dropped, and a card
+  // repeated more times than it is owned keeps only the copies that are owned.
+  const tripleId = owned.cards.find((card) => card.copies >= 3).id;
+  const trimmedDeck = savedWithDeck([
+    tripleId,
+    tripleId,
+    tripleId,
+    tripleId,
+    tripleId,
+    "not-a-real-card",
+    ownedIds[1],
+  ]);
+  const expectedTrim = [tripleId, tripleId, tripleId, ownedIds[1]];
+  if (JSON.stringify(trimmedDeck.deck) !== JSON.stringify(expectedTrim)) {
     fail(
-      `a saved deck with a duplicate and an unowned card was not cleaned up: read ${JSON.stringify(dirtyDeck.deck)} ` +
-        `instead of ${JSON.stringify(ownedIds.slice(0, 3))}`
-    )
+      `a saved deck with five copies of a card owned three times and an unowned id was not trimmed: read ` +
+        `${JSON.stringify(trimmedDeck.deck)} instead of ${JSON.stringify(expectedTrim)}`
+    );
   }
 
-  // A saved deck with more than ten cards is capped at the limit.
+  // A saved deck with more than ten distinct-owned cards is capped at the limit.
   const overfullDeck = savedWithDeck(ownedIds);
   if (overfullDeck.deck.length !== 10) {
     fail(`a saved deck of ${ownedIds.length} ids was read back as ${overfullDeck.deck.length} cards, not a clean ten`);
@@ -897,6 +1014,28 @@ export async function checks() {
     }
     if (!dealt.log.some((line) => /draw/i.test(line))) {
       fail("the opening turn drew a card but the match log never says a card was drawn");
+    }
+
+    // A deck built from duplicates is dealt as the copies it holds: three Sprouts
+    // in the deck is three Sprout cards dealt, not one collapsed to a single.
+    const duplicateDeck = ["sprout", "sprout", "sprout", "pebble-toad", "bramble-hound", "thornling"];
+    const dealtDoubles = matchEngine.createMatch(duplicateDeck, { rng: fixedRng });
+    const dealtIds = [
+      ...dealtDoubles.player.hand,
+      ...dealtDoubles.player.table,
+      ...dealtDoubles.player.deck,
+    ].map((card) => card.id);
+    const dealtCopies = (id) => dealtIds.filter((held) => held === id).length;
+    if (dealtIds.length !== duplicateDeck.length) {
+      fail(
+        `a match dealt ${dealtIds.length} card(s) from a deck of ${duplicateDeck.length}, so duplicates were dropped`
+      );
+    }
+    for (const id of new Set(duplicateDeck)) {
+      const held = duplicateDeck.filter((deckId) => deckId === id).length;
+      if (dealtCopies(id) !== held) {
+        fail(`a deck holding ${held} copies of "${id}" dealt ${dealtCopies(id)} of them`);
+      }
     }
 
     // A draw moves a card rather than making one: after dealing and the opening
@@ -2359,8 +2498,12 @@ export async function checks() {
     const affordable = byCost.filter((card) => card.cost <= matchEngine.MAX_ENERGY);
     const knownDeck = [...tooDear, ...affordable].slice(0, game.readState().deckLimit);
 
-    for (const card of game.readState().deck) {
-      if (!knownDeck.some((wanted) => wanted.id === card.id)) game.removeCardFromDeck(card.id);
+    // The deck was built earlier to exercise duplicates; this match needs a known
+    // hand, so it is rebuilt to one copy of each chosen card.
+    for (const id of [...deckIds()]) {
+      if (!knownDeck.some((wanted) => wanted.id === id) || heldCopies(id) > 1) {
+        game.removeCardFromDeck(id);
+      }
     }
     for (const card of knownDeck) {
       if (!deckIds().includes(card.id)) game.addCardToDeck(card.id);
@@ -2780,12 +2923,12 @@ export async function checks() {
       }
     }
 
-    // The controls that sit on a card face — a deck toggle, a card's Play — get
+    // The controls that sit on a card face — a deck Add, a card's Play — get
     // their own smaller padding and font, because a card holds many of them and
     // each has to read as quieter than the screen's own actions. Those sizes only
     // take effect if they outrank `.btn` in the cascade; when they do not, the
     // card control renders at exactly the rail's size and its size rules are dead.
-    const cardControl = { collection: ".deck-toggle", play: ".match-play" }[name];
+    const cardControl = { collection: ".deck-add", play: ".match-play" }[name];
     const railButtons = [...screen(name).querySelectorAll(".actions .btn")].filter(
       (button) => rectOf(button).height > 0
     );
@@ -2848,19 +2991,26 @@ export async function checks() {
     );
   }
 
-  // The deck's toggle says which way it will go, so whether a card is in the
-  // deck is read from its label rather than from the colour of its keyline.
-  const deckToggles = [...document.querySelectorAll(".deck-toggle")];
-  if (!deckToggles.length) {
-    fail("the collection screen offers no deck toggle, so a card cannot be added to the deck");
-  }
-  for (const toggle of deckToggles) {
-    const label = textOf(toggle);
-    if (!/^(Add|Remove) .+ (to|from) deck$/.test(label)) {
-      fail(
-        `a deck toggle does not say what pressing it will do: it reads "${label || "(nothing)"}" ` +
-          "instead of naming the card and whether it is added or removed"
-      );
+  // A card's Add and Remove controls each say which way they move it, so whether
+  // a card is in the deck is read from a label rather than from the colour of its
+  // keyline.
+  for (const [selector, pattern, which] of [
+    [".deck-add", /^Add .+ to deck$/, "Add"],
+    [".deck-remove", /^Remove .+ from deck$/, "Remove"],
+  ]) {
+    const controls = [...document.querySelectorAll(selector)];
+    if (!controls.length) {
+      fail(`the collection screen offers no ${which} control, so a card's copies cannot be managed`);
+      continue;
+    }
+    for (const control of controls) {
+      const label = textOf(control);
+      if (!pattern.test(label)) {
+        fail(
+          `a deck's ${which} control does not say what pressing it will do: it reads "${label || "(nothing)"}" ` +
+            `instead of naming the card and which way it moves it`
+        );
+      }
     }
   }
 

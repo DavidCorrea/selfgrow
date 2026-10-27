@@ -335,18 +335,44 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
-/* The toggle at the foot of each card face: which cards are chosen is shown in
-   the label, and the chosen ones carry a foil keyline so the state is visible
-   even before the deck list is read. Scoped as .btn.deck-toggle so these sizes
-   outrank .btn's own padding and font instead of being silently overridden. */
-.btn.deck-toggle {
-  width: 100%;
-  padding: 0.55rem 0.9rem;
-  font-size: 0.9rem;
+/* The deck controls at the foot of each card face: how many of its copies are
+   in the deck, then the buttons that add one more or take one out. Scoped under
+   .btn as .btn.deck-add / .btn.deck-remove so these sizes outrank .btn's own
+   padding and font instead of being silently overridden. */
+.deck-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.4rem;
+}
+
+.owned-in-deck {
+  grid-column: 1 / -1;
+  color: var(--ink-muted);
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.btn.deck-add,
+.btn.deck-remove {
+  padding: 0.45rem 0.5rem;
+  font-size: 0.8rem;
+  line-height: 1.15;
   text-align: center;
 }
 
-.deck-toggle.is-in-deck {
+/* An Add with every owned copy already placed, or a Remove with nothing in the
+   deck, still presses and reports the refusal — it only reads as the action that
+   will not succeed, so the button's own layer is the quiet one. */
+.btn.deck-add.is-at-limit,
+.btn.deck-remove.is-at-limit {
+  border-color: var(--edge-soft);
+  color: var(--ink-muted);
+  background-color: rgba(168, 177, 212, 0.03);
+}
+
+/* A card with at least one copy in the deck carries a foil keyline, so the
+   chosen ones are read at a glance even before the count is. */
+.btn.deck-remove:not(.is-at-limit) {
   border-color: rgba(242, 193, 78, 0.6);
   background-color: rgba(242, 193, 78, 0.12);
 }
@@ -714,7 +740,7 @@ body {
   background-color: rgba(168, 177, 212, 0.03);
 }
 
-/* Sized like .deck-toggle, and scoped under .btn for the same reason: at equal
+/* Sized like .deck-add, and scoped under .btn for the same reason: at equal
    specificity .btn's padding and font would win wherever it lands in the sheet. */
 .btn.match-play {
   padding: 0.45rem 0.8rem;

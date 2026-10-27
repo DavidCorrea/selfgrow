@@ -67,7 +67,7 @@ export function tools() {
       name: "add-card-to-deck",
       title: "Add an owned card to your deck",
       description:
-        "Adds one card you already own to your deck, exactly as pressing its \"Add … to deck\" button on the Collection screen does. Refused, with the reason, when the card is not owned, is already in the deck, or the deck is already at its limit of ten. Returns the state afterwards so you can see the deck it changed.",
+        "Adds one owned copy of a card to your deck, exactly as pressing its \"Add … to deck\" button on the Collection screen does. A card owned in three copies can go in the deck three times, each call adding one more, up to the deck's limit of ten. Refused, with the reason, when the card is not owned, when every copy you own is already in the deck (the reason names how many you own), or when the deck is already at its limit of ten. Returns the state afterwards so you can see the deck it changed.",
       inputSchema: {
         type: "object",
         properties: {
@@ -89,7 +89,7 @@ export function tools() {
       name: "remove-card-to-deck",
       title: "Remove a card from your deck",
       description:
-        "Removes one card from your deck and returns it to the collection, exactly as pressing its \"Remove … from deck\" button on the Collection screen does. Refused, with the reason, when the card is not in the deck. Returns the state afterwards so you can see the deck it changed.",
+        "Removes one copy of a card from your deck and returns it to the collection, exactly as pressing its \"Remove … from deck\" button on the Collection screen does — one call drops one copy, so a card held twice needs two calls to leave the deck entirely. Refused, with the reason, when no copy of the card is in the deck. Returns the state afterwards so you can see the deck it changed.",
       inputSchema: {
         type: "object",
         properties: {
