@@ -258,6 +258,7 @@ const matchOpponentHealthLabel = document.getElementById("match-opponent-health-
 // standing where their cards would once the table in front of it is empty.
 const matchOpponentStrikeTarget = document.getElementById("match-opponent-strike-target");
 const matchOpponentHandLabel = document.getElementById("match-opponent-hand-label");
+const matchOpponentEnergyLabel = document.getElementById("match-opponent-energy-label");
 const matchOpponentTableHeading = document.getElementById("match-opponent-table-heading");
 const matchMessage = document.getElementById("match-message");
 const startMatchButton = document.getElementById("action-start-match");
@@ -277,6 +278,7 @@ const matchFields = {
   opponentHealth: document.getElementById("match-opponent-health"),
   energy: document.getElementById("match-energy"),
   opponentHand: document.getElementById("match-opponent-hand"),
+  opponentEnergy: document.getElementById("match-opponent-energy"),
   deckRemaining: document.getElementById("match-deck-remaining"),
 };
 const matchHandList = document.getElementById("match-hand");
@@ -1348,12 +1350,16 @@ function renderMatch() {
   if (matchOpponentName) matchOpponentName.textContent = `Opponent: ${match.opponentName}`;
   if (matchOpponentHealthLabel) matchOpponentHealthLabel.textContent = `${match.opponentName} health`;
   if (matchOpponentHandLabel) matchOpponentHandLabel.textContent = `${match.opponentName}'s hand`;
+  if (matchOpponentEnergyLabel) matchOpponentEnergyLabel.textContent = `${match.opponentName}'s energy`;
   if (matchOpponentTableHeading) matchOpponentTableHeading.textContent = `${match.opponentName}'s table`;
 
   if (matchFields.playerHealth) matchFields.playerHealth.textContent = String(match.player.health);
   if (matchFields.opponentHealth) matchFields.opponentHealth.textContent = String(match.opponent.health);
   if (matchFields.energy) matchFields.energy.textContent = `${match.player.energy} of ${match.player.maxEnergy}`;
   if (matchFields.opponentHand) matchFields.opponentHand.textContent = String(match.opponent.hand.length);
+  if (matchFields.opponentEnergy) {
+    matchFields.opponentEnergy.textContent = `${match.opponent.energy} of ${match.opponent.maxEnergy}`;
+  }
   if (matchFields.deckRemaining) matchFields.deckRemaining.textContent = String(match.player.deck.length);
 
   const canAttack = !match.over && match.turn === "player";
@@ -2520,7 +2526,9 @@ function describeMatchCard(card) {
  * heroes' health, the player's energy, the hand, both tables — each table card
  * saying whether it has already attacked this turn (`hasAttacked`) — how many
  * cards the opponent holds (`opponentHand`, the face-down backs the board shows)
- * and how many are left to draw, the ordered log of what happened — its last line the
+ * with the energy the opponent has to spend on its own turn and its maximum
+ * (`opponentEnergy`/`opponentMaxEnergy`, the same "X of Y" the board prints
+ * beside their hand) and how many are left to draw, the ordered log of what happened — its last line the
  * final blow, or the concession when the match was given up — and the moves
  * available now — a live match always offers Concede beside its other moves, and
  * a finished one offers none. `endOfTurnTarget` is what every card of the
@@ -2563,6 +2571,8 @@ export function readMatch() {
       opponentHealth: null,
       energy: null,
       maxEnergy: null,
+      opponentEnergy: null,
+      opponentMaxEnergy: null,
       hand: [],
       table: [],
       opponentTable: [],
@@ -2598,6 +2608,8 @@ export function readMatch() {
     opponentHealth: match.opponent.health,
     energy: match.player.energy,
     maxEnergy: match.player.maxEnergy,
+    opponentEnergy: match.opponent.energy,
+    opponentMaxEnergy: match.opponent.maxEnergy,
     hand: match.player.hand.map(describeMatchCard),
     table: match.player.table.map(describeMatchCard),
     opponentTable: match.opponent.table.map(describeMatchCard),

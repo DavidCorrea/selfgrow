@@ -4539,6 +4539,25 @@ export async function checks() {
       if (!textOf(document.getElementById("match-energy")).includes(String(m.energy))) {
         fail(`the board prints your energy as "${textOf(document.getElementById("match-energy"))}", not the ${m.energy} the match holds`);
       }
+      // The opponent's energy stands beside their hand for the whole match, so a
+      // player can see what it could afford and why it stopped playing — and the
+      // label names the opponent, so the figure is never read bare.
+      const opponentEnergyField = document.getElementById("match-opponent-energy");
+      const expectedOpponentEnergyText = `${m.opponentEnergy} of ${m.opponentMaxEnergy}`;
+      if (!opponentEnergyField || textOf(opponentEnergyField) !== expectedOpponentEnergyText) {
+        fail(
+          `the board prints the opponent's energy as ` +
+            `"${opponentEnergyField ? textOf(opponentEnergyField) : "(nothing)"}", not the ` +
+            `"${expectedOpponentEnergyText}" the match holds`
+        );
+      }
+      const opponentEnergyLabelText = textOf(document.getElementById("match-opponent-energy-label"));
+      if (!opponentEnergyLabelText.includes(m.opponentName)) {
+        fail(
+          `the opponent's energy is labelled "${opponentEnergyLabelText}", which does not name the opponent ` +
+            `"${m.opponentName}" it stands for`
+        );
+      }
       if (textOf(document.getElementById("match-deck-remaining")) !== String(m.deckRemaining)) {
         fail(
           `the board prints ${textOf(document.getElementById("match-deck-remaining"))} cards left in deck ` +
@@ -4611,6 +4630,26 @@ export async function checks() {
         fail(`the match log on the page does not match the match's log: it reads ${JSON.stringify(printedLog)}`);
       }
 
+      // The opponent's energy and its maximum are part of the state a tool
+      // reads, so an agent sees the same figure the board prints — and it never
+      // reads above its own maximum.
+      const liveMatchState = game.readState().match;
+      if (
+        liveMatchState.opponentEnergy !== m.opponentEnergy ||
+        liveMatchState.opponentMaxEnergy !== m.opponentMaxEnergy
+      ) {
+        fail(
+          `the state reports the opponent's energy as ${liveMatchState.opponentEnergy} of ` +
+            `${liveMatchState.opponentMaxEnergy} instead of the ${m.opponentEnergy} of ${m.opponentMaxEnergy} ` +
+            "the match holds, so a tool cannot see what the opponent can spend"
+        );
+      }
+      if (liveMatchState.opponentEnergy > liveMatchState.opponentMaxEnergy) {
+        fail(
+          `the opponent's energy (${liveMatchState.opponentEnergy}) is reported above its maximum ` +
+            `(${liveMatchState.opponentMaxEnergy})`
+        );
+      }
       // The board is a battlefield, not a diagram: both tables lie on their own
       // playing surface, the opponent's hand is one face-down back per card it
       // holds, the deck is a stack of backs that shrinks, and an empty table
@@ -4773,6 +4812,80 @@ export async function checks() {
         fail(
           `the opponent played ${JSON.stringify(outsideOpponentDeck)}, which is not in the deck it was dealt from ` +
             JSON.stringify(cardCatalog.OPPONENT_DECK)
+        );
+      }
+
+      // The opponent's energy is shown while it takes its turn, so a player can
+      // follow what it could afford and why it stopped: every card it played is
+      // logged with the energy it had left, the first play starts from a full
+      // pool (the figure refilled at the start of its turn), the last line's
+      // energy is what the board now prints, and the total it spent is exactly
+      // what its pool fell by.
+      const opponentPlayLines = blowLines
+        .map((line) => /^Opponent plays (.+) \(cost (\d+)\) — energy (\d+) of (\d+)\.$/.exec(line))
+        .filter(Boolean)
+        .map((found) => ({
+          name: found[1],
+          cost: Number(found[2]),
+          energy: Number(found[3]),
+          maxEnergy: Number(found[4]),
+        }));
+      if (opponentPlayLines.length === 0) {
+        fail(
+          "the opponent took its turn but no line reported what it spent — the log reads " +
+            JSON.stringify(blowLines)
+        );
+      } else {
+        const playedNames = afterEnd.opponentTable.map((card) => card.name).sort();
+        const loggedNames = opponentPlayLines.map((line) => line.name).sort();
+        if (JSON.stringify(playedNames) !== JSON.stringify(loggedNames)) {
+          fail(
+            `the opponent's table holds ${JSON.stringify(playedNames)} after its turn but the log names ` +
+              `${JSON.stringify(loggedNames)} as played`
+          );
+        }
+        const wrongMax = opponentPlayLines.find((line) => line.maxEnergy !== afterEnd.opponentMaxEnergy);
+        if (wrongMax) {
+          fail(
+            `a play line states the opponent's energy maximum as ${wrongMax.maxEnergy} instead of the ` +
+              `${afterEnd.opponentMaxEnergy} the match holds`
+          );
+        }
+        const firstPlay = opponentPlayLines[0];
+        if (firstPlay.energy !== afterEnd.opponentMaxEnergy - firstPlay.cost) {
+          fail(
+            `the opponent's first play left it ${firstPlay.energy} energy, not the ` +
+              `${afterEnd.opponentMaxEnergy - firstPlay.cost} a full pool of ${afterEnd.opponentMaxEnergy} ` +
+              `minus its cost ${firstPlay.cost} gives — the pool did not refill at the start of its turn`
+          );
+        }
+        if (firstPlay.energy >= afterEnd.opponentMaxEnergy) {
+          fail(
+            `the opponent's first play left it a full ${firstPlay.energy} energy, so the figure never ` +
+              "dropped as it played"
+          );
+        }
+        const lastPlay = opponentPlayLines[opponentPlayLines.length - 1];
+        if (lastPlay.energy !== afterEnd.opponentEnergy) {
+          fail(
+            `the opponent's last play left it ${lastPlay.energy} energy but the match reports ` +
+              `${afterEnd.opponentEnergy}`
+          );
+        }
+        const spentEnergy = opponentPlayLines.reduce((total, line) => total + line.cost, 0);
+        if (spentEnergy !== afterEnd.opponentMaxEnergy - afterEnd.opponentEnergy) {
+          fail(
+            `the opponent spent ${spentEnergy} energy but its pool fell from ${afterEnd.opponentMaxEnergy} to ` +
+              `${afterEnd.opponentEnergy}`
+          );
+        }
+      }
+      const opponentEnergyAfter = textOf(document.getElementById("match-opponent-energy"));
+      const expectedOpponentEnergyAfter = `${afterEnd.opponentEnergy} of ${afterEnd.opponentMaxEnergy}`;
+      if (opponentEnergyAfter !== expectedOpponentEnergyAfter) {
+        fail(
+          `after the opponent's turn the board prints its energy as "${opponentEnergyAfter}" instead of the ` +
+            `"${expectedOpponentEnergyAfter}" the match holds`
         );
       }
 
@@ -5214,7 +5327,15 @@ export async function checks() {
       if (!reported.match || reported.match.active !== true) {
         fail("get-state does not return the active match, so an agent cannot read the game in progress");
       } else {
-        for (const field of ["playerHealth", "opponentHealth", "energy", "maxEnergy", "opponentHand"]) {
+        for (const field of [
+          "playerHealth",
+          "opponentHealth",
+          "energy",
+          "maxEnergy",
+          "opponentEnergy",
+          "opponentMaxEnergy",
+          "opponentHand",
+        ]) {
           if (reported.match[field] !== live[field]) {
             fail(`get-state reports match ${field} ${reported.match[field]} while the page says ${live[field]}`);
           }
