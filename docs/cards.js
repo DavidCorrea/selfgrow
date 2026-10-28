@@ -291,6 +291,15 @@ export const CARDS = [
   // costs the other side another body the moment it is removed, so clearing it is
   // never a free move.
   { id: "spearroot-colossus", name: "Spearroot Colossus", cost: 6, attack: 6, health: 7, ability: STRIKE_ON_PLAY, fallAbility: STRIKE_ON_FALL },
+  // One more card that draws as it lands, placed where the set was thinnest —
+  // cost five, which held no drawer at all — so drawing is met on the middle of
+  // the curve as well as the cheap end. A standing bough whose bark peels away a
+  // sheet at a time reads as a card that keeps handing its owner more, the mark
+  // of a character built around drawing rather than a single lucky trick. Its
+  // ability is the shared DRAW_ON_PLAY constant, so the words on its face and the
+  // trigger the match runs can never drift. It is a reward card, so a player
+  // collects toward it and a win is how it is earned.
+  { id: "scrollbark", name: "Scrollbark", cost: 5, attack: 4, health: 5, ability: DRAW_ON_PLAY },
 ];
 
 /** Lookup by id — the shape the saved collection speaks in. */
@@ -393,6 +402,12 @@ export const REWARD_POOL = [
   "mire-spore",
   "heartwood-sapling",
   "spearroot-colossus",
+  // Appended for the same reason as every reward before it: a save written
+  // before the bough existed keeps the next-reward order and the place it already
+  // had in the queue untouched. It is the signature a future drawing opponent
+  // will award, and a mid-curve body, so a player collecting toward it meets
+  // drawing as something worth building a deck and an opponent around.
+  "scrollbark",
 ];
 
 /**

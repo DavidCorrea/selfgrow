@@ -748,6 +748,23 @@ const CARD_ART = new Map([
       `,
     },
   ],
+  [
+    "scrollbark",
+    {
+      description:
+        "A standing bough: a curved trunk with bark peeling away in three curled sheets, a snapped tip and one dark knot",
+      inner: `
+        <path class="art-body" d="M44 54 C42 42 44 30 49 18 L57 18 C59 30 60 42 58 54 Z" />
+        <path class="art-body" d="M44 50 C32 49 23 40 25 28 C37 30 45 39 44 50 Z" />
+        <path class="art-body" d="M48 32 C39 31 32 23 33 13 C43 15 49 22 48 32 Z" />
+        <path class="art-body" d="M57 44 C69 43 78 34 76 22 C65 24 57 33 57 44 Z" />
+        <path class="art-body" d="M49 18 L46 8 L53 15 Z" />
+        <path class="art-body" d="M44 52 L32 54 L46 54 Z" />
+        <path class="art-body" d="M58 52 L70 54 L56 54 Z" />
+        <circle class="art-accent" cx="52" cy="39" r="3" />
+      `,
+    },
+  ],
 ]);
 
 /**
