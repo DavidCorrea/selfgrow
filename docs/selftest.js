@@ -1869,6 +1869,7 @@ export async function checks() {
   const whenFallsValue = () => document.getElementById("deck-total-when-falls");
   const growsValue = () => document.getElementById("deck-total-grows");
   const twiceValue = () => document.getElementById("deck-total-twice");
+  const drawsValue = () => document.getElementById("deck-total-draws");
   // The sum over the deck the state holds, derived here so a wrong total on the
   // page or in the state fails rather than agreeing with itself.
   const deckSum = (field) => game.readState().deck.reduce((total, card) => total + card[field], 0);
@@ -1885,15 +1886,20 @@ export async function checks() {
     game.readState().deck.filter(
       (card) => [card.ability, card.growthAbility, card.fallAbility].filter((ability) => ability !== null).length >= 2
     ).length;
+  // A drawing card is one whose face draws you a card, whether at play or at
+  // fall — the same shared predicate the Collection screen's "draws" view
+  // counts, so a count that disagreed with that view would fail here rather
+  // than read zero forever.
+  const drawsCount = () => game.readState().deck.filter((card) => cardCatalog.drawsACard(card)).length;
   const shownTotal = (element) => (element ? Number(textOf(element)) : NaN);
 
   if (!curveBlock()) {
     fail("the collection screen has no cost curve under the deck (#deck-curve), so the deck's shape cannot be read");
   }
-  if (!whenPlayedValue() || !mendsValue() || !whenFallsValue() || !growsValue() || !twiceValue()) {
+  if (!whenPlayedValue() || !mendsValue() || !whenFallsValue() || !growsValue() || !twiceValue() || !drawsValue()) {
     fail(
-      "the deck panel shows no counts of its when-played, mending, when-falls, growing and twice-acting cards " +
-        "(#deck-total-when-played / #deck-total-mends / #deck-total-when-falls / #deck-total-grows / #deck-total-twice), " +
+      "the deck panel shows no counts of its when-played, mending, when-falls, growing, twice-acting and drawing cards " +
+        "(#deck-total-when-played / #deck-total-mends / #deck-total-when-falls / #deck-total-grows / #deck-total-twice / #deck-total-draws), " +
         "so a player building around any ability cannot read them"
     );
   }
@@ -2053,7 +2059,7 @@ export async function checks() {
         "instead of only its own empty note"
     );
   }
-  // An empty deck has no cards to count either: all four ability counts are
+  // An empty deck has no cards to count either: all six ability counts are
   // null in the state and blank on the page, so zero is never printed where
   // there is nothing to count.
   if (
@@ -2061,7 +2067,8 @@ export async function checks() {
     game.readState().deckMends !== null ||
     game.readState().deckWhenFalls !== null ||
     game.readState().deckGrows !== null ||
-    game.readState().deckTwice !== null
+    game.readState().deckTwice !== null ||
+    game.readState().deckDraws !== null
   ) {
     fail(
       "an empty deck reports ability counts instead of null: " +
@@ -2069,7 +2076,8 @@ export async function checks() {
         `deckMends ${JSON.stringify(game.readState().deckMends)}, ` +
         `deckWhenFalls ${JSON.stringify(game.readState().deckWhenFalls)}, ` +
         `deckGrows ${JSON.stringify(game.readState().deckGrows)}, ` +
-        `deckTwice ${JSON.stringify(game.readState().deckTwice)}`
+        `deckTwice ${JSON.stringify(game.readState().deckTwice)}, ` +
+        `deckDraws ${JSON.stringify(game.readState().deckDraws)}`
     );
   }
   if (
@@ -2077,12 +2085,14 @@ export async function checks() {
     textOf(mendsValue()) ||
     textOf(whenFallsValue()) ||
     textOf(growsValue()) ||
-    textOf(twiceValue())
+    textOf(twiceValue()) ||
+    textOf(drawsValue())
   ) {
     fail(
       `an empty deck still shows ability counts ("${textOf(whenPlayedValue())}" played, ` +
         `"${textOf(mendsValue())}" mending, "${textOf(whenFallsValue())}" falls, ` +
-        `"${textOf(growsValue())}" grow, "${textOf(twiceValue())}" twice) instead of only its own empty note`
+        `"${textOf(growsValue())}" grow, "${textOf(twiceValue())}" twice, ` +
+        `"${textOf(drawsValue())}" draws) instead of only its own empty note`
     );
   }
 
@@ -2132,24 +2142,26 @@ export async function checks() {
     fail(`a one-card deck shows a total health of ${textOf(healthValue())} instead of the summed ${loneHealth}`);
   }
   // A one-card deck's ability counts are that card's own: one for a face it
-  // carries, zero for the one it does not, all four in the state and on the
+  // carries, zero for the one it does not, all five in the state and on the
   // page.
   const lonePlayed = abilityCount("ability");
   const loneMends = mendsCount();
   const loneFalls = abilityCount("fallAbility");
   const loneGrows = abilityCount("growthAbility");
+  const loneDraws = drawsCount();
   if (
     game.readState().deckWhenPlayed !== lonePlayed ||
     game.readState().deckMends !== loneMends ||
     game.readState().deckWhenFalls !== loneFalls ||
-    game.readState().deckGrows !== loneGrows
+    game.readState().deckGrows !== loneGrows ||
+    game.readState().deckDraws !== loneDraws
   ) {
     fail(
       `a one-card deck reports ${JSON.stringify(game.readState().deckWhenPlayed)}/` +
         `${JSON.stringify(game.readState().deckMends)}/${JSON.stringify(game.readState().deckWhenFalls)}/` +
-        `${JSON.stringify(game.readState().deckGrows)} ` +
-        `when-played/mending/when-falls/growing instead of the counted ` +
-        `${lonePlayed}/${loneMends}/${loneFalls}/${loneGrows}`
+        `${JSON.stringify(game.readState().deckGrows)}/${JSON.stringify(game.readState().deckDraws)} ` +
+        `when-played/mending/when-falls/growing/drawing instead of the counted ` +
+        `${lonePlayed}/${loneMends}/${loneFalls}/${loneGrows}/${loneDraws}`
     );
   }
   if (shownTotal(whenPlayedValue()) !== lonePlayed) {
@@ -2163,6 +2175,9 @@ export async function checks() {
   }
   if (shownTotal(growsValue()) !== loneGrows) {
     fail(`a one-card deck shows ${textOf(growsValue())} growing card(s) instead of the counted ${loneGrows}`);
+  }
+  if (shownTotal(drawsValue()) !== loneDraws) {
+    fail(`a one-card deck shows ${textOf(drawsValue())} drawing card(s) instead of the counted ${loneDraws}`);
   }
 
   // Taking that card back out returns the deck to empty: the block hides again.
@@ -2191,7 +2206,8 @@ export async function checks() {
     game.readState().deckMends !== null ||
     game.readState().deckWhenFalls !== null ||
     game.readState().deckGrows !== null ||
-    game.readState().deckTwice !== null
+    game.readState().deckTwice !== null ||
+    game.readState().deckDraws !== null
   ) {
     fail("emptying the deck again left ability counts on the state instead of null");
   }
@@ -2200,7 +2216,8 @@ export async function checks() {
     textOf(mendsValue()) ||
     textOf(whenFallsValue()) ||
     textOf(growsValue()) ||
-    textOf(twiceValue())
+    textOf(twiceValue()) ||
+    textOf(drawsValue())
   ) {
     fail("emptying the deck again left its ability counts printed on the page");
   }
@@ -2327,24 +2344,26 @@ export async function checks() {
   }
   // The ability counts stand beside the totals: how many of the ten cards carry
   // a when-played face, how many of those mend your hero, how many carry a
-  // when-falls one and how many grow each turn, each the count over the deck the
-  // state holds and printed the same on the page.
+  // when-falls one, how many grow each turn and how many draw a card, each the
+  // count over the deck the state holds and printed the same on the page.
   const fullPlayed = abilityCount("ability");
   const fullMends = mendsCount();
   const fullFalls = abilityCount("fallAbility");
   const fullGrows = abilityCount("growthAbility");
+  const fullDraws = drawsCount();
   if (
     game.readState().deckWhenPlayed !== fullPlayed ||
     game.readState().deckMends !== fullMends ||
     game.readState().deckWhenFalls !== fullFalls ||
-    game.readState().deckGrows !== fullGrows
+    game.readState().deckGrows !== fullGrows ||
+    game.readState().deckDraws !== fullDraws
   ) {
     fail(
       `a ten-card deck reports ${JSON.stringify(game.readState().deckWhenPlayed)}/` +
         `${JSON.stringify(game.readState().deckMends)}/${JSON.stringify(game.readState().deckWhenFalls)}/` +
-        `${JSON.stringify(game.readState().deckGrows)} ` +
-        `when-played/mending/when-falls/growing instead of the counted ` +
-        `${fullPlayed}/${fullMends}/${fullFalls}/${fullGrows}`
+        `${JSON.stringify(game.readState().deckGrows)}/${JSON.stringify(game.readState().deckDraws)} ` +
+        `when-played/mending/when-falls/growing/drawing instead of the counted ` +
+        `${fullPlayed}/${fullMends}/${fullFalls}/${fullGrows}/${fullDraws}`
     );
   }
   if (shownTotal(whenPlayedValue()) !== fullPlayed) {
@@ -2358,6 +2377,9 @@ export async function checks() {
   }
   if (shownTotal(growsValue()) !== fullGrows) {
     fail(`the deck panel shows ${textOf(growsValue())} growing card(s) instead of the counted ${fullGrows}`);
+  }
+  if (shownTotal(drawsValue()) !== fullDraws) {
+    fail(`the deck panel shows ${textOf(drawsValue())} drawing card(s) instead of the counted ${fullDraws}`);
   }
 
   // Each card in the deck is shown as its picture — the same name as its text
@@ -2764,6 +2786,83 @@ export async function checks() {
       game.restoreSaveCode(originalCode);
     } catch (error) {
       fail(`restoring the collection after the twice-acting-card check was refused: ${error.message}`);
+    }
+  }
+
+  // No card in the dealt collection is guaranteed to draw a card, so a deck
+  // built from it can only ever report the drawing cards it happens to hold.
+  // Put a drawing reward card into the live collection through the save-code
+  // path, add it to the deck, and prove the count rises by exactly one — then
+  // take it back out and prove it falls again. This is the only way the count
+  // can be shown to follow the deck rather than always read the same number.
+  const deckDrawCard = cardCatalog.CARDS.find(
+    (card) => !owned.cards.some((held) => held.id === card.id) && cardCatalog.drawsACard(card)
+  );
+  if (!deckDrawCard) {
+    fail("no unowned card in the game draws you a card, so a deck's drawing cards cannot be checked");
+  } else {
+    const originalCode = collection.saveCode();
+    const baseCards = Array.isArray(savedPayload?.cards)
+      ? savedPayload.cards
+      : owned.cards.map(({ id, copies }) => ({ id, copies }));
+    const baseDeck = Array.isArray(savedPayload?.deck) ? savedPayload.deck : deckIds();
+    const drawCode = collection.saveCode(
+      stubStorage({
+        [collection.STORAGE_KEY]: JSON.stringify({
+          version: 1,
+          cards: [...baseCards, { id: deckDrawCard.id, copies: 1 }],
+          deck: baseDeck,
+        }),
+      })
+    );
+    let drawBefore = null;
+    try {
+      game.restoreSaveCode(drawCode);
+      drawBefore = game.readState().deckDraws;
+    } catch (error) {
+      fail(`restoring a save code that owns the drawing card "${deckDrawCard.id}" was refused: ${error.message}`);
+    }
+    if (drawBefore !== drawsCount()) {
+      fail(
+        `the deck reports deckDraws ${JSON.stringify(drawBefore)} instead of the counted ${drawsCount()} ` +
+          "for the cards it already holds"
+      );
+    } else {
+      game.addCardToDeck(deckDrawCard.id);
+      const drawAfter = game.readState().deckDraws;
+      if (drawAfter !== drawBefore + 1) {
+        fail(
+          `adding the drawing card "${deckDrawCard.id}" to the deck changed deckDraws from ` +
+            `${JSON.stringify(drawBefore)} to ${JSON.stringify(drawAfter)} instead of ${drawBefore + 1}`
+        );
+      }
+      if (shownTotal(drawsValue()) !== drawAfter) {
+        fail(
+          `the deck panel shows ${textOf(drawsValue())} drawing card(s) after adding "${deckDrawCard.id}" ` +
+            `instead of the counted ${drawAfter}`
+        );
+      }
+      game.removeCardFromDeck(deckDrawCard.id);
+      const drawBack = game.readState().deckDraws;
+      if (drawBack !== drawBefore) {
+        fail(
+          `removing the drawing card "${deckDrawCard.id}" left deckDraws at ${JSON.stringify(drawBack)} ` +
+            `instead of ${drawBefore}`
+        );
+      }
+      if (shownTotal(drawsValue()) !== drawBack) {
+        fail(
+          `the deck panel shows ${textOf(drawsValue())} drawing card(s) after removing ` +
+            `"${deckDrawCard.id}" instead of the counted ${drawBack}`
+        );
+      }
+    }
+    // Put the game back exactly as it was, so the card borrowed for this check
+    // does not linger in the collection for the checks that follow.
+    try {
+      game.restoreSaveCode(originalCode);
+    } catch (error) {
+      fail(`restoring the collection after the drawing-card check was refused: ${error.message}`);
     }
   }
 
@@ -4388,9 +4487,9 @@ export async function checks() {
     }
 
     // How many of the deck's cards act when played, mend your hero, act when
-    // they fall, grow each turn or act twice is part of what the panel shows, so
-    // it is part of what get-state returns: the counts over the deck the page
-    // holds.
+    // they fall, grow each turn, act twice or draw a card is part of what the
+    // panel shows, so it is part of what get-state returns: the counts over the
+    // deck the page holds.
     const livePlayedCount = live.deck.filter((card) => card.ability).length;
     const liveMendsCount = live.deck.filter((card) => card.ability === cardCatalog.HEAL_ON_PLAY).length;
     const liveFallsCount = live.deck.filter((card) => card.fallAbility).length;
@@ -4398,20 +4497,24 @@ export async function checks() {
     const liveTwiceCount = live.deck.filter(
       (card) => [card.ability, card.growthAbility, card.fallAbility].filter((ability) => ability !== null).length >= 2
     ).length;
+    const liveDrawsCount = live.deck.filter((card) => cardCatalog.drawsACard(card)).length;
     if (
       reported.deckWhenPlayed !== live.deckWhenPlayed ||
       reported.deckMends !== live.deckMends ||
       reported.deckWhenFalls !== live.deckWhenFalls ||
       reported.deckGrows !== live.deckGrows ||
-      reported.deckTwice !== live.deckTwice
+      reported.deckTwice !== live.deckTwice ||
+      reported.deckDraws !== live.deckDraws
     ) {
       fail(
         `get-state reports ${JSON.stringify(reported.deckWhenPlayed)}/` +
           `${JSON.stringify(reported.deckMends)}/${JSON.stringify(reported.deckWhenFalls)}/` +
-          `${JSON.stringify(reported.deckGrows)}/${JSON.stringify(reported.deckTwice)} ` +
-          "when-played/mending/when-falls/growing/twice counts while the page says " +
+          `${JSON.stringify(reported.deckGrows)}/${JSON.stringify(reported.deckTwice)}/` +
+          `${JSON.stringify(reported.deckDraws)} ` +
+          "when-played/mending/when-falls/growing/twice/drawing counts while the page says " +
           `${JSON.stringify(live.deckWhenPlayed)}/${JSON.stringify(live.deckMends)}/` +
-          `${JSON.stringify(live.deckWhenFalls)}/${JSON.stringify(live.deckGrows)}/${JSON.stringify(live.deckTwice)}`
+          `${JSON.stringify(live.deckWhenFalls)}/${JSON.stringify(live.deckGrows)}/` +
+          `${JSON.stringify(live.deckTwice)}/${JSON.stringify(live.deckDraws)}`
       );
     }
     if (
@@ -4419,14 +4522,17 @@ export async function checks() {
       reported.deckMends !== liveMendsCount ||
       reported.deckWhenFalls !== liveFallsCount ||
       reported.deckGrows !== liveGrowsCount ||
-      reported.deckTwice !== liveTwiceCount
+      reported.deckTwice !== liveTwiceCount ||
+      reported.deckDraws !== liveDrawsCount
     ) {
       fail(
         `get-state reports ${JSON.stringify(reported.deckWhenPlayed)}/` +
           `${JSON.stringify(reported.deckMends)}/${JSON.stringify(reported.deckWhenFalls)}/` +
-          `${JSON.stringify(reported.deckGrows)}/${JSON.stringify(reported.deckTwice)} ` +
-          "when-played/mending/when-falls/growing/twice counts instead of the counted " +
-          `${livePlayedCount}/${liveMendsCount}/${liveFallsCount}/${liveGrowsCount}/${liveTwiceCount}`
+          `${JSON.stringify(reported.deckGrows)}/${JSON.stringify(reported.deckTwice)}/` +
+          `${JSON.stringify(reported.deckDraws)} ` +
+          "when-played/mending/when-falls/growing/twice/drawing counts instead of the counted " +
+          `${livePlayedCount}/${liveMendsCount}/${liveFallsCount}/${liveGrowsCount}/${liveTwiceCount}/` +
+          `${liveDrawsCount}`
       );
     }
 
