@@ -259,6 +259,39 @@
           </p>
           <ul class="deck-list" id="deck-list" aria-label="Cards in your deck"></ul>
 
+          <!-- One control that empties the whole deck, so building a new one
+               does not mean taking the old one apart a card at a time. The
+               first press raises a question rather than removing anything, and
+               only the second wipes the deck, so a stray press cannot cost a
+               player a deck they spent time on. -->
+          <div class="deck-clear">
+            <button
+              type="button"
+              class="btn btn-secondary"
+              id="action-clear-deck"
+              aria-expanded="false"
+              aria-controls="clear-deck-confirm"
+            >
+              Empty deck
+            </button>
+            <div class="deck-clear-confirm" id="clear-deck-confirm" hidden>
+              <p class="deck-clear-confirm-text" id="clear-deck-confirm-text"></p>
+              <div class="deck-clear-confirm-actions">
+                <button
+                  type="button"
+                  class="btn btn-primary"
+                  id="action-confirm-clear-deck"
+                  aria-describedby="clear-deck-confirm-text"
+                >
+                  Empty my deck
+                </button>
+                <button type="button" class="btn btn-secondary" id="action-cancel-clear-deck">
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+
           <!-- The deck's shape while it is being built: one row per energy cost
                the deck holds, saying the cost and how many of its cards are at
                it, so a player builds toward a curve instead of discovering it

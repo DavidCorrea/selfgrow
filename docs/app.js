@@ -201,6 +201,12 @@ const state = {
   // was checked, and the game is not touched until the player answers, so a paste
   // by accident cannot wipe anything by itself.
   restorePending: null,
+  // Whether the Collection screen is waiting on the player's answer before it
+  // empties the deck — true while the "Empty deck" control has raised its
+  // question and the two answers beside it are on screen. A page-only flag like
+  // `restorePending`: it is never written to a save, and the deck is not touched
+  // until the player answers, so a stray press cannot wipe anything by itself.
+  deckClearPending: false,
   // What the restore control last said: why a pasted code was refused, or what a
   // finished restore replaced. The question a waiting code asks is built from
   // its own summary, not from here.
@@ -264,6 +270,16 @@ const restoreConfirmText = document.getElementById("restore-confirm-text");
 const replaceGameButton = document.getElementById("action-replace-game");
 const cancelRestoreButton = document.getElementById("action-cancel-restore");
 const restoreCodeStatus = document.getElementById("restore-code-status");
+
+// The Collection screen's empty-the-deck control: the button that raises the
+// question, the question block and its words, and the two answers beside it. All
+// optional, so a missing one degrades to a missing control rather than a page
+// that will not render.
+const clearDeckButton = document.getElementById("action-clear-deck");
+const clearDeckConfirm = document.getElementById("clear-deck-confirm");
+const clearDeckConfirmText = document.getElementById("clear-deck-confirm-text");
+const confirmClearDeckButton = document.getElementById("action-confirm-clear-deck");
+const cancelClearDeckButton = document.getElementById("action-cancel-clear-deck");
 
 // The match board's places, gathered once. Each is optional so a missing one
 // degrades to a missing readout rather than a page that will not render.
@@ -2522,6 +2538,36 @@ function renderDeck() {
   }
 
   renderDeckCurve();
+  renderDeckClear();
+}
+
+/**
+ * Draw the empty-the-deck control: whether the question is waiting on the
+ * player's answer, the words it carries, and whether the button that raised it
+ * says its question is open. The deck is untouched here — this only shows the
+ * question the player is being asked about it.
+ */
+function renderDeckClear() {
+  if (!clearDeckConfirm) return;
+  const pending = state.deckClearPending;
+  clearDeckConfirm.hidden = !pending;
+  if (clearDeckConfirmText) {
+    clearDeckConfirmText.textContent = pending ? clearDeckQuestion(state.deck.length) : "";
+  }
+  if (clearDeckButton) clearDeckButton.setAttribute("aria-expanded", String(pending));
+}
+
+/**
+ * The question the empty-the-deck control asks, in the deck's own number: how
+ * many cards are about to go, and that the answer cannot be undone. Written from
+ * the deck being emptied, so the question and what a confirmation does are one
+ * reading of one deck.
+ */
+function clearDeckQuestion(count) {
+  return (
+    `Remove all ${count} ${count === 1 ? "card" : "cards"} from your deck? ` +
+    "An emptied deck cannot be brought back, and a match cannot start until you add cards again."
+  );
 }
 
 /**
@@ -2682,6 +2728,74 @@ function commitDeck() {
 }
 
 /**
+ * Empties the whole deck — what the empty-deck tool does on a caller's behalf.
+ * Refused, with the reason, when the deck is already empty, so the call reports
+ * what it did rather than pretending. The emptied deck goes through the one
+ * commit path a deck change takes, so it is saved and every screen reading it is
+ * redrawn; the question the page may have been asking is answered by the act.
+ * Returns the state afterwards.
+ */
+export function emptyDeck() {
+  const count = state.deck.length;
+  if (count === 0) {
+    throw new Error("your deck is already empty — there is nothing to remove");
+  }
+  state.deck = [];
+  state.deckClearPending = false;
+  commitDeck();
+  setDeckMessage(`Emptied your deck — all ${count} ${count === 1 ? "card" : "cards"} removed.`);
+  return readState();
+}
+
+/**
+ * Raise the question before the deck is emptied — what pressing "Empty deck"
+ * does. Nothing is removed yet: the deck is untouched and the two answers appear
+ * in its place, so a press by accident cannot wipe a deck. A deck already empty
+ * has nothing to ask about, so it says so instead. Returns whether a question is
+ * now on screen.
+ */
+function requestClearDeck() {
+  if (state.deck.length === 0) {
+    state.deckClearPending = false;
+    renderDeckClear();
+    setDeckMessage("Your deck is already empty — there is nothing to remove.");
+    return false;
+  }
+  state.deckClearPending = true;
+  renderDeckClear();
+  return true;
+}
+
+/**
+ * Answer no to emptying the deck: the question goes and the deck stays exactly
+ * as it is.
+ */
+function cancelClearDeck() {
+  state.deckClearPending = false;
+  renderDeckClear();
+  setDeckMessage("Nothing was removed — your deck is exactly as it was.");
+}
+
+/**
+ * What pressing "Empty my deck" does: empty the deck the player was just asked
+ * about. The confirmation only exists while a question is waiting, so a press
+ * with nothing pending says so rather than doing nothing at all.
+ */
+function confirmClearDeck() {
+  if (!state.deckClearPending) {
+    setDeckMessage('Press "Empty deck" first.');
+    clearDeckButton?.focus();
+    return;
+  }
+  try {
+    emptyDeck();
+  } catch (error) {
+    setDeckMessage(error.message);
+  }
+  clearDeckButton?.focus();
+}
+
+/**
  * Everything the page currently shows: the screen that is open, how many cards
  * the player owns and how many are different out of the whole set, how many
  * opponents have been beaten at least once out of every character there is
@@ -2713,6 +2827,10 @@ function commitDeck() {
  * save code before it replaces the game (`restorePending`) and what its restore
  * status line says (`restoreMessage` — why a code was refused, or what a
  * finished restore replaced),
+ * whether the Collection screen is waiting on the player's answer before it
+ * empties the deck (`deckClearPending` — true while the "Empty deck" control has
+ * raised its question; the empty-deck tool empties the deck without waiting on
+ * an answer),
  * the four points the Play screen tells a newcomer about a match and
  * whether that strip is showing
  * (`matchRules`), the opponents a match can be fought against (`opponents` — each
@@ -2788,6 +2906,11 @@ export function readState() {
     // tool applies a code without waiting on an answer.
     restorePending: state.restorePending !== null,
     restoreMessage: state.restoreMessage,
+    // Whether the Collection screen is waiting on the player's answer before it
+    // empties the deck — true while the "Empty deck" control has raised its
+    // question and the "Empty my deck"/"Cancel" buttons are on screen for it.
+    // The empty-deck tool empties the deck without waiting on an answer.
+    deckClearPending: state.deckClearPending,
     deckSize: state.deck.length,
     deckLimit: state.deckLimit,
     minimumDeckSize: state.minimumDeckSize,
@@ -3201,6 +3324,14 @@ replaceGameButton?.addEventListener("click", () => confirmRestoreSaveCode());
 cancelRestoreButton?.addEventListener("click", () => {
   cancelRestoreSaveCode();
   restoreCodeButton?.focus();
+});
+clearDeckButton?.addEventListener("click", () => {
+  if (requestClearDeck()) confirmClearDeckButton?.focus();
+});
+confirmClearDeckButton?.addEventListener("click", () => confirmClearDeck());
+cancelClearDeckButton?.addEventListener("click", () => {
+  cancelClearDeck();
+  clearDeckButton?.focus();
 });
 startMatchButton?.addEventListener("click", () => runMatchAction(() => startMatch()));
 continueSavedButton?.addEventListener("click", () => runMatchAction(() => continueMatch()));
