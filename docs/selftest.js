@@ -110,6 +110,7 @@ export async function checks() {
       stats: textOf(stats),
       statsLabel: stats?.getAttribute("aria-label") ?? "",
       pictureName: figure?.querySelector(".card-art")?.getAttribute("aria-label") ?? null,
+      earnedBy: textOf(section?.querySelector(".next-reward-earned-by")),
     };
   };
 
@@ -127,6 +128,7 @@ export async function checks() {
     // against the opponent the picker has chosen and whether it has been beaten,
     // exactly as the win itself will read it — so the home screen's promise can
     // never drift from the reward.
+    let expectedNote = null;
     if (typeof collection.nextRewardId === "function") {
       const chosen = live.opponents.find((opponent) => opponent.id === live.selectedOpponentId);
       const chosenOpponent = cardCatalog.OPPONENT_BY_ID.get(live.selectedOpponentId);
@@ -141,6 +143,16 @@ export async function checks() {
             `names "${expectedId}", so the promise and the award can disagree`
         );
       }
+      // The branch is decided by that same id: the signature branch is exactly
+      // when it is the chosen opponent's own signature — the shared choice
+      // returns that only while the card is unowned and the opponent unbeaten —
+      // and every other card is an ordinary reward any win earns.
+      if (expectedId !== null) {
+        expectedNote =
+          expectedId === chosenOpponent?.signature
+            ? `Beat ${chosenOpponent.name} to earn it.`
+            : "Any win earns it.";
+      }
     }
     if (typeof game.nextRewardHeadingText === "function") {
       const expected = game.nextRewardHeadingText(live.nextRewardComplete);
@@ -151,6 +163,12 @@ export async function checks() {
     if (live.nextRewardComplete) {
       if (shown.hasFigure) {
         fail("the home screen shows a next-win card although the player owns every reward card");
+      }
+      if (shown.earnedBy) {
+        fail(
+          `the home screen says "${shown.earnedBy}" as who earns the next win although there is no card left ` +
+            "to earn"
+        );
       }
       return;
     }
@@ -180,6 +198,20 @@ export async function checks() {
         `the home screen's next-win picture is described as "${shown.pictureName}" instead of the ` +
           `card's own name "${card.name}"`
       );
+    }
+    if (expectedNote) {
+      if (live.nextRewardNote !== expectedNote) {
+        fail(
+          `the state's next-win note reads ${JSON.stringify(live.nextRewardNote)} while the shared reward ` +
+            `choice makes it ${JSON.stringify(expectedNote)}`
+        );
+      }
+      if (shown.earnedBy !== expectedNote) {
+        fail(
+          `the home screen's next-win note reads ${JSON.stringify(shown.earnedBy)} instead of ` +
+            `${JSON.stringify(expectedNote)}, so it does not say who earns the promised card`
+        );
+      }
     }
   };
 
@@ -1310,6 +1342,107 @@ export async function checks() {
     }
     if (nextHeading === completeHeading) {
       fail("the next-win heading says the same thing whether or not the set is complete");
+    }
+  }
+
+  // --- The promise names who earns the next-win card ----------------------
+
+  // The card under "Next win earns" is not just a card: it says who earns it, so
+  // a player knows whether to beat the character they picked or simply to win.
+  // The signature of the chosen opponent points at a match against them; any
+  // other reward card is earned by any win at all.
+  if (typeof game.nextRewardNoteText !== "function") {
+    fail("app.js does not export nextRewardNoteText, so who earns the next-win card cannot be checked");
+  } else {
+    const namedOpponent = (cardCatalog.OPPONENTS ?? [])[0];
+    const name = namedOpponent?.name ?? "the opponent";
+    const signatureNote = game.nextRewardNoteText("signature", name);
+    if (!signatureNote.includes(name) || !/beat/i.test(signatureNote)) {
+      fail(
+        `the next-win note for a signature card reads "${signatureNote}", which does not name "${name}" ` +
+          "as who to beat"
+      );
+    }
+    const poolNote = game.nextRewardNoteText("pool", name);
+    if (!/any win/i.test(poolNote)) {
+      fail(`the next-win note for an ordinary reward reads "${poolNote}", which does not say any win earns it`);
+    }
+    if (poolNote.includes(name)) {
+      fail(`the next-win note for an ordinary reward names "${name}" even though any win earns it`);
+    }
+    if (game.nextRewardNoteText(null, name) !== "") {
+      fail("the next-win note says something even when there is no card left to earn");
+    }
+
+    // The page itself, in the two branches the live game may not be standing in:
+    // an ordinary reward any win earns, and a complete set with nothing left.
+    // Both are put on the real home screen through the save-code path and taken
+    // back afterwards, so what a visitor reads is checked, not just the helper.
+    const restoreBeforeNote = collection.saveCode();
+    const liveBeforeNote = game.readState();
+    const chosenForNote = cardCatalog.OPPONENT_BY_ID.get(liveBeforeNote.selectedOpponentId);
+    const baseCards = game.readCollection().ownedCards.map(({ id, copies }) => ({ id, copies }));
+    const baseDeck = liveBeforeNote.deck.map((card) => card.id);
+    const ownedWith = (extra) => {
+      const byId = new Map(baseCards.map((card) => [card.id, { ...card }]));
+      for (const id of extra) if (!byId.has(id)) byId.set(id, { id, copies: 1 });
+      return [...byId.values()];
+    };
+    const codeWith = (cards) =>
+      collection.saveCode(
+        stubStorage({ [collection.STORAGE_KEY]: JSON.stringify({ version: 1, cards, deck: baseDeck }) })
+      );
+    try {
+      // The chosen opponent's signature is owned, so the promised card can no
+      // longer be it — the ordinary reward any win earns takes its place.
+      if (chosenForNote?.signature) {
+        game.restoreSaveCode(codeWith(ownedWith([chosenForNote.signature])));
+        const poolState = game.readState();
+        const poolShown = readNextReward();
+        if (poolState.nextReward?.id === chosenForNote.signature) {
+          fail("with the chosen opponent's signature owned, the next-win card is still that signature");
+        } else {
+          if (game.nextRewardSource() !== "pool") {
+            fail(
+              `with the signature owned the next-win source is "${game.nextRewardSource()}" instead of "pool"`
+            );
+          }
+          if (poolShown.earnedBy !== "Any win earns it.") {
+            fail(
+              `with an ordinary reward promised the home screen says "${poolShown.earnedBy}" instead of ` +
+                '"Any win earns it."'
+            );
+          }
+          if (poolState.nextRewardNote !== "Any win earns it.") {
+            fail(
+              `with an ordinary reward promised the state's next-win note reads "${poolState.nextRewardNote}" ` +
+                'instead of "Any win earns it."'
+            );
+          }
+        }
+      }
+
+      // Every reward card is owned, so there is no next card and no one earns
+      // one — the earned-by line must be gone rather than left over from before.
+      game.restoreSaveCode(codeWith(ownedWith(pool)));
+      const completeState = game.readState();
+      const completeShown = readNextReward();
+      if (completeState.nextRewardComplete !== true) {
+        fail("with every reward card owned the state does not report the set complete");
+      }
+      if (completeShown.earnedBy) {
+        fail(
+          `with every reward card owned the home screen still says "${completeShown.earnedBy}" as who earns ` +
+            "the next win"
+        );
+      }
+    } catch (error) {
+      fail(`restoring a save to check who earns the next-win card was refused: ${error.message}`);
+    }
+    try {
+      game.restoreSaveCode(restoreBeforeNote);
+    } catch (error) {
+      fail(`restoring the game after the next-win note checks was refused: ${error.message}`);
     }
   }
 
