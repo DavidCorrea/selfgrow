@@ -2872,6 +2872,35 @@ export async function checks() {
         }
       }
 
+      // The mending opponent is the one character whose whole point is an ability
+      // rather than a play style, so their deck is held to it by name: the mends
+      // in it are what a match against them is about, and a deck that quietly
+      // lost them would still be offered as "they mend and outlast". Which card
+      // a first win earns is checked against the deck for every opponent above;
+      // this only names Mossheart's, so the mending deck's lesson and its reward
+      // stay the same character.
+      const mendingOpponent = opponentChoices.find((opponent) => opponent.id === "mossheart");
+      if (!mendingOpponent) {
+        fail('docs/cards.js offers no "mossheart" opponent, so no match teaches a player what mending is worth');
+      } else {
+        const mends = mendingOpponent.deck.filter((id) => {
+          const card = cardCatalog.CARD_BY_ID.get(id);
+          return card?.ability === cardCatalog.HEAL_ON_PLAY || card?.fallAbility === cardCatalog.HEAL_ON_FALL;
+        });
+        if (mends.length < 3) {
+          fail(
+            `the mending opponent "mossheart" brings only ${mends.length} mending card(s) ` +
+              `(${JSON.stringify(mendingOpponent.deck)}), so a match against them is not built around mending`
+          );
+        }
+        if (mendingOpponent.signature !== "mossheart-chalice") {
+          fail(
+            `the mending opponent's signature is ${JSON.stringify(mendingOpponent.signature)} instead of ` +
+              '"mossheart-chalice", so a first win does not earn the mending card that stands for them'
+          );
+        }
+      }
+
       // Every opponent is a character a player can see: a portrait of its own,
       // drawn in the one shape language the whole set is drawn in and in that
       // opponent's own accent — so a character added later is recognised by sight
@@ -3205,6 +3234,9 @@ export async function checks() {
         // what its match is about, so its when-played card is the one that keeps
         // its hero standing while those bodies take root.
         ["rootwarden", cardCatalog.HEAL_ON_PLAY],
+        // The mender's deck is mending: its when-played cards are the whole
+        // point of it, not a supporting trick.
+        ["mossheart", cardCatalog.HEAL_ON_PLAY],
       ]);
       for (const opponent of opponentChoices) {
         const promised = promisedAbility.get(opponent.id);

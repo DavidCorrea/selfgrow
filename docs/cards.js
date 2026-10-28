@@ -384,6 +384,9 @@ export const REWARD_POOL = [
  * fifth is built around the one ability none of the others teach: a deck of
  * cards that grow stronger each turn they stand, so a player meets the reward
  * for patience as something to beat rather than only as a card to collect. The
+ * sixth is built around mending itself: slow, high-health bodies that mend their
+ * hero as they land and as they fall, so a player meets healing not as a line on
+ * one card but as a match that has to be closed out before it outlasts them. The
  * first entry is the opponent a match is against unless the player picks another.
  *
  * `signature` is the one card that stands for how that opponent plays: a card
@@ -520,6 +523,37 @@ export const OPPONENTS = [
       "mudback-turtle",
       "glowcap",
       "moon-bloom",
+      "root-colossus",
+      "elder-oak",
+    ],
+  },
+  {
+    id: "mossheart",
+    name: "Mossheart",
+    look: "a bowed mender of the deep wood, green to the shoulders where the moss has taken hold",
+    description: "Slow, high-health bodies that mend — they outlast you",
+    cardPreference: "dearest",
+    accent: "--opponent-mossheart",
+    // Mossheart Chalice: the mended bowl that heals its holder's hero as it is
+    // lifted, the card that stands for the mender's long patience.
+    signature: "mossheart-chalice",
+    // The one deck built around mending rather than around a single trigger:
+    // four of its ten cards mend the hero the moment they land, a fifth pays a
+    // mend back as it falls, and every other body is cheap for the health it
+    // carries. It plays dearest for the same reason — one wall at a time, each
+    // dealt with before the next — so the mends it keeps taking are what a
+    // player has to outpace before the match runs long and the slow deck wins by
+    // not dying. Its bodies are slow enough to leave the player free to race it,
+    // which is the lesson: against a mender, a stalled board is a losing one.
+    deck: [
+      "dewdrop-nymph",
+      "sprout",
+      "comfrey-root",
+      "dewglass-moth",
+      "mossheart-chalice",
+      "mudback-turtle",
+      "bark-sentinel",
+      "elderheart-willow",
       "root-colossus",
       "elder-oak",
     ],
