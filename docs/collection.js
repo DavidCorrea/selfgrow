@@ -861,6 +861,15 @@ export function listOwnedCards(cards) {
   });
 }
 
+// Which opponent each signature card stands for, read backwards from the
+// opponents themselves. A signature card is earned by beating the character it
+// represents, so a set list can name the character to beat for a card a player
+// is still missing; deriving it here rather than storing it on the card keeps
+// the two from ever disagreeing.
+const SIGNATURE_OPPONENT_BY_CARD_ID = new Map(
+  OPPONENTS.map(({ id, name, signature }) => [signature, { id, name }])
+);
+
 /**
  * Every card in the game, in catalog order, each with its name, cost, attack,
  * health and its three abilities (`ability` for when it is played,
@@ -868,7 +877,10 @@ export function listOwnedCards(cards) {
  * for when it falls, each the text on its face or `null` when it has none), how
  * many copies the collection holds, and whether it holds any at all. A card the player
  * does not own appears too — zero copies, `owned` false — so the whole set can be
- * shown beside what has been collected from it.
+ * shown beside what has been collected from it. `signatureOf` is the opponent
+ * whose signature card this is — its `id` and `name` — or `null` for a card that
+ * is not an opponent's signature, so a caller reading the set can tell which
+ * character to beat for a card still missing.
  */
 export function listAllCards(cards) {
   const copiesById = new Map(cards.map((card) => [card.id, card.copies]));
@@ -885,6 +897,7 @@ export function listAllCards(cards) {
       fallAbility: card.fallAbility ?? null,
       copies,
       owned: copies > 0,
+      signatureOf: SIGNATURE_OPPONENT_BY_CARD_ID.get(card.id) ?? null,
     };
   });
 }

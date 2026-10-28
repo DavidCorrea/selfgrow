@@ -2185,6 +2185,11 @@ function collectionCardRow(card) {
   name.textContent = card.name;
   head.append(name);
 
+  // A signature card stands for the opponent it is won from, and is won only by
+  // beating them, so its row names them — a player browsing the set reads who
+  // to beat for a card they are still missing rather than having to guess.
+  if (card.signatureOf) head.append(signatureNote(`${card.signatureOf.name}'s signature`));
+
   // The card the last win added says so beside its own name, in the row the set
   // is read card by card — a word, so the mark is never a colour alone.
   if (isNewlyCollected) head.append(newlyCollectedNote());
@@ -2247,6 +2252,18 @@ function newlyCollectedNote() {
   return note;
 }
 
+/**
+ * What an opponent's signature card is marked with wherever it is listed — the
+ * character it stands for in the collection, the promise a first win earns it in
+ * the picker's deck fold. The words carry the mark; the styling only frames it.
+ */
+function signatureNote(text) {
+  const note = document.createElement("span");
+  note.className = "signature-note";
+  note.textContent = text;
+  return note;
+}
+
 /** One card in the deck, shown as its picture and read as its name and three
  * numbers, so the deck reads as a hand of cards. `note`, when given, is the mark
  * an opponent's signature card carries in the picker's deck fold. */
@@ -2271,12 +2288,7 @@ function deckCardRow(card, note) {
   stats.textContent = `${card.cost}/${card.attack}/${card.health}`;
 
   item.append(name, stats);
-  if (note) {
-    const mark = document.createElement("span");
-    mark.className = "signature-note";
-    mark.textContent = note;
-    item.append(mark);
-  }
+  if (note) item.append(signatureNote(note));
   const ability = cardAbilityNote(card);
   if (ability) item.append(ability);
   return item;
