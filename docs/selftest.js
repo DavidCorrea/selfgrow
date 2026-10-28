@@ -1487,6 +1487,15 @@ export async function checks() {
     fail("the deck list has no accessible name (aria-label), so it is read as an unlabelled list");
   }
 
+  // The home screen shows the same deck as its cards, so the list it draws in
+  // has to be there and named for a screen reader to tell which deck it is.
+  const homeDeckList = document.getElementById("home-deck-list");
+  if (!homeDeckList) {
+    fail("the home screen has no deck list (#home-deck-list), so the deck's cards cannot be read there");
+  } else if (!homeDeckList.getAttribute("aria-label")) {
+    fail("the home screen's deck list has no accessible name (aria-label), so it is read as an unlabelled list");
+  }
+
   const collectionScreenText = textOf(screen("collection"));
   if (!collectionScreenText.toLowerCase().includes("deck")) {
     fail("the collection screen never names the deck a player is building there");
@@ -1660,6 +1669,21 @@ export async function checks() {
   const emptyNote = deckList ? textOf(deckList.querySelector(".deck-empty")) : "";
   if (!emptyNote) {
     fail("an empty deck no longer shows its empty note, so the screen reads as a deck with cards but no contents");
+  }
+  // The home screen says the same: its count sentence says the deck is empty,
+  // and its list shows the empty note rather than any card faces.
+  const emptySummary = textOf(document.getElementById("deck-summary"));
+  if (!/empty/i.test(emptySummary)) {
+    fail(
+      `an empty deck leaves the home screen's summary reading "${emptySummary || "(nothing)"}" ` +
+        "instead of saying in words that the deck is empty"
+    );
+  }
+  if (homeDeckList && !textOf(homeDeckList.querySelector(".deck-empty"))) {
+    fail("an empty deck leaves the home screen's deck list with no empty note");
+  }
+  if (homeDeckList && homeDeckList.querySelector(".deck-card")) {
+    fail("an empty deck still shows card faces on the home screen");
   }
   if (curve().length !== 0) {
     fail(`an empty deck reports a cost curve: ${JSON.stringify(curve())}`);
@@ -1999,13 +2023,60 @@ export async function checks() {
     );
   }
 
-  // The home screen summarises the same deck, by size and by name.
+  // The home screen shows the same deck as its cards — picture, name and three
+  // numbers, in the order the player chose them — while the sentence beside it
+  // says only the size, so a player recognises what they are about to play and
+  // a screen reader still hears the count.
   const deckSummary = textOf(document.getElementById("deck-summary"));
   if (!deckSummary.includes("10")) {
     fail(`the home screen's deck summary does not state the deck's size: it reads "${deckSummary || "(nothing)"}"`);
   }
-  if (!expectedDeckNames.every((name) => deckSummary.includes(name))) {
-    fail(`the home screen's deck summary does not name every card in the deck: it reads "${deckSummary}"`);
+  if (expectedDeckNames.some((name) => deckSummary.includes(name))) {
+    fail(
+      `the home screen's deck summary still names the deck's cards instead of saying only its size: ` +
+        `it reads "${deckSummary}"`
+    );
+  }
+  if (homeDeckList) {
+    const homeRows = [...homeDeckList.querySelectorAll(".deck-card")];
+    if (homeRows.length !== 10) {
+      fail(`the deck holds ten cards but the home screen shows ${homeRows.length} of them as cards`);
+    }
+    const homeIds = homeRows.map((row) => row.dataset.cardId);
+    const expectedDeckIds = game.readState().deck.map((card) => card.id);
+    if (JSON.stringify(homeIds) !== JSON.stringify(expectedDeckIds)) {
+      fail(
+        `the home screen's deck shows ${JSON.stringify(homeIds)} while the state holds ` +
+          `${JSON.stringify(expectedDeckIds)}`
+      );
+    }
+    for (const row of homeRows) {
+      const card = game.readState().deck.find((entry) => entry.id === row.dataset.cardId);
+      const name = textOf(row.querySelector(".deck-card-name"));
+      const stats = textOf(row.querySelector(".deck-card-stats"));
+      const picture = row.querySelector("svg.card-art");
+      if (!card) {
+        fail(`the home screen shows a deck card "${row.dataset.cardId}" the state does not hold`);
+        continue;
+      }
+      if (name !== card.name) {
+        fail(`the home deck card "${row.dataset.cardId}" reads "${name}" instead of "${card.name}"`);
+      }
+      if (stats !== `${card.cost}/${card.attack}/${card.health}`) {
+        fail(
+          `the home deck card "${name}" prints its cost/attack/health as "${stats}" instead of ` +
+            `"${card.cost}/${card.attack}/${card.health}"`
+        );
+      }
+      if (!picture) {
+        fail(`the home deck card "${name}" is shown with no picture, so the deck cannot be read by sight`);
+      } else if (picture.getAttribute("role") !== "img" || picture.getAttribute("aria-label") !== card.name) {
+        fail(
+          `the picture on home deck card "${name}" is not announced as an image named for the card ` +
+            `(role="${picture.getAttribute("role")}", aria-label="${picture.getAttribute("aria-label") || "(nothing)"}")`
+        );
+      }
+    }
   }
 
   // Every owned card says how many of its copies are in the deck, so the count a
@@ -3645,6 +3716,18 @@ export async function checks() {
             `where its face says ${JSON.stringify(catalogAbility(card.id))}`
         );
       }
+    }
+    // The deck an agent asks for is the deck a player sees on the home screen,
+    // card for card and in the same order, so the two read the one deck.
+    const homeDeckNames = homeDeckList
+      ? [...homeDeckList.querySelectorAll(".deck-card")].map((face) => textOf(face.querySelector(".deck-card-name")))
+      : [];
+    const agentDeckNames = reportedDeck.map((card) => card.name);
+    if (JSON.stringify(homeDeckNames) !== JSON.stringify(agentDeckNames)) {
+      fail(
+        `get-state reports the deck as ${JSON.stringify(agentDeckNames)} while the home screen shows ` +
+          `${JSON.stringify(homeDeckNames)}`
+      );
     }
 
     // The deck's shape while it is built is part of what the page shows, so it is
