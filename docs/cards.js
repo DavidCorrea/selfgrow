@@ -261,6 +261,26 @@ export const CARDS = [
   { id: "dewglass-moth", name: "Dewglass Moth", cost: 3, attack: 2, health: 4, ability: HEAL_ON_PLAY },
   { id: "mossheart-chalice", name: "Mossheart Chalice", cost: 4, attack: 3, health: 5, ability: HEAL_ON_PLAY },
   { id: "elderheart-willow", name: "Elderheart Willow", cost: 6, attack: 5, health: 8, ability: HEAL_ON_PLAY },
+  // Three cards that each act twice, spread across the cost curve so a deck can
+  // be built around a card doing two things at once rather than only one. Every
+  // other card in the game acts at exactly one moment; these print two of the
+  // ability constants already in the set on one face, so the trigger the match
+  // runs and the words the card reads can never drift from the shared ones.
+  //
+  // The cheap one draws as it lands and mends its owner's hero as it falls: a
+  // body worth playing early that pays its owner back a card when it is played
+  // and a little health when it is traded away, the two halves of a small card
+  // answered whichever way the other side deals with it.
+  { id: "mire-spore", name: "Mire Spore", cost: 1, attack: 1, health: 1, ability: DRAW_ON_PLAY, fallAbility: HEAL_ON_FALL },
+  // The mid-cost one mends its owner's hero as it lands and grows each turn it
+  // stays: a wall that arrives with a heal and becomes a threat the longer it is
+  // left standing, so committing to the middle of the curve both holds and grows.
+  { id: "heartwood-sapling", name: "Heartwood Sapling", cost: 3, attack: 2, health: 4, ability: HEAL_ON_PLAY, growthAbility: GROWTH_ABILITY },
+  // The heavy one strikes the board as it lands and strikes again as it falls: a
+  // late-game body that answers the front card on the turn it is played and
+  // costs the other side another body the moment it is removed, so clearing it is
+  // never a free move.
+  { id: "spearroot-colossus", name: "Spearroot Colossus", cost: 6, attack: 6, health: 7, ability: STRIKE_ON_PLAY, fallAbility: STRIKE_ON_FALL },
 ];
 
 /** Lookup by id — the shape the saved collection speaks in. */
@@ -355,6 +375,14 @@ export const REWARD_POOL = [
   "dewglass-moth",
   "mossheart-chalice",
   "elderheart-willow",
+  // The three cards that each act twice are appended for the same reason as
+  // every reward before them: a save written before they existed keeps the
+  // next-reward order and the place it already had in the queue untouched. Each
+  // is a reward card, so a win is how one is earned and a deck can be built
+  // around a card that does two things at once.
+  "mire-spore",
+  "heartwood-sapling",
+  "spearroot-colossus",
 ];
 
 /**

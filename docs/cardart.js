@@ -698,6 +698,56 @@ const CARD_ART = new Map([
       `,
     },
   ],
+  [
+    "mire-spore",
+    {
+      description:
+        "A spore puff: a round puffball on a short stalk, burst open at its crown with spore motes drifting above",
+      inner: `
+        <path class="art-body" d="M42 54 L42 44 L54 44 L54 54 Z" />
+        <circle class="art-body" cx="48" cy="32" r="18" />
+        <path class="art-body" d="M48 12 L54 20 L48 24 L42 20 Z" />
+        <circle class="art-body" cx="20" cy="16" r="3.4" />
+        <circle class="art-body" cx="76" cy="11" r="2.8" />
+        <circle class="art-body" cx="48" cy="3" r="2.4" />
+        <circle class="art-body" cx="68" cy="30" r="2.2" />
+        <circle class="art-accent" cx="42" cy="32" r="2.6" />
+        <circle class="art-accent" cx="54" cy="32" r="2.6" />
+      `,
+    },
+  ],
+  [
+    "heartwood-sapling",
+    {
+      description:
+        "A young heartwood sapling: a forked trunk opening into two branches with a leaf on each and a heart knot cut into the bark",
+      inner: `
+        <path class="art-body" d="M34 54 C38 46 40 36 42 26 L54 26 C56 36 58 46 62 54 Z" />
+        <path class="art-body" d="M42 28 C36 20 30 15 22 12 L20 19 C28 23 34 29 39 37 Z" />
+        <path class="art-body" d="M54 28 C60 20 66 15 74 12 L76 19 C68 23 62 29 57 37 Z" />
+        <path class="art-body" d="M22 12 C16 4 24 0 30 6 C34 9 31 15 22 12 Z" />
+        <path class="art-body" d="M74 12 C80 4 72 0 66 6 C62 9 65 15 74 12 Z" />
+        <path class="art-accent" d="M48 48 C44 43 38 45 40 50 C41 53 48 56 48 56 C48 56 55 53 56 50 C58 45 52 43 48 48 Z" />
+      `,
+    },
+  ],
+  [
+    "spearroot-colossus",
+    {
+      description:
+        "A spearroot colossus: a broad trunk body braced on splayed roots, two long spear arms thrust out, a thorn crown and one eye",
+      inner: `
+        <path class="art-body" d="M30 50 L12 58 L26 60 L38 52 Z" />
+        <path class="art-body" d="M66 50 L84 58 L70 60 L58 52 Z" />
+        <path class="art-body" d="M48 16 C58 16 64 25 64 36 C64 44 62 48 64 54 L32 54 C34 48 32 44 32 36 C32 25 38 16 48 16 Z" />
+        <path class="art-body" d="M34 26 L6 19 L6 29 L34 35 Z" />
+        <path class="art-body" d="M62 26 L90 19 L90 29 L62 35 Z" />
+        <path class="art-body" d="M40 18 L44 4 L48 16 Z" />
+        <path class="art-body" d="M56 18 L52 4 L48 16 Z" />
+        <circle class="art-accent" cx="48" cy="30" r="3" />
+      `,
+    },
+  ],
 ]);
 
 /**
