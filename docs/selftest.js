@@ -6282,13 +6282,26 @@ export async function checks() {
     }
   };
 
-  // Play the strongest card your energy covers, then end the turn, until the
-  // match is over — how a sensible player finishes a game. Bounded, so a match
-  // that will not end fails this check instead of hanging the whole suite.
+  // The most moves a seeded play-out may take before the match is expected to be
+  // over. The deal is fixed, so the game these checks play has a known length;
+  // a play-out that runs past this is one that no longer ends, and it fails the
+  // check below rather than eating the rest of the suite's time budget.
+  const PLAYOUT_MOVE_BOUND = 40;
+
+  /** The live match, as the page holds it. */
+  const liveMatch = () => game.readState().match;
+
+  /**
+   * Play the strongest card your energy covers, end the turn when nothing in
+   * hand is affordable, and stop the moment the match is over — how a sensible
+   * player finishes a game. Bounded, so a match that will not end fails the
+   * check below instead of hanging the whole suite. Returns the finished match
+   * and how many moves it took.
+   */
   const playToResult = () => {
-    for (let move = 0; move < 60; move += 1) {
-      const live = game.readState().match;
-      if (!live || live.over) return live;
+    let moves = 0;
+    while (moves < PLAYOUT_MOVE_BOUND && !liveMatch()?.over) {
+      const live = liveMatch();
       const strongest = live.hand
         .filter((card) => card.cost <= live.energy)
         .sort((a, b) => b.attack - a.attack)[0];
@@ -6297,14 +6310,15 @@ export async function checks() {
       } else {
         endTurnButton.click();
       }
+      moves += 1;
     }
-    return game.readState().match;
+    return { match: liveMatch(), moves };
   };
 
-  // A fixed shuffle for the play-out matches: the checks below drive a whole
-  // match to its end, and a real random deal can legitimately still be running
-  // at the move bound. A constant rng makes the deal — and so the ending — the
-  // same on every run, which is what lets an unfinished match mean a defect.
+  // A fixed shuffle for the play-out matches: the checks below drive a match to
+  // its end, and a real random deal can legitimately still be running at the
+  // move bound. A constant rng makes the deal — and so the ending — the same on
+  // every run, which is what lets an unfinished match mean a defect.
   const playoutRng = () => 0;
 
   // These checks play from a known deck a match can always play out of: every
@@ -6520,8 +6534,27 @@ export async function checks() {
       );
     }
   }
-  const playedOut = playToResult();
+  const playout = playToResult();
+  const playedOut = playout.match;
   checkResult("playing the strongest card your energy covers, turn after turn", playedOut);
+
+  // The play-out is seeded and bounded, and both are what keep the whole suite
+  // well inside the harness's time budget: every move renders the board, so a
+  // play-out that runs on costs the suite its time rather than checking
+  // anything. This fails on the sequence, not on the clock, so a slow runner
+  // does not fail it.
+  if (!(playedOut?.log || []).some((line) => line.includes("You play"))) {
+    fail(
+      "the seeded play-out never played a card, so it no longer covers starting a match, playing a card and " +
+        "ending a turn through to a result"
+    );
+  }
+  if (!playedOut?.over) {
+    fail(
+      `the seeded play-out did not reach a result within ${PLAYOUT_MOVE_BOUND} moves, so a finished match can ` +
+        "no longer be checked from it and the suite spends its budget playing instead"
+    );
+  }
 
   // Once a match has been finished the rules fold for good: a returning player
   // no longer meets the newcomer's strip open, even though the control remains
@@ -7272,7 +7305,27 @@ export async function checks() {
 
     // A finished match is never saved or offered: playing one out clears the
     // record and leaves the home screen with nothing to continue.
-    const finishedMatch = playToResult();
+    const finishedPlayout = playToResult();
+    const finishedMatch = finishedPlayout.match;
+    // Two play-outs of the same seeded deal end the same match every run, so a
+    // second one that ends differently means the deal has picked up something
+    // that is not seeded — which is what lets the checks below read one fixed
+    // match instead of whatever a random shuffle happened to deal.
+    if (
+      finishedMatch?.over &&
+      playedOut?.over &&
+      (finishedPlayout.moves !== playout.moves ||
+        finishedMatch.winner !== playedOut.winner ||
+        finishedMatch.playerHealth !== playedOut.playerHealth ||
+        finishedMatch.opponentHealth !== playedOut.opponentHealth)
+    ) {
+      fail(
+        `two seeded play-outs ended differently — ${playout.moves} move(s) to ${playedOut.winner} winning at ` +
+          `${playedOut.playerHealth}/${playedOut.opponentHealth} health, then ${finishedPlayout.moves} move(s) to ` +
+          `${finishedMatch.winner} winning at ${finishedMatch.playerHealth}/${finishedMatch.opponentHealth} — so ` +
+          "the match is not played from a seeded deal, or the deck changed between the two play-outs"
+      );
+    }
     if (!finishedMatch?.over) {
       fail("a match could not be played to an end, so a finished match leaving nothing saved cannot be checked");
     } else if (collection.readSavedMatch() !== null) {
