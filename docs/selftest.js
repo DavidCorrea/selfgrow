@@ -249,6 +249,53 @@ export async function checks() {
     }
   }
 
+  // How far through the cast the player is is a goal of its own, so the home
+  // screen counts it beside the set: the characters beaten at least once, out of
+  // every character a match can be against.
+  const homeBeaten = home.querySelector('[data-field="opponentsBeaten"]')?.closest(".standing");
+  if (!homeBeaten) {
+    fail(
+      "the home screen does not show how many opponents have been beaten " +
+        '(nothing carries data-field="opponentsBeaten")'
+    );
+  } else {
+    const beatenLabel = textOf(homeBeaten.querySelector(".standing-label"));
+    const beatenValue = textOf(homeBeaten.querySelector(".standing-value"));
+    if (!homeBeaten.closest("dl")) {
+      fail(
+        "the opponents-beaten number is not in a description list beside a label, so it is read without what it counts"
+      );
+    }
+    if (!beatenLabel.toLowerCase().includes("opponent")) {
+      fail(
+        `the home screen's count of opponents beaten is labelled "${beatenLabel || "(nothing)"}", ` +
+          "which does not say what it counts"
+      );
+    }
+    const beatenExpected = `${state.opponentsBeaten} of ${state.opponentsTotal}`;
+    if (beatenValue !== beatenExpected) {
+      fail(
+        `the home screen says "${beatenValue || "(nothing)"}" opponents beaten where the state says ` +
+          `"${beatenExpected}"`
+      );
+    }
+    // The count is read from the same per-opponent records the picker prints, so
+    // it can never claim a character beaten whom the record says is unbeaten.
+    const beatenFromRecords = state.opponents.filter((opponent) => opponent.record?.beaten).length;
+    if (state.opponentsBeaten !== beatenFromRecords) {
+      fail(
+        `the state reports ${state.opponentsBeaten} opponent(s) beaten while its own records mark ` +
+          `${beatenFromRecords} as beaten`
+      );
+    }
+    if (state.opponentsTotal !== cardCatalog.OPPONENTS.length) {
+      fail(
+        `the state says there are ${state.opponentsTotal} opponents while the game has ` +
+          `${cardCatalog.OPPONENTS.length}`
+      );
+    }
+  }
+
   const deckSizeValue = home.querySelector('[data-field="deckSize"]');
   if (!deckSizeValue) {
     fail('the home screen does not show deck size (nothing carries data-field="deckSize")');
@@ -3820,6 +3867,8 @@ export async function checks() {
       ["cardsOwned", "cards owned"],
       ["distinctCards", "different cards"],
       ["setTotal", "cards in the set"],
+      ["opponentsBeaten", "opponents beaten"],
+      ["opponentsTotal", "opponents in the cast"],
       ["deckSize", "deck size"],
       ["wins", "wins"],
       ["matchesPlayed", "matches played"],
@@ -6804,6 +6853,33 @@ export async function checks() {
       fail(
         `a win that was not a first still reads "${textOf(firstWinLine)}" on the result, so the mark is not ` +
           "kept for a first win"
+      );
+    }
+  }
+
+  // The count of opponents beaten follows the record the finished match moved: a
+  // first win against a character raises it by one, a loss or a repeat win leaves
+  // it where it was — and the home screen's figure keeps up with it.
+  {
+    const beatenBefore = Object.values(recordsBeforeMatch).filter((record) => record.wins > 0).length;
+    const beatenNow = game.readState().opponentsBeaten;
+    const expected = playedOut?.outcome === "win" && afterPlay.result?.firstWin ? beatenBefore + 1 : beatenBefore;
+    if (beatenNow !== expected) {
+      fail(
+        `after a ${playedOut?.outcome ?? "unfinished"} match the state reports ${beatenNow} opponent(s) beaten ` +
+          `where the record says ${expected}${afterPlay.result?.firstWin ? " (a first win should raise it)" : ""}`
+      );
+    }
+    const beatenShown = textOf(
+      screen("home")
+        ?.querySelector('[data-field="opponentsBeaten"]')
+        ?.closest(".standing-value")
+    );
+    const beatenWords = `${beatenNow} of ${game.readState().opponentsTotal}`;
+    if (beatenShown !== beatenWords) {
+      fail(
+        `the home screen reads "${beatenShown || "(nothing)"}" opponents beaten after a match where the ` +
+          `state says "${beatenWords}"`
       );
     }
   }

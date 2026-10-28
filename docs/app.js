@@ -338,11 +338,17 @@ let shownBoard = null;
 let shownReactions = null;
 
 /**
- * The counts the page prints, with the deck size derived from the deck itself so
- * the number can never drift from the cards it counts.
+ * The counts the page prints, with the deck size and the opponents beaten derived
+ * from what they count, so neither number can drift from the cards and the
+ * records it is read from.
  */
 function counts() {
-  return { ...state, deckSize: state.deck.length };
+  return {
+    ...state,
+    deckSize: state.deck.length,
+    opponentsBeaten: opponentsBeatenCount(),
+    opponentsTotal: OPPONENTS.length,
+  };
 }
 
 /** Write the state onto the page: the open screen, every count, and the save note. */
@@ -1209,6 +1215,16 @@ export function opponentRecordText(wins, matches) {
 function opponentRecord(opponentId) {
   const record = state.opponentsRecord?.[opponentId];
   return { wins: record?.wins ?? 0, matches: record?.matches ?? 0 };
+}
+
+/**
+ * How many characters the player has beaten at least once — the goal the home
+ * screen counts beside the set, read from the same per-opponent record the
+ * picker prints, so a first win raises it and beating the same opponent again
+ * does not.
+ */
+function opponentsBeatenCount() {
+  return OPPONENTS.filter((opponent) => opponentRecord(opponent.id).wins > 0).length;
 }
 
 /**
@@ -2559,7 +2575,10 @@ function commitDeck() {
 
 /**
  * Everything the page currently shows: the screen that is open, how many cards
- * the player owns and how many are different out of the whole set, the deck — its
+ * the player owns and how many are different out of the whole set, how many
+ * opponents have been beaten at least once out of every character there is
+ * (`opponentsBeaten` of `opponentsTotal` — the second goal beside the set, rising
+ * on a first win against a character and holding on a repeat), the deck — its
  * size, its limit, the fewest cards a match needs, the cards themselves, its
  * `deckCurve` shape (one `{ cost, count }` per energy cost the deck holds) and
  * its strength as two sums (`deckAttack` and `deckHealth`) beside how many of
@@ -2631,6 +2650,12 @@ export function readState() {
     cardsOwned: state.cardsOwned,
     distinctCards: state.distinctCards,
     setTotal: state.setTotal,
+    // The second goal beside the set: how many opponents the player has beaten
+    // at least once (`opponentsBeaten`), out of every character a match can be
+    // against (`opponentsTotal`) — the same figure the home screen prints under
+    // "Opponents beaten", read from the per-opponent records below.
+    opponentsBeaten: opponentsBeatenCount(),
+    opponentsTotal: OPPONENTS.length,
     // Which cards the Collection screen's set list is showing: "all", "missing",
     // "abilities", "falls" or "grows".
     collectionView: state.collectionView,
