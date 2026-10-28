@@ -1113,6 +1113,35 @@ export function nextRewardCard() {
 }
 
 /**
+ * Where the card the next win promises comes from: "signature" when it is the
+ * chosen opponent's own signature card, still to collect, and so earned only by
+ * beating that opponent; "pool" when it is an ordinary reward card any win
+ * earns; or null when there is no card left to promise. It reads the same
+ * `nextRewardCard` choice a win awards by, so the note the home screen prints
+ * and the branch a win takes can never disagree.
+ */
+export function nextRewardSource() {
+  const opponent = selectedOpponent();
+  const card = nextRewardCard();
+  if (!card) return null;
+  if (card.id === opponent.signature && !isSignatureEarned(opponent)) return "signature";
+  return "pool";
+}
+
+/**
+ * Who earns the card the next win promises, in words: the opponent to beat when
+ * the card is that opponent's own signature, or the plain fact that any win
+ * earns it when it is an ordinary reward. An empty string when there is no card
+ * to promise. This is what the home screen prints beside the card, so the
+ * promise points at a match to play rather than at a card alone.
+ */
+export function nextRewardNoteText(source, opponentName) {
+  if (source === "signature") return `Beat ${opponentName} to earn it.`;
+  if (source === "pool") return "Any win earns it.";
+  return "";
+}
+
+/**
  * Show, on the home screen, the card the next win will add: the label over it,
  * then the card itself — its picture, name and three numbers — so the goal a win
  * is working toward is visible before the match rather than only after it. Once
@@ -1127,7 +1156,10 @@ function renderNextReward() {
   const card = nextRewardCard();
   nextRewardHeading.textContent = nextRewardHeadingText(card === null);
   if (card) {
-    nextRewardBody.replaceChildren(awardCardFigure(card));
+    const note = document.createElement("p");
+    note.className = "next-reward-note next-reward-earned-by";
+    note.textContent = nextRewardNoteText(nextRewardSource(), selectedOpponent().name);
+    nextRewardBody.replaceChildren(awardCardFigure(card), note);
     return;
   }
   const note = document.createElement("p");
@@ -2741,6 +2773,14 @@ export function readState() {
     // reward card not yet owned — with its name, cost, attack and health, or
     // null, with `nextRewardComplete` true, once every reward card is owned.
     nextReward: nextReward ? { ...nextReward } : null,
+    // Who earns that card, in the same words the home screen prints beside it:
+    // the opponent to beat when the card is their own unowned signature, or the
+    // plain fact that any win earns it when it is an ordinary reward — and null
+    // once there is no card left to promise. It comes from the same shared choice
+    // as `nextReward`, so the page and the state tell one story.
+    nextRewardNote: nextReward
+      ? nextRewardNoteText(nextRewardSource(), selectedOpponent().name)
+      : null,
     nextRewardComplete: nextReward === null,
     saved: state.saved,
     // Who a match could be against, and which of them the next one would be —
