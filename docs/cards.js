@@ -361,6 +361,9 @@ export const REWARD_POOL = [
  * watch for it on the opponent's turn. One deck trades bodies on purpose and is
  * built around what a card does as it falls, the half of a card's behaviour no
  * other opponent centres on, so the fourth character is a lesson of its own. The
+ * fifth is built around the one ability none of the others teach: a deck of
+ * cards that grow stronger each turn they stand, so a player meets the reward
+ * for patience as something to beat rather than only as a card to collect. The
  * first entry is the opponent a match is against unless the player picks another.
  *
  * `signature` is the one card that stands for how that opponent plays: a card
@@ -468,6 +471,37 @@ export const OPPONENTS = [
       "fern-drake",
       "twilight-fox",
       "vine-lasher",
+    ],
+  },
+  {
+    id: "rootwarden",
+    name: "Rootwarden",
+    look: "a slow rooting warden, half tree and half stone, planted where it stands",
+    description: "Slow, rooting bodies that strengthen the longer they stand",
+    cardPreference: "dearest",
+    accent: "--opponent-rootwarden",
+    // Sunroot Treant: the growing body that holds the middle of the curve, the
+    // card that stands for the warden's patience.
+    signature: "sunroot-treant",
+    // The one deck built around a card that rewards staying on the table: four
+    // of its ten cards grow an attack at the start of every one of its turns, so
+    // each body the player leaves standing is a threat that compounds, and the
+    // answer is to trade early rather than let the table take root. It plays
+    // dearest for the same reason: it wants one big body to commit to and grow,
+    // not a swarm. Dewdrop Nymph keeps a when-played card in the deck, so the
+    // opponent still meets the player with a card that acts as it lands as every
+    // other opponent does.
+    deck: [
+      "climbing-ivy",
+      "budding-sapling",
+      "sunroot-treant",
+      "worldroot-ancient",
+      "dewdrop-nymph",
+      "mudback-turtle",
+      "glowcap",
+      "moon-bloom",
+      "root-colossus",
+      "elder-oak",
     ],
   },
 ];

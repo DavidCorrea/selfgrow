@@ -2799,6 +2799,10 @@ export async function checks() {
         ["emberwake", cardCatalog.STRIKE_ON_PLAY],
         ["mistfen", cardCatalog.STRIKE_ON_PLAY],
         ["barrowmere", cardCatalog.STRIKE_ON_PLAY],
+        // The growth teacher mends as its bodies land: its growing cards are
+        // what its match is about, so its when-played card is the one that keeps
+        // its hero standing while those bodies take root.
+        ["rootwarden", cardCatalog.HEAL_ON_PLAY],
       ]);
       for (const opponent of opponentChoices) {
         const promised = promisedAbility.get(opponent.id);
@@ -2872,6 +2876,44 @@ export async function checks() {
                 `the turn added ${JSON.stringify(firedLines)}`
             );
           }
+        }
+      }
+
+      // Every ability a card can carry is taught from the far side of the table,
+      // so the growth ability needs a character whose fixed deck is actually
+      // built around it — more than one growing card among plain ones — and
+      // whose signature card grows too, so the card a first win earns stands for
+      // how that character plays. It is found by what it does rather than by its
+      // id, so the growth teacher can be swapped or joined later without this
+      // check changing.
+      const growthTeacher = opponentChoices.find((opponent) => {
+        const growing = opponent.deck.filter((id) => cardCatalog.CARD_BY_ID.get(id)?.growthAbility);
+        const signature = cardCatalog.CARD_BY_ID.get(opponent.signature);
+        return growing.length >= 2 && Boolean(signature?.growthAbility);
+      });
+      if (!growthTeacher) {
+        fail(
+          "no opponent's fixed deck is built around growing cards (at least two cards that grow, with a signature " +
+            "card that grows), so the growth ability has no character teaching it from the far side of the table"
+        );
+      } else if (typeof collection.recordResult === "function") {
+        // Beating the growth character grows a player's own growth deck: a first
+        // win against it adds the growing card that stands for how it plays,
+        // which is the reward that closes the loop between facing the archetype
+        // and building one.
+        const growthStore = stubStorage();
+        const growthStarters = cardCatalog.STARTER_COLLECTION.map(({ id, copies }) => ({ id, copies }));
+        collection.saveCollection(growthStarters, growthStore);
+        const growthWin = collection.recordResult("win", "growth-teacher-first", growthStore, growthTeacher.id);
+        if (growthWin.awarded?.id !== growthTeacher.signature) {
+          fail(
+            `a first win against "${growthTeacher.name}" awarded "${growthWin.awarded?.id ?? null}" instead of ` +
+              `its growing signature "${growthTeacher.signature}", so beating the growth character does not grow ` +
+              "a player's own growth deck"
+          );
+        }
+        if (!growthWin.firstWin) {
+          fail(`a first win against "${growthTeacher.name}" did not report itself as a first`);
         }
       }
     }
