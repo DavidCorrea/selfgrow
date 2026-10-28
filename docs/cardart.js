@@ -779,6 +779,58 @@ const CARD_ART = new Map([
       `,
     },
   ],
+  // The cheap end of the striking curve: a small, low biter built from the same
+  // rounds and wedges as the rest of the set, drawn on the shared ground line so
+  // it sits on the table beside the other cheap creatures.
+  [
+    "nibblefang-vole",
+    {
+      description:
+        "A small biting creature: a low rounded body on four stub feet, a snout with two big front teeth and two round ears",
+      inner: `
+        <ellipse class="art-body" cx="40" cy="42" rx="21" ry="12" />
+        <rect class="art-body" x="24" y="48" width="7" height="7" rx="3.5" />
+        <rect class="art-body" x="48" y="48" width="7" height="7" rx="3.5" />
+        <path class="art-body" d="M22 38 C14 38 9 44 9 52 C16 52 22 48 26 44 Z" />
+        <circle class="art-body" cx="62" cy="32" r="12" />
+        <circle class="art-body" cx="55" cy="17" r="5" />
+        <circle class="art-body" cx="69" cy="17" r="5" />
+        <path class="art-body" d="M72 28 L88 35 L72 40 Z" />
+        <path class="art-body" d="M80 38 L85 51 L73 42 Z" />
+        <path class="art-body" d="M74 40 L74 52 L66 43 Z" />
+        <circle class="art-accent" cx="63" cy="29" r="2.4" />
+      `,
+    },
+  ],
+  // The heavy end of the same curve: a broad, four-legged beast crowned with two
+  // great forked antlers, so the biggest striker is told apart from the small one
+  // by its mass and its crown rather than by colour.
+  [
+    "thorncrown-stag",
+    {
+      description:
+        "A heavy antlered beast: a broad four-legged body under two round ears and two great forked antlers",
+      inner: `
+        <path class="art-body" d="M40 16 C30 10 20 7 14 5 L18 12 C26 14 34 18 42 24 Z" />
+        <path class="art-body" d="M56 16 C66 10 76 7 82 5 L78 12 C70 14 62 18 54 24 Z" />
+        <path class="art-body" d="M28 9 L22 2 L34 7 Z" />
+        <path class="art-body" d="M14 5 L9 1 L18 8 Z" />
+        <path class="art-body" d="M68 9 L74 2 L62 7 Z" />
+        <path class="art-body" d="M82 5 L87 1 L78 8 Z" />
+        <ellipse class="art-body" cx="48" cy="37" rx="24" ry="12" />
+        <rect class="art-body" x="27" y="43" width="8" height="11" rx="4" />
+        <rect class="art-body" x="39" y="43" width="8" height="11" rx="4" />
+        <rect class="art-body" x="51" y="43" width="8" height="11" rx="4" />
+        <rect class="art-body" x="63" y="43" width="8" height="11" rx="4" />
+        <path class="art-body" d="M25 33 C17 31 11 35 10 41 C17 41 23 38 29 35 Z" />
+        <circle class="art-body" cx="48" cy="20" r="12" />
+        <circle class="art-body" cx="36" cy="12" r="4" />
+        <circle class="art-body" cx="60" cy="12" r="4" />
+        <circle class="art-accent" cx="43" cy="19" r="2.4" />
+        <circle class="art-accent" cx="53" cy="19" r="2.4" />
+      `,
+    },
+  ],
 ]);
 
 /**

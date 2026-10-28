@@ -309,6 +309,17 @@ export const CARDS = [
   // trigger the match runs can never drift from the other sweepers, and it is a
   // reward card like them, so a win is how a player earns it.
   { id: "breeze-wisp", name: "Breeze Wisp", cost: 2, attack: 1, health: 2, ability: CLEAR_ON_PLAY },
+  // The two ends of the striking curve. Every striking card before these costs
+  // two, three, four or six, so a player who wants to build a deck around hitting
+  // the board as it lands has nothing to open the first turn with and nothing big
+  // enough to close a late game with. These two fill both ends: a small biting
+  // creature to spend an opening turn on, and a heavy antlered beast to commit a
+  // late one to. Each carries the shared STRIKE_ON_PLAY constant and no other
+  // ability, so the words on its face and the trigger the match runs can never
+  // disagree, and each is a reward card like the strikers already in the set, so
+  // a win is how one is earned.
+  { id: "nibblefang-vole", name: "Nibblefang Vole", cost: 1, attack: 1, health: 1, ability: STRIKE_ON_PLAY },
+  { id: "thorncrown-stag", name: "Thorncrown Stag", cost: 5, attack: 5, health: 5, ability: STRIKE_ON_PLAY },
 ];
 
 /** Lookup by id — the shape the saved collection speaks in. */
@@ -422,6 +433,13 @@ export const REWARD_POOL = [
   // had in the queue untouched. It is the cheap sweeping card, so a player who
   // wants to build around clearing a wide board early collects toward it.
   "breeze-wisp",
+  // Appended again, so a save written before these two existed keeps its next
+  // reward and its place in the queue untouched. They are the cheap and the heavy
+  // ends of the striking curve, so a deck built around striking the board as it
+  // lands has a card to open with and one to close with, and each is earned by a
+  // win like every reward before it.
+  "nibblefang-vole",
+  "thorncrown-stag",
 ];
 
 /**

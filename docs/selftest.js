@@ -10087,7 +10087,7 @@ export async function checks() {
     // Scrollbark before them. The list below is every reward appended after
     // Scrollbark, in pool order — extend it in the same change as the card.
     const scrollbarkPool = cardCatalog.REWARD_POOL ?? [];
-    const rewardsAppendedAfterScrollbark = ["breeze-wisp"];
+    const rewardsAppendedAfterScrollbark = ["breeze-wisp", "nibblefang-vole", "thorncrown-stag"];
     const scrollbarkPosition = scrollbarkPool.indexOf("scrollbark");
     const rewardsAfterScrollbark = scrollbarkPosition === -1 ? null : scrollbarkPool.slice(scrollbarkPosition + 1);
     if (
@@ -11468,6 +11468,246 @@ export async function checks() {
       }
     }
     await abilityViewForSweepers.execute({ view: "all" });
+  }
+
+  // --- Two more cards that strike the board, across the cost curve ----------
+
+  // Every striking card the set shipped with costs two, three, four or six, so a
+  // player who wants to build a deck around hitting the board as it lands has
+  // nothing to open the first turn with and nothing big enough to close a late
+  // game with. Two cards fill both ends: a cheap body to spend an opening turn on
+  // and a heavy one to commit a late one to. Each prints the ability in the same
+  // words as every other striker, each is pictured in the shared style, and each
+  // is a reward a win can add — so striking is an archetype a deck can be built
+  // on from the first turn to the last.
+  const strikingCards = [
+    { id: "nibblefang-vole", costBand: [1, 1] },
+    { id: "thorncrown-stag", costBand: [5, 5] },
+  ];
+  for (const { id, costBand } of strikingCards) {
+    const card = cardCatalog.CARD_BY_ID.get(id);
+    if (!card) {
+      fail(`the striking card "${id}" is not in the card catalog, so striking has no card at that point in the curve`);
+      continue;
+    }
+    if (card.ability !== strikeText) {
+      fail(
+        `"${card.name}" carries the ability ${JSON.stringify(card.ability ?? null)} instead of ` +
+          `${JSON.stringify(strikeText)}, so it does not strike the board in the same words as the other strikers`
+      );
+    }
+    if (card.cost < costBand[0] || card.cost > costBand[1]) {
+      fail(
+        `"${card.name}" costs ${card.cost} where a striking card is wanted between ${costBand[0]} and ` +
+          `${costBand[1]}, so the ability is not spread across the cost curve`
+      );
+    }
+    if (!pool.includes(id)) {
+      fail(`"${card.name}" carries the strike ability but is not in the reward pool, so a win can never add it`);
+    }
+    if (cardCatalog.STARTER_COLLECTION.some((entry) => entry.id === id)) {
+      fail(`the striking card "${card.name}" is dealt at the start, so a win for it is not something new`);
+    }
+
+    // A described picture, unique in the set and drawn only from its shapes.
+    const strikeArt = cardArt?.cardArt(id);
+    if (!strikeArt || !(strikeArt.inner || "").trim()) {
+      fail(`the striking card "${card.name}" has no picture, so it cannot be known by sight`);
+    } else if (!strikeArt.description?.trim()) {
+      fail(`the striking card "${card.name}"'s picture is not described, so it cannot be checked against the style`);
+    } else {
+      const strikeClasses = [...strikeArt.inner.matchAll(/class="([^"]*)"/g)].map(([, className]) => className);
+      const outsideStyle = strikeClasses.filter((className) => !["art-body", "art-accent"].includes(className));
+      if (strikeClasses.length === 0 || outsideStyle.length > 0) {
+        fail(
+          `the striking card "${card.name}" is drawn with ${JSON.stringify(strikeClasses)} instead of only the set's ` +
+            "art-body and art-accent shapes"
+        );
+      }
+      const strikeTwin = cardCatalog.CARDS.find(
+        (other) => other.id !== card.id && (cardArt.cardArt(other.id)?.inner || "") === strikeArt.inner
+      );
+      if (strikeTwin) {
+        fail(`the striking card "${card.name}" is drawn identically to "${strikeTwin.name}", so the two cannot be told apart`);
+      }
+    }
+
+    // The words are on the face in the collection, where a player learns what a
+    // card does before ever playing it.
+    const strikeFace = document.querySelector(`#collection-list [data-card-id="${id}"]`);
+    if (faceAbility(strikeFace) !== strikeText) {
+      fail(
+        `the striking card "${card.name}" in the collection does not print ${JSON.stringify(strikeText)} on its ` +
+          `face (it reads ${JSON.stringify(faceAbility(strikeFace))})`
+      );
+    }
+  }
+
+  // Each strikes the front card of the opponent's table as it lands, and the
+  // opponent's hero once that table is empty — the same blow, the same amount and
+  // the same log lines every other striking card lands.
+  if (!matchEngine || typeof matchEngine.playCard !== "function") {
+    fail("docs/match.js could not be imported or exports no playCard, so the striking cards cannot be played");
+  } else {
+    const strikingDeck = ["sprout", "pebble-toad", "thornling", "sun-moth", "bramble-hound"];
+    for (const { id } of strikingCards) {
+      const card = cardCatalog.CARD_BY_ID.get(id);
+      if (!card) continue;
+
+      const strikeBoard = matchEngine.createMatch(strikingDeck, { rng: () => 0 });
+      strikeBoard.player.hand = [{ ...card, hasAttacked: false }];
+      strikeBoard.player.table = [];
+      strikeBoard.player.deck = [];
+      strikeBoard.player.energy = card.cost;
+      strikeBoard.player.maxEnergy = card.cost;
+      const frontCard = { ...cardCatalog.CARD_BY_ID.get("mudback-turtle"), health: 5, hasAttacked: false };
+      strikeBoard.opponent.table = [frontCard];
+      strikeBoard.opponent.hand = [];
+      strikeBoard.opponent.deck = [];
+      const strikeHeroBefore = strikeBoard.opponent.health;
+      const frontHealthBefore = frontCard.health;
+      const strikeLogBefore = strikeBoard.log.length;
+      matchEngine.playCard(strikeBoard, id);
+      const strikeLines = strikeBoard.log.slice(strikeLogBefore);
+      const frontAfter = strikeBoard.opponent.table.find((onTable) => onTable.id === frontCard.id);
+      const frontExpected = frontHealthBefore - strikeAmount;
+
+      if (!frontAfter || frontAfter.health !== frontExpected) {
+        fail(
+          `playing "${card.name}" left the opponent's front card "${frontCard.name}" at ` +
+            `${frontAfter ? frontAfter.health : "(gone)"} health instead of ${frontExpected}`
+        );
+      }
+      if (strikeBoard.opponent.health !== strikeHeroBefore) {
+        fail(
+          `playing "${card.name}" cut the opponent's hero to ${strikeBoard.opponent.health} while its table still ` +
+            `held "${frontCard.name}", so the strike went past the card in front of it`
+        );
+      }
+      const strikeBlow = strikeLines.find((line) => line.includes(card.name) && line.includes(frontCard.name));
+      if (!strikeBlow) {
+        fail(`the log does not say "${card.name}" hit "${frontCard.name}": the play added ` + JSON.stringify(strikeLines));
+      } else if (!strikeBlow.includes(`${frontExpected} health left`)) {
+        fail(
+          `the log line for "${card.name}"'s strike does not state what "${frontCard.name}" has left: "${strikeBlow}"`
+        );
+      }
+      if (!strikeBoard.player.table.some((onTable) => onTable.id === id)) {
+        fail(`playing "${card.name}" did not leave its own body on the player's table`);
+      }
+
+      // The hero, once the opponent's table is empty: the same strike reaches
+      // past an empty table and the log states the health it left.
+      const openBoard = matchEngine.createMatch(strikingDeck, { rng: () => 0 });
+      openBoard.player.hand = [{ ...card, hasAttacked: false }];
+      openBoard.player.table = [];
+      openBoard.player.deck = [];
+      openBoard.player.energy = card.cost;
+      openBoard.player.maxEnergy = card.cost;
+      openBoard.opponent.table = [];
+      openBoard.opponent.hand = [];
+      openBoard.opponent.deck = [];
+      const openHeroBefore = openBoard.opponent.health;
+      const openLogBefore = openBoard.log.length;
+      matchEngine.playCard(openBoard, id);
+      if (openBoard.opponent.health !== openHeroBefore - strikeAmount) {
+        fail(
+          `a strike from "${card.name}" at the empty opponent table left its hero at ` +
+            `${openBoard.opponent.health} instead of ${openHeroBefore - strikeAmount}`
+        );
+      }
+      if (
+        !openBoard.log
+          .slice(openLogBefore)
+          .some((line) => line.includes(card.name) && line.includes(`opponent health ${openBoard.opponent.health}`))
+      ) {
+        fail(
+          `the log does not state the opponent's health after "${card.name}" struck its hero: the play added ` +
+            JSON.stringify(openBoard.log.slice(openLogBefore))
+        );
+      }
+    }
+  }
+
+  // Both are cards a win can add: with every reward card before the cheap striker
+  // held, the next-win card walks to it and then to the heavy one, and a win
+  // awards exactly the card that walk named.
+  if (typeof collection.nextRewardId !== "function") {
+    fail("collection.js does not export nextRewardId, so the striking cards cannot be checked as winnable");
+  } else {
+    const strikeStarters = cardCatalog.STARTER_COLLECTION.map(({ id, copies }) => ({ id, copies }));
+    const cheapStriker = strikingCards[0].id;
+    const heavyStriker = strikingCards[1].id;
+    const heldBeforeStrikers = strikeStarters.concat(
+      pool.slice(0, pool.indexOf(cheapStriker)).map((id) => ({ id, copies: 1 }))
+    );
+    const promisedCheapStriker = collection.nextRewardId(heldBeforeStrikers);
+    if (promisedCheapStriker !== cheapStriker) {
+      fail(
+        `with the reward cards before it held the next-win card is "${promisedCheapStriker}" instead of ` +
+          `"${cheapStriker}", so the cheap striking card cannot be won`
+      );
+    }
+    const strikerStore = stubStorage();
+    collection.saveCollection(heldBeforeStrikers, strikerStore);
+    const wonCheapStriker = collection.recordResult("win", "match-nibblefang-vole", strikerStore);
+    if (wonCheapStriker.awarded?.id !== cheapStriker) {
+      fail(
+        `a win that should add the cheap striking card awarded "${wonCheapStriker.awarded?.id}" instead of ` +
+          `"${cheapStriker}"`
+      );
+    }
+    const promisedHeavyStriker = collection.nextRewardId(wonCheapStriker.cards);
+    if (promisedHeavyStriker !== heavyStriker) {
+      fail(
+        `after winning "${cheapStriker}" the next-win card is "${promisedHeavyStriker}" instead of ` +
+          `"${heavyStriker}", so the heavy striking card cannot be won`
+      );
+    }
+    const wonHeavyStriker = collection.recordResult("win", "match-thorncrown-stag", strikerStore);
+    if (wonHeavyStriker.awarded?.id !== heavyStriker) {
+      fail(
+        `a win that should add the heavy striking card awarded "${wonHeavyStriker.awarded?.id}" instead of ` +
+          `"${heavyStriker}"`
+      );
+    }
+  }
+
+  // Both are counted in the set a player collects toward: the total a tool reports
+  // is the catalog's own length, the cards are in the list an agent reads, and the
+  // "x of y collected" figure on the Collection screen counts up to the same total.
+  const listForStrikers = toolNamed("list-collection");
+  if (listForStrikers) {
+    const listedStrikeSet = await listForStrikers.execute();
+    if (listedStrikeSet.setTotal !== cardCatalog.CARDS.length) {
+      fail(
+        `list-collection reports a set of ${listedStrikeSet.setTotal} cards while the catalog holds ` +
+          `${cardCatalog.CARDS.length}, so the striking cards are not counted in the set`
+      );
+    }
+    const listedStrikeCards = Array.isArray(listedStrikeSet.cards) ? listedStrikeSet.cards : [];
+    for (const { id } of strikingCards) {
+      const name = cardCatalog.CARD_BY_ID.get(id)?.name ?? id;
+      const entry = listedStrikeCards.find((listed) => listed.id === id);
+      if (!entry) {
+        fail(`list-collection does not return "${name}", so an agent cannot find the striking card it can win`);
+      } else if (entry.ability !== strikeText) {
+        fail(
+          `list-collection returns "${name}" with ability ${JSON.stringify(entry.ability ?? null)} instead of ` +
+            `${JSON.stringify(strikeText)}`
+        );
+      }
+    }
+  }
+  const collectedOnScreen = textOf(
+    document.querySelector('#screen-collection [data-field="distinctCards"]')?.closest(".standing")?.querySelector(".standing-value")
+  );
+  const collectedTotal = collectedOnScreen.split(" of ").pop();
+  if (collectedTotal !== String(cardCatalog.CARDS.length)) {
+    fail(
+      `the Collection screen counts cards collected out of ${JSON.stringify(collectedTotal)} instead of the ` +
+        `${cardCatalog.CARDS.length} the set now holds, so the new striking cards are not counted as collectable`
+    );
   }
 
   // --- A blow is shown on the table, not only in the log ---------------------
