@@ -1212,6 +1212,27 @@ function opponentRecord(opponentId) {
 }
 
 /**
+ * What an opponent's signature card is marked with in their deck: the promise a
+ * first win against them still earns it, and the plain fact once it is already
+ * earned — the player owns it, or has already beaten them. Both are words, so a
+ * screen reader and an agent read the mark the same way a sighted player does.
+ */
+export function signatureMarkText(earned) {
+  return earned ? "Already earned" : "First win earns this card";
+}
+
+/**
+ * Whether the card a first win against an opponent earns is already the player's:
+ * they own a copy, or they have already beaten that opponent. Read from the same
+ * `opponentRecord` and `state.cards` the state layer exposes, so the mark in the
+ * deck and what an agent reads can never disagree.
+ */
+function isSignatureEarned(opponent) {
+  if (opponentRecord(opponent.id).wins > 0) return true;
+  return state.cards.some((card) => card.id === opponent.signature);
+}
+
+/**
  * Write one opponent's record onto its line in the picker: the words from
  * `opponentRecordText`, and the emphasis that marks an opponent already beaten.
  * Called on every draw, so the line is right after a match has moved it.
@@ -1304,9 +1325,18 @@ function opponentDeckFold(opponent) {
   toggle.className = "opponent-deck-toggle";
   toggle.textContent = `Their deck, ${cards.length} cards`;
 
+  // The one card a first win against them earns is marked in words, so choosing
+  // who to face also shows which of the ten stands for how they play and whether
+  // it is still on offer.
+  const signatureNote = signatureMarkText(isSignatureEarned(opponent));
+
   const list = document.createElement("ul");
   list.className = "opponent-deck-cards";
-  list.replaceChildren(...cards.map(deckCardRow));
+  list.replaceChildren(
+    ...cards.map((card) =>
+      card.id === opponent.signature ? deckCardRow(card, signatureNote) : deckCardRow(card)
+    )
+  );
 
   fold.append(toggle, list);
   return fold;
@@ -1341,6 +1371,13 @@ function renderOpponentChoice() {
     // it is read from the picker the moment the player looks back at it.
     const record = option.querySelector(".opponent-record");
     if (record) writeOpponentRecord(record, option.dataset.opponentId);
+    // The signature mark is refreshed in the same breath: beating an opponent
+    // takes their card off offer, and the deck must not keep promising it.
+    const mark = option.querySelector(".signature-note");
+    if (mark) {
+      const opponent = OPPONENTS.find((entry) => entry.id === option.dataset.opponentId);
+      if (opponent) mark.textContent = signatureMarkText(isSignatureEarned(opponent));
+    }
   }
   const opponent = selectedOpponent();
   if (matchIntroOpponent) matchIntroOpponent.textContent = opponent.name;
@@ -2211,8 +2248,9 @@ function newlyCollectedNote() {
 }
 
 /** One card in the deck, shown as its picture and read as its name and three
- * numbers, so the deck reads as a hand of cards. */
-function deckCardRow(card) {
+ * numbers, so the deck reads as a hand of cards. `note`, when given, is the mark
+ * an opponent's signature card carries in the picker's deck fold. */
+function deckCardRow(card, note) {
   const item = document.createElement("li");
   item.className = "deck-card";
   item.dataset.cardId = card.id;
@@ -2233,6 +2271,12 @@ function deckCardRow(card) {
   stats.textContent = `${card.cost}/${card.attack}/${card.health}`;
 
   item.append(name, stats);
+  if (note) {
+    const mark = document.createElement("span");
+    mark.className = "signature-note";
+    mark.textContent = note;
+    item.append(mark);
+  }
   const ability = cardAbilityNote(card);
   if (ability) item.append(ability);
   return item;
@@ -2657,6 +2701,10 @@ export function readState() {
         // first win against them earns while it is still to collect. It is the
         // id list-collection names, so a caller can point a player at it.
         signature,
+        // What the picker's deck fold marks that card with, in the same words a
+        // player reads: the promise while it is still to earn, or the plain fact
+        // once it is already earned — the player owns it or has beaten them.
+        signatureNote: signatureMarkText(isSignatureEarned({ id, signature })),
         deck: [...deck],
         deckShown: Boolean(fold && fold.open && !fold.closest("[hidden]")),
         // How the player has fared against this opponent, as the picker's own

@@ -1216,6 +1216,22 @@ body {
   font-size: 0.7rem;
 }
 
+/* The one card in an opponent's deck a first win earns: the fact is written on
+   the card itself, so a player choosing who to face sees what is on offer and
+   which card stands for how that character plays — and a screen reader or an
+   agent reads the same words rather than a colour. Quiet enough to sit under
+   the card's numbers without shouting over the rest of the hand. */
+.opponent-deck-cards .signature-note {
+  padding: 0.05rem 0.3rem;
+  border: 1px solid rgba(242, 193, 78, 0.5);
+  border-radius: 999px;
+  color: var(--foil);
+  font-size: 0.62rem;
+  font-weight: 700;
+  line-height: 1.15;
+  letter-spacing: 0.01em;
+}
+
 /* The how-a-match-works strip: the four things a newcomer cannot yet read for
    themselves, said in four short labelled lines that stand before the picker
    and the Start match button. It folds away behind one control, so a returning

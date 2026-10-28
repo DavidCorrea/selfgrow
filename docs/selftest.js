@@ -1478,6 +1478,126 @@ export async function checks() {
     }
   }
 
+  // The one card in an opponent's deck a first win against them earns must be
+  // marked, in words, in that opponent's deck fold — and stop promising it once
+  // the player owns it or has already beaten them. The words come from the same
+  // helper get-state reports, so what a player reads and what an agent reads
+  // are one thing.
+  if (typeof game.signatureMarkText !== "function") {
+    fail("app.js does not export signatureMarkText, so the mark on an opponent's first-win card cannot be checked");
+  } else {
+    const signaturePromises = game.signatureMarkText(false);
+    const signatureEarned = game.signatureMarkText(true);
+    if (!/win/i.test(signaturePromises) || !/earn/i.test(signaturePromises)) {
+      fail(
+        `the mark on a still-to-earn signature card reads "${signaturePromises}", which does not say a first ` +
+          "win earns it"
+      );
+    }
+    if (!/earn/i.test(signatureEarned)) {
+      fail(`the mark on an already-earned signature card reads "${signatureEarned}", which does not say it is already earned`);
+    }
+    if (signaturePromises.toLowerCase() === signatureEarned.toLowerCase()) {
+      fail(
+        "a still-to-earn and an already-earned signature card read the same mark, so the picker keeps promising a " +
+          "card the player already has"
+      );
+    }
+
+    const optionsById = () =>
+      new Map(
+        [...(document.getElementById("opponent-options")?.querySelectorAll(".opponent-option") ?? [])].map(
+          (option) => [option.dataset.opponentId, option]
+        )
+      );
+    const ownedIds = () =>
+      new Set(game.readCollection().cards.filter((card) => card.owned).map((card) => card.id));
+    // Exactly one card in the fold is marked, and it is the opponent's signature,
+    // reading the mark the earned state calls for.
+    const checkSignatureMark = (liveState, when) => {
+      const owned = ownedIds();
+      for (const opponent of liveState.opponents) {
+        const option = optionsById().get(opponent.id);
+        const fold = option?.querySelector("details.opponent-deck-fold");
+        if (!fold) {
+          fail(`opponent "${opponent.id}" has no deck fold, so the card a first win earns cannot be marked (${when})`);
+          continue;
+        }
+        const marked = [...fold.querySelectorAll("[data-card-id]")].filter((row) =>
+          row.querySelector(".signature-note")
+        );
+        if (marked.length !== 1) {
+          fail(
+            `the deck fold for "${opponent.name}" marks ${marked.length} card(s) as the first-win reward instead of ` +
+              `exactly one (${when})`
+          );
+          continue;
+        }
+        const row = marked[0];
+        if (row.dataset.cardId !== opponent.signature) {
+          fail(
+            `the deck fold for "${opponent.name}" marks "${row.dataset.cardId}" instead of its signature ` +
+              `"${opponent.signature}" (${when})`
+          );
+        }
+        const isEarned = opponent.record.beaten || owned.has(opponent.signature);
+        const expected = game.signatureMarkText(isEarned);
+        const shown = textOf(row.querySelector(".signature-note"));
+        if (shown !== expected) {
+          fail(
+            `the deck fold for "${opponent.name}" marks its signature "${opponent.signature}" with "${shown}" ` +
+              `while the earned state is ${isEarned}, which should read "${expected}" (${when})`
+          );
+        }
+        if (opponent.signatureNote !== expected) {
+          fail(
+            `get-state reports signatureNote "${opponent.signatureNote}" for "${opponent.id}" while the earned ` +
+              `state is ${isEarned}, which should read "${expected}" (${when})`
+          );
+        }
+      }
+    };
+
+    // The live picker, whatever state earlier checks have left it in.
+    checkSignatureMark(game.readState(), "as the page stands");
+
+    // Then the two ways a signature is already earned, neither of which the live
+    // game may be in: owning the card without having beaten them, and beating
+    // them so the first-win card is off offer. Both are put on the real page
+    // through the save-code path and taken back afterwards.
+    const restoreOriginal = collection.saveCode();
+    const firstOpponent = game.readState().opponents[0];
+    const baseCards = game.readCollection().ownedCards.map(({ id, copies }) => ({ id, copies }));
+    const baseDeck = game.readState().deck.map((card) => card.id);
+    const codeWith = (progress) =>
+      collection.saveCode(
+        stubStorage({
+          [collection.STORAGE_KEY]: JSON.stringify({
+            version: 1,
+            cards: [...baseCards, { id: firstOpponent.signature, copies: 1 }],
+            deck: baseDeck,
+            ...progress,
+          }),
+        })
+      );
+    for (const [when, progress] of [
+      ["once the signature is owned", { wins: 0, matches: 1, opponents: { [firstOpponent.id]: { wins: 0, matches: 1 } } }],
+      ["once the opponent is beaten", { wins: 1, matches: 1, opponents: { [firstOpponent.id]: { wins: 1, matches: 1 } } }],
+    ]) {
+      try {
+        game.restoreSaveCode(codeWith(progress));
+        checkSignatureMark(game.readState(), when);
+      } catch (error) {
+        fail(`restoring a save ${when} was refused: ${error.message}`);
+      }
+    }
+    try {
+      game.restoreSaveCode(restoreOriginal);
+    } catch (error) {
+      fail(`restoring the game after the signature-mark checks was refused: ${error.message}`);
+    }
+  }
+
   // --- The deck: chosen from the collection, capped, and kept ---------------
 
   const deckList = document.getElementById("deck-list");
