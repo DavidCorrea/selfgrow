@@ -4724,9 +4724,9 @@ export async function checks() {
   if (!setCollectionViewTool) {
     fail('no "set-collection-view" tool is declared, so an agent cannot choose between every card and only those still to collect');
   } else if (setList) {
-    if (setViewButtons.length !== 8) {
+    if (setViewButtons.length !== 9) {
       fail(
-        `the Collection screen offers ${setViewButtons.length} view control(s) where it should offer eight — every card, only those still to collect, only those that act when played, only those that mend your hero when played, only those that draw you a card, only those that act when they fall, only those that grow each turn, and only those that act twice`
+        `the Collection screen offers ${setViewButtons.length} view control(s) where it should offer nine — every card, only those still to collect, only those that act when played, only those that mend your hero when played, only those that draw you a card, only those that act when they fall, only those that grow each turn, only those that act twice, and only those that sweep the opponent's table`
       );
     }
 
@@ -5393,10 +5393,107 @@ export async function checks() {
       fail(`switching the set back from "twice" reports the view as "${backFromTwiceView.collectionView}"`);
     }
 
+    // The "sweeps" view lists only the cards whose face deals damage to each
+    // card on the opponent's table at once — owned and unowned alike — so a
+    // player building around clearing a whole table can see the cards that
+    // sweep instead of reading every face to find them, and can see how many of
+    // them they still have to collect. Which cards those are is the catalog's
+    // answer, not the page's, and it is the one comparison a deck's own sweep
+    // count will read too.
+    const sweepIds = setIds.filter((id) => catalogAbility(id) === cardCatalog.CLEAR_ON_PLAY);
+    if (!sweepIds.length) {
+      fail('no card in the game sweeps the opponent\'s table, so the "sweeps" view has nothing to list');
+    }
+    // A card that strikes only the front card is not a card that sweeps, so the
+    // view must leave it out — a bug that filtered the wrong when-played ability
+    // would list it here and trip this.
+    const strikeOnlyId = setIds.find(
+      (id) => catalogAbility(id) === cardCatalog.STRIKE_ON_PLAY && catalogAbility(id) !== cardCatalog.CLEAR_ON_PLAY
+    );
+    if (!strikeOnlyId) {
+      fail('no card in the game strikes only the front card when played, so the "sweeps" view cannot be checked to leave it out');
+    } else if (sweepIds.includes(strikeOnlyId)) {
+      fail(`the "sweeps" view counts "${strikeOnlyId}", which strikes only the front card, among the cards that sweep the opponent's table`);
+    }
+    const afterSweepView = await setCollectionViewTool.execute({ view: "sweeps" });
+    if (afterSweepView.collectionView !== "sweeps") {
+      fail(`switching the set to "sweeps" reports the view as "${afterSweepView.collectionView}" instead of "sweeps"`);
+    }
+    const sweepRows = [...setList.querySelectorAll("[data-card-id]")].map((row) => row.dataset.cardId);
+    if (sweepRows.join(", ") !== sweepIds.join(", ")) {
+      const withoutSweep = sweepRows.filter((id) => catalogAbility(id) !== cardCatalog.CLEAR_ON_PLAY);
+      const hidden = sweepIds.filter((id) => !sweepRows.includes(id));
+      fail(
+        `the "sweeps" view lists ${sweepRows.length} card(s) in the order ${sweepRows.slice(0, 4).join(", ")}, … where the game's ` +
+          `${sweepIds.length} sweeping card(s) in catalog order are ${sweepIds.join(", ")}` +
+          `${withoutSweep.length ? `; it shows ${withoutSweep.join(", ")}, which do not sweep the opponent's table` : ""}` +
+          `${hidden.length ? `; it hides ${hidden.join(", ")}, which do` : ""}`
+      );
+    }
+    const pressedSweeps = setViewButtons
+      .filter((button) => button.getAttribute("aria-pressed") === "true")
+      .map((button) => button.dataset.collectionView);
+    if (pressedSweeps.length !== 1 || pressedSweeps[0] !== "sweeps") {
+      fail(`the "sweeps" view does not mark its own button pressed (pressed: ${pressedSweeps.join(", ") || "none"})`);
+    }
+    if (setList.getAttribute("aria-label") === allViewListLabel) {
+      fail(
+        'the set list names what it lists the same way in the "sweeps" view as in the "all" view, so a screen reader cannot tell which cards are showing'
+      );
+    }
+
+    // The empty note a view prints when it has nothing to list is part of the
+    // view's contract, not decoration: it must exist and name the sweep so a
+    // player meeting an empty "sweeps" view is told why, not shown a blank.
+    const sweepsViewText = game.COLLECTION_VIEW_TEXT?.sweeps;
+    if (!sweepsViewText || typeof sweepsViewText.empty !== "string" || !sweepsViewText.empty.trim()) {
+      fail('the "sweeps" view has no empty note, so an empty list would read as a blank rather than saying no card sweeps the opponent\'s table');
+    } else if (!/sweep/i.test(sweepsViewText.empty)) {
+      fail(`the "sweeps" view's empty note reads "${sweepsViewText.empty}" without naming the sweep behaviour it stands for`);
+    }
+
+    // Both readers agree on the view, and switching it leaves the count of cards
+    // collected, the collection and the deck exactly as they were.
+    const sweepState = await getState.execute({});
+    if (sweepState.collectionView !== "sweeps") {
+      fail(`get-state reports the collection view as "${sweepState.collectionView}" while the "sweeps" view is showing`);
+    }
+    if (game.readCollection().view !== "sweeps") {
+      fail(`list-collection reports the collection view as "${game.readCollection().view}" while the "sweeps" view is showing`);
+    }
+    const collectedWhileSweeping = textOf(
+      document.querySelector('#screen-collection [data-field="distinctCards"]')?.closest(".standing-value")
+    );
+    if (collectedWhileSweeping !== collectedExpected) {
+      fail(
+        `the "sweeps" view leaves the cards collected reading "${collectedWhileSweeping}" where the set stands at "${collectedExpected}"`
+      );
+    }
+    if (JSON.stringify(asIdCopies(game.readCollection().ownedCards)) !== JSON.stringify(asIdCopies(beforeView.ownedCards))) {
+      fail('switching the set to the "sweeps" view changed the cards in the collection');
+    }
+    if (JSON.stringify(game.readState().deck) !== JSON.stringify(beforeState.deck)) {
+      fail('switching the set to the "sweeps" view changed the deck');
+    }
+    checkViewCount(sweepIds);
+
+    // Switching to another view and back restores the whole set, so a visitor
+    // who looks at the sweeping cards never loses their place in the list.
+    const backFromSweepView = await setCollectionViewTool.execute({ view: "all" });
+    if (backFromSweepView.collectionView !== "all") {
+      fail(`switching the set back from "sweeps" reports the view as "${backFromSweepView.collectionView}"`);
+    }
+    const backFromSweepRows = [...setList.querySelectorAll("[data-card-id]")].map((row) => row.dataset.cardId);
+    if (backFromSweepRows.join(", ") !== setIds.join(", ")) {
+      fail(
+        `the collection's "all" view lists ${backFromSweepRows.length} card(s) after switching back from "sweeps" where the game has ${setIds.length}`
+      );
+    }
+
     // A view the page does not have is refused with a reason, and changes nothing.
     const refusedView = await setCollectionViewTool.execute({ view: "everything" });
     if (!refusedView.error) {
-      fail('setting the collection view to "everything" was accepted, though the page has only "all", "missing", "abilities", "mends", "draws", "falls", "grows" and "twice"');
+      fail('setting the collection view to "everything" was accepted, though the page has only "all", "missing", "abilities", "mends", "draws", "falls", "grows", "twice" and "sweeps"');
     }
     if (game.readCollection().view !== "all") {
       fail(`a refused view left the collection showing "${game.readCollection().view}" instead of "all"`);
