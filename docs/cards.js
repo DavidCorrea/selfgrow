@@ -415,7 +415,11 @@ export const REWARD_POOL = [
  * sixth is built around mending itself: slow, high-health bodies that mend their
  * hero as they land and as they fall, so a player meets healing not as a line on
  * one card but as a match that has to be closed out before it outlasts them. The
- * first entry is the opponent a match is against unless the player picks another.
+ * seventh is built around cards that act twice: a deck whose bodies answer the
+ * board as they land and pay their owner back as they fall, or mend and grow at
+ * once, so a player meets "a card can be two things" as something to beat rather
+ * than only as a card to collect. The first entry is the opponent a match is
+ * against unless the player picks another.
  *
  * `signature` is the one card that stands for how that opponent plays: a card
  * from their own deck and, like every reward card, in `REWARD_POOL`. A first win
@@ -583,6 +587,41 @@ export const OPPONENTS = [
       "bark-sentinel",
       "elderheart-willow",
       "root-colossus",
+      "elder-oak",
+    ],
+  },
+  {
+    id: "twinbough",
+    name: "Twinbough",
+    look: "a forked spirit of two boughs, one trunk splitting into twin crowns",
+    description: "Two things at once — bodies that answer the board and pay you back",
+    cardPreference: "dearest",
+    accent: "--opponent-twinbough",
+    // Spearroot Colossus: the heavy body that strikes the board as it lands and
+    // strikes again as it falls, the card that stands for the forked spirit's
+    // doubled play.
+    signature: "spearroot-colossus",
+    // The one deck built around a card that acts twice: four of its ten cards
+    // carry two abilities each — a body that draws as it lands and mends as it
+    // falls, one that mends and grows, one that strikes as it lands and draws as
+    // it falls, and one that strikes both ways — so a player meets a card doing
+    // two things at once as a board to answer rather than only as a card to
+    // collect. It plays dearest for that reason: it wants one doubled body a
+    // turn, each dealt with before the next, because every body it commits both
+    // answers the board and is owed something when it is removed. Seed Pod and
+    // Comfrey Root feed the same idea — bodies cheap enough to trade that pay
+    // their owner back as they fall — while Climbing Ivy, Glowcap, Mudback
+    // Turtle and Elder Oak keep the curve playable.
+    deck: [
+      "mire-spore",
+      "seed-pod",
+      "comfrey-root",
+      "climbing-ivy",
+      "heartwood-sapling",
+      "glowcap",
+      "sunspear-bloom",
+      "mudback-turtle",
+      "spearroot-colossus",
       "elder-oak",
     ],
   },

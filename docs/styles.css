@@ -46,6 +46,7 @@
   --opponent-barrowmere: #c4a0e8;
   --opponent-rootwarden: #a9c98a;
   --opponent-mossheart: #c3e07a;
+  --opponent-twinbough: #f0a4c0;
 
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
   --radius-card: 20px;
@@ -1033,8 +1034,8 @@ body {
    screen still holds all of them. The 11rem floor is the least a portrait and
    the words beside it need to sit next to each other without squeezing the look
    and the deck into a column of two words; the picker is given the whole width
-   of the screen on a wide window (see #screen-play), so six opponents stand in
-   one row rather than wrapping to a second one and pushing Start match off the
+   of the screen on a wide window (see #screen-play), where every opponent is laid
+   in one row rather than wrapping to a second one and pushing Start match off the
    first screen. */
 .opponent-options {
   display: grid;
@@ -1063,7 +1064,7 @@ body {
    the record against it, then the look it cuts and the kind of deck it brings —
    so pressing any part of this top half picks that opponent. The radio, the
    portrait and the name share the first row and the two description lines take
-   the full width under them: at six opponents across a laptop the column beside
+   the full width under them: at seven opponents across a laptop the column beside
    a portrait is too narrow to read a sentence in, and a sentence that wraps to
    six lines is what pushes Start match off the first screen. The padding is what
    the picker has to spare once each character carries a record line. */
@@ -1113,8 +1114,8 @@ body {
 
 /* The portrait of each option is the character itself, drawn in that opponent's
    accent, the one detail cut into it in the ink that prints on foil. Just under
-   two rem is big enough to know a face at a glance, and small enough that six
-   opponents still stand in one row on a laptop window. It sits in the first row
+   two rem is big enough to know a face at a glance, and small enough that every
+   opponent still stands in one row on a laptop window. It sits in the first row
    beside the radio and the name. */
 .opponent-portrait {
   grid-column: 2;
@@ -1158,7 +1159,7 @@ body {
 
 /* The look the character cuts and the kind of deck it brings each take the whole
    width of the option, in the rows under the radio, the portrait and the name —
-   the one place in a six-across picker where a sentence has room to read. */
+   the one place in a seven-across picker where a sentence has room to read. */
 .opponent-look,
 .opponent-deck {
   grid-column: 1 / -1;
@@ -2087,6 +2088,38 @@ body {
   #screen-play > #opponent-picker {
     grid-row: 3;
     grid-column: 1 / -1;
+  }
+
+  /* Every opponent stands in one row however many the game offers, rather than
+     wrapping to a second one and pushing Start match off the first screen. A
+     fixed column flow makes each option an equal share of the row instead of a
+     11rem track per character, and the seven of them fit the first screen only
+     if each stays short: a tighter gap, padding and description size keep the
+     wrapped look and deck lines from growing the option past the fold. The
+     phone's single-column stack is untouched, since this only applies where the
+     wide layout begins. */
+  .opponent-options {
+    grid-template-columns: none;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(0, 1fr);
+    gap: 0.2rem;
+  }
+
+  .opponent-choice {
+    gap: 0.05rem 0.35rem;
+    padding: 0.1rem 0.3rem;
+  }
+
+  .opponent-look,
+  .opponent-deck {
+    font-size: 0.7rem;
+    line-height: 1.1;
+  }
+
+  /* The folded deck sits on the same inset as the words above it, so the option
+     reads as one column rather than an indented footnote. */
+  .opponent-deck-fold {
+    padding-inline: 0.3rem;
   }
 
   /* A finished match keeps the picker above it — the next one can be against
