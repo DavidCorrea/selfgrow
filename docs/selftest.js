@@ -3317,6 +3317,10 @@ export async function checks() {
         // The mender's deck is mending: its when-played cards are the whole
         // point of it, not a supporting trick.
         ["mossheart", cardCatalog.HEAL_ON_PLAY],
+        // The doubled deck strikes as its bodies land (Sunspear Bloom and the
+        // Spearroot Colossus it earns), so the half of a card that answers the
+        // board is the one its kind of play promises.
+        ["twinbough", cardCatalog.STRIKE_ON_PLAY],
       ]);
       for (const opponent of opponentChoices) {
         const promised = promisedAbility.get(opponent.id);
@@ -3428,6 +3432,84 @@ export async function checks() {
         }
         if (!growthWin.firstWin) {
           fail(`a first win against "${growthTeacher.name}" did not report itself as a first`);
+        }
+      }
+
+      // Every ability a card can carry is taught from the far side of the table,
+      // and a card that carries two at once has to be met there too: a card that
+      // does two things is a shape a player can build around, but meeting one in
+      // a match is how it becomes something to beat rather than only a card to
+      // collect. So a character's fixed deck is built around the doubled cards —
+      // more than one card carrying two of the three ability moments, and a
+      // signature that does two things too, so the card a first win earns stands
+      // for how that character plays. It is found by what it does rather than by
+      // its id, so the teacher can be swapped or joined later without this check
+      // changing.
+      const abilityMoments = ["ability", "growthAbility", "fallAbility"];
+      const momentsOn = (card) => abilityMoments.filter((field) => card?.[field]).length;
+      const twoAbilityTeacher = opponentChoices.find((opponent) => {
+        const doubled = opponent.deck.filter((id) => momentsOn(cardCatalog.CARD_BY_ID.get(id)) > 1);
+        return doubled.length >= 3 && momentsOn(cardCatalog.CARD_BY_ID.get(opponent.signature)) > 1;
+      });
+      if (!twoAbilityTeacher) {
+        fail(
+          "no opponent's fixed deck is built around cards that act twice (at least three cards carrying more than " +
+            "one ability, with a signature that carries more than one), so a card that does two things has no " +
+            "character teaching it from the far side of the table"
+        );
+      } else if (typeof collection.recordResult === "function") {
+        // Beating the teacher hands the player one of those doubled cards: a
+        // first win against it adds the two-ability signature that stands for how
+        // it plays, which closes the loop between facing a card that acts twice
+        // and building a deck around one.
+        const twinStore = stubStorage();
+        const twinStarters = cardCatalog.STARTER_COLLECTION.map(({ id, copies }) => ({ id, copies }));
+        collection.saveCollection(twinStarters, twinStore);
+        const twinWin = collection.recordResult("win", "two-ability-teacher-first", twinStore, twoAbilityTeacher.id);
+        if (twinWin.awarded?.id !== twoAbilityTeacher.signature) {
+          fail(
+            `a first win against "${twoAbilityTeacher.name}" awarded "${twinWin.awarded?.id ?? null}" instead of ` +
+              `its two-ability signature "${twoAbilityTeacher.signature}", so beating the teacher does not hand the ` +
+              "player a card that acts twice"
+          );
+        }
+        if (!twinWin.firstWin) {
+          fail(`a first win against "${twoAbilityTeacher.name}" did not report itself as a first`);
+        }
+
+        // The growth half of a doubled card fires on the opponent's own turn as
+        // the player's does: a card that both mends as it lands and grows while
+        // it stays is left on the opponent's table and one turn is taken, so the
+        // trigger is seen to fire for the far side of the table.
+        const growthDoubled = twoAbilityTeacher.deck
+          .map((id) => cardCatalog.CARD_BY_ID.get(id))
+          .find((card) => card?.growthAbility && momentsOn(card) > 1);
+        if (!growthDoubled) {
+          fail(
+            `"${twoAbilityTeacher.name}" brings no card that both grows and carries a second ability, so the ` +
+              "growth half of a doubled card is never shown on the opponent's turn"
+          );
+        } else {
+          const doubling = matchEngine.createMatch(cheapDeck, {
+            rng: fixedRng,
+            opponentId: twoAbilityTeacher.id,
+          });
+          doubling.opponent.table = [{ ...growthDoubled, hasAttacked: false }];
+          const doublingLogBefore = doubling.log.length;
+          matchEngine.endTurn(doubling);
+          const doubledLines = doubling.log.slice(doublingLogBefore);
+          const grewLine = doubledLines.find((line) => line.startsWith(`${growthDoubled.name} grows +`));
+          if (!grewLine) {
+            fail(
+              `a match against "${twoAbilityTeacher.name}" did not grow its "${growthDoubled.name}" on its own ` +
+                `turn: the turn added ${JSON.stringify(doubledLines)}`
+            );
+          } else if (!grewLine.includes("for the opponent")) {
+            fail(
+              `"${growthDoubled.name}" grew on the opponent's turn but the log reads ${JSON.stringify(grewLine)} ` +
+                "instead of naming the opponent as the side it grew for"
+            );
+          }
         }
       }
     }
