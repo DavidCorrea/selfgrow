@@ -1238,27 +1238,31 @@ body {
   display: none;
 }
 
-/* The label and its line share a row, so four points cost four rows rather than
-   eight. The longest runs onto a further line at a phone's width, so the leading
-   is the tightest this size reads at — that is what keeps the picker and the
-   Start match button on the first screen with all four points open. */
+/* The label and its line share a row as two boxes of their own, so four points
+   cost four rows rather than eight. `fit-content` gives a short label the width
+   its own words need — the line starts right after it, as it always has — and
+   caps the long fourth label at a share of the row, so the label that wraps and
+   the line beside it are two boxes that share no pixels. The cap is what keeps
+   the picker and the Start match button on the first screen with all four
+   points open: a column as wide as the whole fourth label on one line squeezes
+   the line beside it into twice the height. The leading is the tightest this
+   size reads at, for the same reason. */
 .match-rule {
+  display: grid;
+  grid-template-columns: fit-content(24%) minmax(0, 1fr);
+  column-gap: 0.35rem;
+  align-items: start;
   font-size: 0.76rem;
   line-height: 1.2;
 }
 
 .match-rule-label,
 .match-rule-text {
-  display: inline;
   margin: 0;
 }
 
 .match-rule-label {
   font-weight: 700;
-}
-
-.match-rule-label::after {
-  content: " ";
 }
 
 .match-rule-text {
@@ -2247,6 +2251,14 @@ body {
 
   .match-rules-points {
     gap: 0;
+  }
+
+  /* A phone's row is too narrow to hold the long fourth label beside its line
+     and still read, so the two stack: the label on its own line, its line
+     below it. Still one point per row, still four points. */
+  .match-rule {
+    grid-template-columns: 1fr;
+    column-gap: 0;
   }
 
   /* The how-a-match-works strip and the opponent picker share the first screen,
