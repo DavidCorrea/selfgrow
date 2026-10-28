@@ -2514,9 +2514,9 @@ function deckCostCurve() {
 /**
  * The deck's strength as two sums — the attack it brings and the health it can
  * absorb — beside how many of its cards act when played, how many act when they
- * fall and how many grow each turn, over the same cards the deck panel draws, so
- * the totals and the deck can never disagree. Null for an empty deck, so nothing
- * is shown where there is nothing to total.
+ * fall, how many mend your hero and how many grow each turn, over the same cards
+ * the deck panel draws, so the totals and the deck can never disagree. Null for
+ * an empty deck, so nothing is shown where there is nothing to total.
  */
 function deckTotals() {
   const cards = listDeckCards(state.deck);
@@ -2527,9 +2527,12 @@ function deckTotals() {
       health: totals.health + card.health,
       whenPlayed: totals.whenPlayed + (card.ability ? 1 : 0),
       whenFalls: totals.whenFalls + (card.fallAbility ? 1 : 0),
+      // The same when-played-heal predicate the Collection screen's "mends"
+      // view filters by, so the count and that view can never disagree.
+      mends: totals.mends + (card.ability === HEAL_ON_PLAY ? 1 : 0),
       grows: totals.grows + (card.growthAbility ? 1 : 0),
     }),
-    { attack: 0, health: 0, whenPlayed: 0, whenFalls: 0, grows: 0 }
+    { attack: 0, health: 0, whenPlayed: 0, whenFalls: 0, mends: 0, grows: 0 }
   );
 }
 
@@ -2575,11 +2578,13 @@ function renderDeckCurve() {
   const attack = document.getElementById("deck-total-attack");
   const health = document.getElementById("deck-total-health");
   const whenPlayed = document.getElementById("deck-total-when-played");
+  const mends = document.getElementById("deck-total-mends");
   const whenFalls = document.getElementById("deck-total-when-falls");
   const grows = document.getElementById("deck-total-grows");
   if (attack) attack.textContent = totals ? String(totals.attack) : "";
   if (health) health.textContent = totals ? String(totals.health) : "";
   if (whenPlayed) whenPlayed.textContent = totals ? String(totals.whenPlayed) : "";
+  if (mends) mends.textContent = totals ? String(totals.mends) : "";
   if (whenFalls) whenFalls.textContent = totals ? String(totals.whenFalls) : "";
   if (grows) grows.textContent = totals ? String(totals.grows) : "";
 }
@@ -2645,8 +2650,9 @@ function commitDeck() {
  * size, its limit, the fewest cards a match needs, the cards themselves, its
  * `deckCurve` shape (one `{ cost, count }` per energy cost the deck holds) and
  * its strength as two sums (`deckAttack` and `deckHealth`) beside how many of
- * its cards act when played (`deckWhenPlayed`), how many act when they fall
- * (`deckWhenFalls`) and how many grow each turn (`deckGrows`) — all five null
+ * its cards act when played (`deckWhenPlayed`), how many mend your hero
+ * (`deckMends`), how many act when they fall (`deckWhenFalls`) and how many
+ * grow each turn (`deckGrows`) — all six null
  * for an empty deck — whether it will survive closing the page, how many matches have
  * been played and won, the result of the last finished match (whether it was a win or a loss, the
  * card a win awarded, whether that completed the set, and `firstWin` — whether
@@ -2753,14 +2759,16 @@ export function readState() {
     // The deck's strength as two sums: the attack it brings (`deckAttack`) and
     // the health it can absorb (`deckHealth`), over the same cards the deck panel
     // draws and shown beside its cost curve. Beside them, how many of the deck's
-    // cards act when played (`deckWhenPlayed`), how many act when they fall
-    // (`deckWhenFalls`) and how many grow each turn (`deckGrows`), so a player
-    // building around any of the three abilities reads the same counts the panel
-    // prints. All five are null for an empty deck, matching the note the screen
-    // shows instead of totals of zero.
+    // cards act when played (`deckWhenPlayed`), how many mend your hero
+    // (`deckMends`) — the same "Mends your hero" count the panel prints, so a
+    // player building a deck that stays alive sees its shape as it is built — how
+    // many act when they fall (`deckWhenFalls`) and how many grow each turn
+    // (`deckGrows`). All six are null for an empty deck, matching the note the
+    // screen shows instead of totals of zero.
     deckAttack: deckTotal ? deckTotal.attack : null,
     deckHealth: deckTotal ? deckTotal.health : null,
     deckWhenPlayed: deckTotal ? deckTotal.whenPlayed : null,
+    deckMends: deckTotal ? deckTotal.mends : null,
     deckWhenFalls: deckTotal ? deckTotal.whenFalls : null,
     deckGrows: deckTotal ? deckTotal.grows : null,
     wins: state.wins,
