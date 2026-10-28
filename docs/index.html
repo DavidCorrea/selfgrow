@@ -362,7 +362,8 @@
              still to collect, marked as such. The view buttons above the list
              switch it between the whole set, only what is still to collect
              and only the cards that do something the moment they are played,
-             that draw a card at play or at fall, the moment they fall, that
+             that strike the opponent's front card as they land, that draw a card
+             at play or at fall, the moment they fall, that
              grow while they stay, that carry more than one ability and so
              act twice, or that sweep every card on the opponent's table at
              once, so a player
@@ -388,6 +389,9 @@
             <button type="button" class="btn btn-secondary" data-collection-view="mends" aria-pressed="false">
               Mends your hero
             </button>
+            <button type="button" class="btn btn-secondary" data-collection-view="strikes" aria-pressed="false">
+              Strikes the board
+            </button>
             <button type="button" class="btn btn-secondary" data-collection-view="draws" aria-pressed="false">
               Draws a card
             </button>
@@ -406,8 +410,9 @@
           </div>
           <!-- How much of what the list is showing the player already holds,
                e.g. "2 of 5 collected". Shown for the ability views ("Acts when
-               played", "Mends your hero", "Draws a card", "Acts when they
-               fall", "Grows each turn", "Acts twice" and "Sweeps the table"),
+               played", "Mends your hero", "Strikes the board", "Draws a card",
+               "Acts when they fall", "Grows each turn", "Acts twice" and "Sweeps
+               the table"),
                and hidden in the whole-set and still-to-collect views where the standing above the
                list already says it. -->
           <p class="collection-view-count" id="collection-view-count" hidden></p>

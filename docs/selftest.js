@@ -4915,9 +4915,9 @@ export async function checks() {
   if (!setCollectionViewTool) {
     fail('no "set-collection-view" tool is declared, so an agent cannot choose between every card and only those still to collect');
   } else if (setList) {
-    if (setViewButtons.length !== 9) {
+    if (setViewButtons.length !== 10) {
       fail(
-        `the Collection screen offers ${setViewButtons.length} view control(s) where it should offer nine — every card, only those still to collect, only those that act when played, only those that mend your hero when played, only those that draw you a card, only those that act when they fall, only those that grow each turn, only those that act twice, and only those that sweep the opponent's table`
+        `the Collection screen offers ${setViewButtons.length} view control(s) where it should offer ten — every card, only those still to collect, only those that act when played, only those that mend your hero when played, only those that strike the opponent's front card when played, only those that draw you a card, only those that act when they fall, only those that grow each turn, only those that act twice, and only those that sweep the opponent's table`
       );
     }
 
@@ -5681,10 +5681,106 @@ export async function checks() {
       );
     }
 
+    // The "strikes" view lists only the cards whose face deals damage to the
+    // opponent's front card when played — owned and unowned alike — so a player
+    // building around answering the board the moment a card lands can see the
+    // cards that strike instead of reading every face to find them, and can see
+    // how many of them they still have to collect. Which cards those are is the
+    // catalog's answer, not the page's.
+    const strikeIds = setIds.filter((id) => catalogAbility(id) === cardCatalog.STRIKE_ON_PLAY);
+    if (!strikeIds.length) {
+      fail('no card in the game strikes the opponent\'s front card when played, so the "strikes" view has nothing to list');
+    }
+    // A card that sweeps every card on the table is not a card that strikes only
+    // the front one, so the view must leave it out — a bug that filtered the
+    // wrong when-played ability would list it here and trip this.
+    const sweepOnlyId = setIds.find(
+      (id) => catalogAbility(id) === cardCatalog.CLEAR_ON_PLAY && catalogAbility(id) !== cardCatalog.STRIKE_ON_PLAY
+    );
+    if (!sweepOnlyId) {
+      fail('no card in the game sweeps the opponent\'s table when played, so the "strikes" view cannot be checked to leave it out');
+    } else if (strikeIds.includes(sweepOnlyId)) {
+      fail(`the "strikes" view counts "${sweepOnlyId}", which sweeps the opponent's table, among the cards that strike the front card`);
+    }
+    const afterStrikeView = await setCollectionViewTool.execute({ view: "strikes" });
+    if (afterStrikeView.collectionView !== "strikes") {
+      fail(`switching the set to "strikes" reports the view as "${afterStrikeView.collectionView}" instead of "strikes"`);
+    }
+    const strikeRows = [...setList.querySelectorAll("[data-card-id]")].map((row) => row.dataset.cardId);
+    if (strikeRows.join(", ") !== strikeIds.join(", ")) {
+      const withoutStrike = strikeRows.filter((id) => catalogAbility(id) !== cardCatalog.STRIKE_ON_PLAY);
+      const hidden = strikeIds.filter((id) => !strikeRows.includes(id));
+      fail(
+        `the "strikes" view lists ${strikeRows.length} card(s) in the order ${strikeRows.slice(0, 4).join(", ")}, … where the game's ` +
+          `${strikeIds.length} striking card(s) in catalog order are ${strikeIds.join(", ")}` +
+          `${withoutStrike.length ? `; it shows ${withoutStrike.join(", ")}, which do not strike the opponent's front card when played` : ""}` +
+          `${hidden.length ? `; it hides ${hidden.join(", ")}, which do` : ""}`
+      );
+    }
+    const pressedStrikes = setViewButtons
+      .filter((button) => button.getAttribute("aria-pressed") === "true")
+      .map((button) => button.dataset.collectionView);
+    if (pressedStrikes.length !== 1 || pressedStrikes[0] !== "strikes") {
+      fail(`the "strikes" view does not mark its own button pressed (pressed: ${pressedStrikes.join(", ") || "none"})`);
+    }
+    if (setList.getAttribute("aria-label") === allViewListLabel) {
+      fail(
+        'the set list names what it lists the same way in the "strikes" view as in the "all" view, so a screen reader cannot tell which cards are showing'
+      );
+    }
+
+    // The empty note a view prints when it has nothing to list is part of the
+    // view's contract, not decoration: it must exist and name the strike so a
+    // player meeting an empty "strikes" view is told why, not shown a blank.
+    const strikesViewText = game.COLLECTION_VIEW_TEXT?.strikes;
+    if (!strikesViewText || typeof strikesViewText.empty !== "string" || !strikesViewText.empty.trim()) {
+      fail('the "strikes" view has no empty note, so an empty list would read as a blank rather than saying no card strikes the opponent\'s front card when played');
+    } else if (!/strik/i.test(strikesViewText.empty)) {
+      fail(`the "strikes" view's empty note reads "${strikesViewText.empty}" without naming the strike behaviour it stands for`);
+    }
+
+    // Both readers agree on the view, and switching it leaves the count of cards
+    // collected, the collection and the deck exactly as they were.
+    const strikeState = await getState.execute({});
+    if (strikeState.collectionView !== "strikes") {
+      fail(`get-state reports the collection view as "${strikeState.collectionView}" while the "strikes" view is showing`);
+    }
+    if (game.readCollection().view !== "strikes") {
+      fail(`list-collection reports the collection view as "${game.readCollection().view}" while the "strikes" view is showing`);
+    }
+    const collectedWhileStriking = textOf(
+      document.querySelector('#screen-collection [data-field="distinctCards"]')?.closest(".standing-value")
+    );
+    if (collectedWhileStriking !== collectedExpected) {
+      fail(
+        `the "strikes" view leaves the cards collected reading "${collectedWhileStriking}" where the set stands at "${collectedExpected}"`
+      );
+    }
+    if (JSON.stringify(asIdCopies(game.readCollection().ownedCards)) !== JSON.stringify(asIdCopies(beforeView.ownedCards))) {
+      fail('switching the set to the "strikes" view changed the cards in the collection');
+    }
+    if (JSON.stringify(game.readState().deck) !== JSON.stringify(beforeState.deck)) {
+      fail('switching the set to the "strikes" view changed the deck');
+    }
+    checkViewCount(strikeIds);
+
+    // Switching to another view and back restores the whole set, so a visitor
+    // who looks at the striking cards never loses their place in the list.
+    const backFromStrikeView = await setCollectionViewTool.execute({ view: "all" });
+    if (backFromStrikeView.collectionView !== "all") {
+      fail(`switching the set back from "strikes" reports the view as "${backFromStrikeView.collectionView}"`);
+    }
+    const backFromStrikeRows = [...setList.querySelectorAll("[data-card-id]")].map((row) => row.dataset.cardId);
+    if (backFromStrikeRows.join(", ") !== setIds.join(", ")) {
+      fail(
+        `the collection's "all" view lists ${backFromStrikeRows.length} card(s) after switching back from "strikes" where the game has ${setIds.length}`
+      );
+    }
+
     // A view the page does not have is refused with a reason, and changes nothing.
     const refusedView = await setCollectionViewTool.execute({ view: "everything" });
     if (!refusedView.error) {
-      fail('setting the collection view to "everything" was accepted, though the page has only "all", "missing", "abilities", "mends", "draws", "falls", "grows", "twice" and "sweeps"');
+      fail('setting the collection view to "everything" was accepted, though the page has only "all", "missing", "abilities", "mends", "strikes", "draws", "falls", "grows", "twice" and "sweeps"');
     }
     if (game.readCollection().view !== "all") {
       fail(`a refused view left the collection showing "${game.readCollection().view}" instead of "all"`);
