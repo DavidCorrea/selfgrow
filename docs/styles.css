@@ -632,6 +632,45 @@ body {
   font-size: 0.9rem;
 }
 
+/* The control that empties the whole deck, so rebuilding one does not mean
+   taking the old one apart a card at a time. It sits directly under the deck's
+   cards, and the question it raises wears the same frame as the restore
+   control's: the first press asks, the second empties, so a stray press costs
+   nothing. */
+.deck-clear {
+  display: grid;
+  gap: 0.6rem;
+  width: 100%;
+  min-width: 0;
+}
+
+.deck-clear-confirm {
+  display: grid;
+  gap: 0.6rem;
+  width: 100%;
+  min-width: 0;
+  padding: 0.85rem 1rem 0.95rem;
+  border: 1px solid var(--edge);
+  border-left: 3px solid var(--foil);
+  border-radius: var(--radius-control);
+}
+
+.deck-clear-confirm[hidden] {
+  display: none;
+}
+
+.deck-clear-confirm-text {
+  margin: 0;
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+
+.deck-clear-confirm-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
 /* The deck's cost curve, under its cards: the shape of the deck as one row per
    energy cost it holds, so building toward a curve is visible while building. */
 .deck-curve {

@@ -5642,6 +5642,162 @@ export async function checks() {
     }
   }
 
+  // --- Emptying the whole deck in one action --------------------------------
+
+  // A new deck should not mean taking the old one apart a card at a time. One
+  // control on the deck panel raises a question; only the second answer empties
+  // the deck, saves it and leaves it unable to start a match — and an agent has
+  // the same act as a tool. This one check drives both the page path and the
+  // tool path, so a stray press that wipes a deck, or a tool that skips the save,
+  // trips it.
+  const clearDeckButton = document.getElementById("action-clear-deck");
+  const clearDeckConfirm = document.getElementById("clear-deck-confirm");
+  const clearDeckConfirmText = document.getElementById("clear-deck-confirm-text");
+  const confirmClearDeckButton = document.getElementById("action-confirm-clear-deck");
+  const cancelClearDeckButton = document.getElementById("action-cancel-clear-deck");
+  const emptyDeckTool = toolNamed("empty-deck");
+
+  for (const [element, id] of [
+    [clearDeckButton, "action-clear-deck"],
+    [clearDeckConfirm, "clear-deck-confirm"],
+    [clearDeckConfirmText, "clear-deck-confirm-text"],
+    [confirmClearDeckButton, "action-confirm-clear-deck"],
+    [cancelClearDeckButton, "action-cancel-clear-deck"],
+  ]) {
+    if (!element) {
+      fail(`the Collection screen has no #${id}, so a player cannot empty the deck in one action`);
+    }
+  }
+
+  if (!emptyDeckTool) {
+    fail('no "empty-deck" tool is declared, so an agent cannot empty the deck the way a visitor can');
+  } else if (!emptyDeckTool.annotations || emptyDeckTool.annotations.readOnlyHint !== false) {
+    fail('"empty-deck" empties the deck but is not marked as changing anything (readOnlyHint: false)');
+  }
+
+  // Whether starting a match is refused because the deck is too small. A
+  // refusal, not a hanging call: the engine's own minimum-deck error is caught.
+  const matchRefusedOnEmptyDeck = () => {
+    try {
+      game.startMatch();
+      return null;
+    } catch (error) {
+      return error.message;
+    }
+  };
+
+  if (
+    clearDeckButton &&
+    clearDeckConfirm &&
+    clearDeckConfirmText &&
+    confirmClearDeckButton &&
+    cancelClearDeckButton
+  ) {
+    game.showScreen("collection");
+
+    const deckBeforeClear = deckIds();
+    if (deckBeforeClear.length === 0) {
+      fail("the deck is empty before the empty-the-deck control is checked, so it has nothing to empty");
+    }
+
+    // The first press only asks: the deck is untouched and the question stands.
+    clearDeckButton.click();
+    if (JSON.stringify(deckIds()) !== JSON.stringify(deckBeforeClear)) {
+      fail('pressing "Empty deck" changed the deck before it was confirmed, though the first press must only ask');
+    }
+    if (clearDeckConfirm.hidden) {
+      fail('pressing "Empty deck" did not show the confirmation, so the player was never asked');
+    }
+    if (!game.readState().deckClearPending) {
+      fail('pressing "Empty deck" left deckClearPending false while its question is on screen');
+    }
+    if (clearDeckButton.getAttribute("aria-expanded") !== "true") {
+      fail('the "Empty deck" button does not say its question is open (aria-expanded is not true)');
+    }
+    if (!textOf(clearDeckConfirmText)) {
+      fail("the empty-the-deck question is blank, so the player is not told what they are confirming");
+    }
+
+    // Cancel drops the question and leaves the deck exactly as it was.
+    cancelClearDeckButton.click();
+    if (JSON.stringify(deckIds()) !== JSON.stringify(deckBeforeClear)) {
+      fail("cancelling the empty-the-deck question still changed the deck");
+    }
+    if (!clearDeckConfirm.hidden) {
+      fail("cancelling the empty-the-deck question left its confirmation on screen");
+    }
+    if (game.readState().deckClearPending) {
+      fail("cancelling the empty-the-deck question left deckClearPending true");
+    }
+
+    // Confirming empties the deck, shows its empty state and saves it.
+    clearDeckButton.click();
+    confirmClearDeckButton.click();
+    const clearedState = game.readState();
+    if (clearedState.deckSize !== 0 || clearedState.deck.length !== 0) {
+      fail(
+        `confirming the empty-the-deck question left the deck at ${clearedState.deckSize} cards instead of empty`
+      );
+    }
+    if (clearedState.deckClearPending) {
+      fail("confirming the empty-the-deck question left deckClearPending true");
+    }
+    if (!clearDeckConfirm.hidden) {
+      fail("confirming the empty-the-deck question left its confirmation on screen");
+    }
+    if (!textOf(document.getElementById("deck-list")).toLowerCase().includes("no cards")) {
+      fail("the deck panel does not show its empty state after the deck was emptied");
+    }
+    if (curveBlock() && !curveBlock().hidden) {
+      fail("the deck panel still shows a cost curve after the deck was emptied, where there is nothing to total");
+    }
+    const savedEmptyDeck = collection.readDeck();
+    if (savedEmptyDeck.length !== 0) {
+      fail(`the emptied deck was not saved: the browser reads back ${savedEmptyDeck.length} card(s)`);
+    }
+    const emptyStartRefusal = matchRefusedOnEmptyDeck();
+    if (!emptyStartRefusal) {
+      fail("a match could still be started with an empty deck");
+    } else if (!/at least/.test(emptyStartRefusal)) {
+      fail(
+        `starting a match with an empty deck named the reason as "${emptyStartRefusal}", ` +
+          "which does not say how many cards a match needs"
+      );
+    }
+
+    // Put the deck back exactly as it was, so the checks after this one keep it.
+    for (const id of deckBeforeClear) game.addCardToDeck(id);
+    if (JSON.stringify(deckIds()) !== JSON.stringify(deckBeforeClear)) {
+      fail("the deck could not be rebuilt after it was emptied, so a later check loses its deck");
+    }
+
+    // The same act an agent takes, with the same empty/saved/refuses result.
+    if (emptyDeckTool) {
+      const toolCleared = await emptyDeckTool.execute({});
+      if (toolCleared.deckSize !== 0 || (toolCleared.deck ?? []).length !== 0) {
+        fail(`the empty-deck tool returned a deck of ${toolCleared.deckSize} cards instead of an empty one`);
+      }
+      if (game.readState().deckSize !== 0) {
+        fail("the empty-deck tool reported an empty deck but the page still holds cards");
+      }
+      if (collection.readDeck().length !== 0) {
+        fail("the empty-deck tool did not save the emptied deck");
+      }
+      if (game.readState().deckClearPending) {
+        fail("the empty-deck tool left a deck-clear question pending");
+      }
+      if (!matchRefusedOnEmptyDeck()) {
+        fail("a match could still be started after the empty-deck tool emptied the deck");
+      }
+      for (const id of deckBeforeClear) game.addCardToDeck(id);
+      if (JSON.stringify(deckIds()) !== JSON.stringify(deckBeforeClear)) {
+        fail("the deck could not be rebuilt after the empty-deck tool emptied it");
+      }
+    }
+
+    game.showScreen("home");
+  }
+
   // --- A match on the page: dealt, played and turned over -------------------
 
   // How many of one card's copies on a table can still strike this turn. An
