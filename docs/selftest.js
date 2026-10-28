@@ -9577,6 +9577,51 @@ export async function checks() {
           `${JSON.stringify(abilityText)}, so the first reward card does not draw its owner a card`
       );
     }
+
+    // The reward card that stands for drawing itself: a mid-curve body (cost 5,
+    // the row the set crowded least) whose face draws its owner a card as it
+    // lands, carrying the same shared DRAW_ON_PLAY constant as every other
+    // drawer so its face and its trigger cannot drift.
+    const scrollbarkCard = cardCatalog.CARD_BY_ID.get("scrollbark");
+    if (scrollbarkCard?.ability !== abilityText) {
+      fail(
+        `Scrollbark's ability reads ${JSON.stringify(scrollbarkCard?.ability ?? null)} instead of ` +
+          `${JSON.stringify(abilityText)}, so the reward card that stands for drawing does not draw its owner a card`
+      );
+    }
+    if (!(cardCatalog.REWARD_POOL ?? []).includes("scrollbark")) {
+      fail("Scrollbark is not in the reward pool, so a player can never earn the card that draws a card");
+    }
+    if ((cardCatalog.STARTER_COLLECTION ?? []).some((entry) => entry.id === "scrollbark")) {
+      fail("Scrollbark is dealt at the start, so the reward card is not something a win earns");
+    }
+
+    // It is appended to the pool rather than slotted in, so a save written before
+    // it existed keeps the next-reward order it already had: every reward that was
+    // already there stays ahead of it, and once only Scrollbark is left unowned it
+    // is the reward the next win earns.
+    const scrollbarkPool = cardCatalog.REWARD_POOL ?? [];
+    if (scrollbarkPool.indexOf("scrollbark") !== scrollbarkPool.length - 1) {
+      fail(
+        `Scrollbark sits at position ${scrollbarkPool.indexOf("scrollbark")} of the reward pool instead of the ` +
+          "end, so a save written before it existed would be handed a different reward than the one it was promised"
+      );
+    }
+    if (typeof collection.nextRewardId !== "function") {
+      fail("collection.js does not export nextRewardId, so Scrollbark cannot be checked as earnable");
+    } else {
+      const heldEveryOtherReward = cardCatalog.STARTER_COLLECTION.map(({ id, copies }) => ({ id, copies })).concat(
+        scrollbarkPool.filter((id) => id !== "scrollbark").map((id) => ({ id, copies: 1 }))
+      );
+      const promisedScrollbark = collection.nextRewardId(heldEveryOtherReward);
+      if (promisedScrollbark !== "scrollbark") {
+        fail(
+          `with every other reward card held the next-win card is "${promisedScrollbark}" instead of "scrollbark", ` +
+            "so the last reward card in the pool cannot be earned"
+        );
+      }
+    }
+
     if (!(cardCatalog.STARTER_COLLECTION ?? []).some((entry) => entry.id === "glowcap")) {
       fail("the card that draws a card is not in the starter collection, so a new player never meets the ability");
     }
