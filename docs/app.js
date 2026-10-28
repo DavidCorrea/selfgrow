@@ -2617,9 +2617,10 @@ function deckCostCurve() {
 /**
  * The deck's strength as two sums — the attack it brings and the health it can
  * absorb — beside how many of its cards act when played, how many act when they
- * fall, how many mend your hero, how many grow each turn, how many act twice,
- * how many draw a card and how many sweep the opponent's table, over the same
- * cards the deck panel draws, so the totals and the deck can never disagree.
+ * fall, how many mend your hero, how many strike the opponent's front card as
+ * they land, how many grow each turn, how many act twice, how many draw a card
+ * and how many sweep the opponent's table, over the same cards the deck panel
+ * draws, so the totals and the deck can never disagree.
  * Null for an empty deck, so nothing is shown where there is nothing to total.
  */
 function deckTotals() {
@@ -2634,6 +2635,9 @@ function deckTotals() {
       // The same when-played-heal predicate the Collection screen's "mends"
       // view filters by, so the count and that view can never disagree.
       mends: totals.mends + (card.ability === HEAL_ON_PLAY ? 1 : 0),
+      // The same when-played-strike predicate the Collection screen's "strikes"
+      // view filters by, so the count and that view can never disagree.
+      strikes: totals.strikes + (card.ability === STRIKE_ON_PLAY ? 1 : 0),
       grows: totals.grows + (card.growthAbility ? 1 : 0),
       // The same two-ability predicate the Collection screen's "twice" view
       // filters by, so the count and that view can never disagree.
@@ -2645,7 +2649,7 @@ function deckTotals() {
       // by, so the count and that view can never disagree.
       clears: totals.clears + (card.ability === CLEAR_ON_PLAY ? 1 : 0),
     }),
-    { attack: 0, health: 0, whenPlayed: 0, whenFalls: 0, mends: 0, grows: 0, twice: 0, draws: 0, clears: 0 }
+    { attack: 0, health: 0, whenPlayed: 0, whenFalls: 0, mends: 0, strikes: 0, grows: 0, twice: 0, draws: 0, clears: 0 }
   );
 }
 
@@ -2692,6 +2696,7 @@ function renderDeckCurve() {
   const health = document.getElementById("deck-total-health");
   const whenPlayed = document.getElementById("deck-total-when-played");
   const mends = document.getElementById("deck-total-mends");
+  const strikes = document.getElementById("deck-total-strikes");
   const whenFalls = document.getElementById("deck-total-when-falls");
   const grows = document.getElementById("deck-total-grows");
   const twice = document.getElementById("deck-total-twice");
@@ -2701,6 +2706,7 @@ function renderDeckCurve() {
   if (health) health.textContent = totals ? String(totals.health) : "";
   if (whenPlayed) whenPlayed.textContent = totals ? String(totals.whenPlayed) : "";
   if (mends) mends.textContent = totals ? String(totals.mends) : "";
+  if (strikes) strikes.textContent = totals ? String(totals.strikes) : "";
   if (whenFalls) whenFalls.textContent = totals ? String(totals.whenFalls) : "";
   if (grows) grows.textContent = totals ? String(totals.grows) : "";
   if (twice) twice.textContent = totals ? String(totals.twice) : "";
@@ -2961,18 +2967,22 @@ export function readState() {
     // cards act when played (`deckWhenPlayed`), how many mend your hero
     // (`deckMends`) — the same "Mends your hero" count the panel prints, so a
     // player building a deck that stays alive sees its shape as it is built — how
+    // many strike the opponent's front card as they land (`deckStrikes`) — the
+    // same "Strikes the board" count the panel prints, so a player building an
+    // aggressive deck sees how much of it actually strikes — how
     // many act when they fall (`deckWhenFalls`), how many grow each turn
     // (`deckGrows`), how many act twice, carrying more than one ability
     // (`deckTwice`), how many draw a card (`deckDraws`) and how many sweep the
     // opponent's table (`deckClears`) — the same "Acts twice", "Draws a card"
     // and "Sweeps the table" counts the panel prints, so a player building
     // around two-ability cards, a full hand or a wide board answered at once
-    // sees that deck taking shape. All nine are null for an empty deck,
+    // sees that deck taking shape. All ten are null for an empty deck,
     // matching the note the screen shows instead of totals of zero.
     deckAttack: deckTotal ? deckTotal.attack : null,
     deckHealth: deckTotal ? deckTotal.health : null,
     deckWhenPlayed: deckTotal ? deckTotal.whenPlayed : null,
     deckMends: deckTotal ? deckTotal.mends : null,
+    deckStrikes: deckTotal ? deckTotal.strikes : null,
     deckWhenFalls: deckTotal ? deckTotal.whenFalls : null,
     deckGrows: deckTotal ? deckTotal.grows : null,
     deckTwice: deckTotal ? deckTotal.twice : null,
