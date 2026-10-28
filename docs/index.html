@@ -65,8 +65,10 @@
           <div class="next-reward-body" id="next-reward-body"></div>
         </section>
 
-        <!-- The saved deck, said in words: a returning player sees what they are
-             about to play with before they play it. -->
+        <!-- The saved deck's size, said in words: a returning player sees how
+             much they are about to play with before they play it. The cards
+             themselves are drawn under the actions, so the thing to recognise
+             sits below what the player does next rather than pushing it down. -->
         <p class="deck-summary" id="deck-summary"></p>
 
         <div class="actions">
@@ -74,6 +76,15 @@
           <button type="button" class="btn btn-secondary" id="action-collection" data-screen-target="collection">
             Collection
           </button>
+        </div>
+
+        <!-- The saved deck as its cards: each one the face the deck panel and the
+             opponent picker draw — picture, name and three numbers — so a player
+             recognises what they are about to play by sight. It sits after the
+             actions so on a phone the Play and Collection buttons stay where they
+             were, and it is labelled so a screen reader hears which deck it is. -->
+        <div class="home-deck">
+          <ul class="deck-list home-deck-list" id="home-deck-list" aria-label="Cards in your deck"></ul>
         </div>
 
         <!-- The match left behind when the page was closed, offered rather than

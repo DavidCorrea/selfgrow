@@ -218,6 +218,7 @@ const screenStatus = document.getElementById("screen-status");
 const storageNote = document.getElementById("storage-note");
 const deckMessage = document.getElementById("deck-message");
 const deckSummary = document.getElementById("deck-summary");
+const homeDeckList = document.getElementById("home-deck-list");
 // The two buttons that switch the set list between the whole set and only what
 // is still to collect, gathered once so their pressed state can be redrawn.
 const collectionViewButtons = [...document.querySelectorAll("[data-collection-view]")];
@@ -361,6 +362,7 @@ function render() {
 
   if (storageNote) storageNote.hidden = state.saved;
   if (deckSummary) deckSummary.textContent = deckSummaryText();
+  renderHomeDeck();
 
   renderMatch();
   renderMatchRules();
@@ -446,13 +448,33 @@ function restoreQuestion({ cards, distinct, deck, wins, matches }) {
   );
 }
 
-/** The home screen's one-line deck summary: its size, then the cards in it. */
+/**
+ * The home screen's deck summary: its size alone, in words. The cards it counts
+ * are drawn as their own faces under the actions, so the sentence carries the
+ * count a screen reader hears without repeating every name the faces show.
+ */
 function deckSummaryText() {
   if (!state.deck.length) return "Your deck is empty — choose cards from your Collection.";
-  const names = listDeckCards(state.deck)
-    .map((card) => card.name)
-    .join(", ");
-  return `Deck size ${state.deck.length} of ${state.deckLimit}: ${names}.`;
+  return `Deck size ${state.deck.length} of ${state.deckLimit}.`;
+}
+
+/**
+ * Draw the saved deck on the home screen as its cards, each the same face the
+ * deck panel and the opponent picker use — picture, name and three numbers — so
+ * a player recognises what they are about to play by sight. An empty deck says
+ * so in words rather than reading as a deck with cards but no contents.
+ */
+function renderHomeDeck() {
+  if (!homeDeckList) return;
+  const cards = listDeckCards(state.deck);
+  if (!cards.length) {
+    const empty = document.createElement("li");
+    empty.className = "deck-empty";
+    empty.textContent = "No cards in your deck yet.";
+    homeDeckList.replaceChildren(empty);
+    return;
+  }
+  homeDeckList.replaceChildren(...cards.map(deckCardRow));
 }
 
 /** The name of a card the player owns, or the id when it is not a real card. */

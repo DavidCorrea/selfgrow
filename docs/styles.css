@@ -180,9 +180,11 @@ body {
     grid-column: 1 / -1;
   }
 
-  /* Home keeps its shape with the summary added: where you stand on the left,
-     what you can do on the right, and the deck's cards under the numbers. */
-  #screen-home .deck-summary {
+  /* Home keeps its shape with the deck added: where you stand on the left,
+     what you can do on the right, and the deck's cards in the left column under
+     the numbers it restates. */
+  #screen-home .deck-summary,
+  #screen-home .home-deck {
     grid-column: 1;
   }
 
@@ -678,6 +680,30 @@ body {
   margin: 0;
   color: var(--ink-muted);
   text-wrap: pretty;
+}
+
+/* The home screen's deck as its cards: the same faces the deck panel draws, at
+   the compact size the opponent picker uses — small grid, tighter name and
+   numbers — so a ten-card deck reads as a short hand rather than a list of
+   names the player has to read. */
+.home-deck-list {
+  grid-template-columns: repeat(auto-fill, minmax(4.4rem, 1fr));
+  gap: 0.3rem;
+}
+
+.home-deck-list .deck-card {
+  gap: 0.15rem;
+  padding: 0.25rem 0.3rem 0.35rem;
+  background-color: rgba(34, 42, 69, 0.55);
+}
+
+.home-deck-list .deck-card-name {
+  font-size: 0.72rem;
+  line-height: 1.2;
+}
+
+.home-deck-list .deck-card-stats {
+  font-size: 0.7rem;
 }
 
 /* The card the next win will add, on the home screen under the numbers it is the
