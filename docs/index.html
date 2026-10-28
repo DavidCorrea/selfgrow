@@ -336,6 +336,11 @@
               Grows each turn
             </button>
           </div>
+          <!-- How much of what the list is showing the player already holds,
+               e.g. "2 of 5 collected". Shown for the three ability views, and
+               hidden in the whole-set and still-to-collect views where the
+               standing above the list already says it. -->
+          <p class="collection-view-count" id="collection-view-count" hidden></p>
           <div class="collection-view" role="group" aria-label="Which order the set lists">
             <button type="button" class="btn btn-secondary" data-collection-order="catalog" aria-pressed="true">
               Catalog order

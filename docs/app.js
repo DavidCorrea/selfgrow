@@ -2353,6 +2353,15 @@ function isInCollectionView(card) {
 }
 
 /**
+ * The cards the active view lists, before any order is applied — the one
+ * filtered list the drawn rows and the view's own "collected" count both read,
+ * so the count under the buttons can never disagree with the cards above it.
+ */
+function collectionViewCards() {
+  return listAllCards(state.cards).filter(isInCollectionView);
+}
+
+/**
  * Draw the card set: every card in the game — the ones the player holds with
  * their deck controls, and the ones they do not yet with a note saying so — or,
  * in the "missing" view, only the cards not collected yet, so a player working
@@ -2369,7 +2378,7 @@ function renderCollectionCards() {
   const view = COLLECTION_VIEW_TEXT[state.collectionView];
   const catalogCards = listAllCards(state.cards);
   const catalogIndexById = new Map(catalogCards.map((card, index) => [card.id, index]));
-  const shown = catalogCards.filter(isInCollectionView);
+  const shown = collectionViewCards();
   // Catalog order is the default reading; "cost" reorders a copy of the same
   // cards cheapest-first, ties left in catalog order so the list reads the same
   // every time. It changes nothing about the collection or the deck.
@@ -2381,6 +2390,19 @@ function renderCollectionCards() {
   // The list names what it is showing, so a screen reader hears the same view
   // the buttons say is selected.
   list.setAttribute("aria-label", view.label);
+
+  // The views built around an ability say how much of what they list is already
+  // held, so a player building around it sees how close they are to the rest.
+  // The whole-set and still-to-collect views leave that to the standing above
+  // the list, and keep this line hidden.
+  const viewCount = document.getElementById("collection-view-count");
+  if (viewCount) {
+    const showsViewCount = state.collectionView !== "all" && state.collectionView !== "missing";
+    viewCount.hidden = !showsViewCount;
+    viewCount.textContent = showsViewCount
+      ? `${shown.filter((card) => card.owned).length} of ${shown.length} collected`
+      : "";
+  }
 
   if (!cards.length) {
     const empty = document.createElement("li");
@@ -2919,9 +2941,11 @@ export function readMatch() {
  * only the ones not collected yet, only those that act when played, only those
  * that act when they fall, or only those that grow while they stay — and
  * `order` how those cards are read, in the game's own catalog order or cheapest
- * first.
+ * first. `viewCollected` of `viewTotal` is how much of that view the player
+ * already holds, the same "2 of 5 collected" line the ability views print.
  */
 export function readCollection() {
+  const viewCards = collectionViewCards();
   return {
     cards: listAllCards(state.cards),
     ownedCards: listOwnedCards(state.cards),
@@ -2933,6 +2957,11 @@ export function readCollection() {
     view: state.collectionView,
     // How that list is read: "catalog" for the game's own order, "cost" cheapest first.
     order: state.collectionOrder,
+    // How many of the cards the active view lists the player already holds, and
+    // how many it lists in all — the "2 of 5 collected" line under the view
+    // buttons in the three ability views.
+    viewCollected: viewCards.filter((card) => card.owned).length,
+    viewTotal: viewCards.length,
     saved: state.saved,
   };
 }
