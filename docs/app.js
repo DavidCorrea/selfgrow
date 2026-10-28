@@ -2543,8 +2543,8 @@ function deckCostCurve() {
 /**
  * The deck's strength as two sums — the attack it brings and the health it can
  * absorb — beside how many of its cards act when played, how many act when they
- * fall, how many mend your hero, how many grow each turn and how many act twice,
- * over the same cards the deck panel draws, so the totals and the deck can never
+ * fall, how many mend your hero, how many grow each turn, how many act twice and
+ * how many draw a card, over the same cards the deck panel draws, so the totals and the deck can never
  * disagree. Null for an empty deck, so nothing is shown where there is nothing to
  * total.
  */
@@ -2564,8 +2564,11 @@ function deckTotals() {
       // The same two-ability predicate the Collection screen's "twice" view
       // filters by, so the count and that view can never disagree.
       twice: totals.twice + (actsTwice(card) ? 1 : 0),
+      // The same draw predicate the Collection screen's "draws" view filters
+      // by, so the count and that view can never disagree.
+      draws: totals.draws + (drawsACard(card) ? 1 : 0),
     }),
-    { attack: 0, health: 0, whenPlayed: 0, whenFalls: 0, mends: 0, grows: 0, twice: 0 }
+    { attack: 0, health: 0, whenPlayed: 0, whenFalls: 0, mends: 0, grows: 0, twice: 0, draws: 0 }
   );
 }
 
@@ -2615,6 +2618,7 @@ function renderDeckCurve() {
   const whenFalls = document.getElementById("deck-total-when-falls");
   const grows = document.getElementById("deck-total-grows");
   const twice = document.getElementById("deck-total-twice");
+  const draws = document.getElementById("deck-total-draws");
   if (attack) attack.textContent = totals ? String(totals.attack) : "";
   if (health) health.textContent = totals ? String(totals.health) : "";
   if (whenPlayed) whenPlayed.textContent = totals ? String(totals.whenPlayed) : "";
@@ -2622,6 +2626,7 @@ function renderDeckCurve() {
   if (whenFalls) whenFalls.textContent = totals ? String(totals.whenFalls) : "";
   if (grows) grows.textContent = totals ? String(totals.grows) : "";
   if (twice) twice.textContent = totals ? String(totals.twice) : "";
+  if (draws) draws.textContent = totals ? String(totals.draws) : "";
 }
 
 /** Draw the whole Collection screen: the card set, which view it is in, and the deck beside it. */
@@ -2687,8 +2692,8 @@ function commitDeck() {
  * its strength as two sums (`deckAttack` and `deckHealth`) beside how many of
  * its cards act when played (`deckWhenPlayed`), how many mend your hero
  * (`deckMends`), how many act when they fall (`deckWhenFalls`), how many
- * grow each turn (`deckGrows`) and how many act twice, carrying more than one
- * ability (`deckTwice`) — all seven null
+ * grow each turn (`deckGrows`), how many act twice, carrying more than one
+ * ability (`deckTwice`) and how many draw a card (`deckDraws`) — all eight null
  * for an empty deck — whether it will survive closing the page, how many matches have
  * been played and won, the result of the last finished match (whether it was a win or a loss, the
  * card a win awarded, whether that completed the set, and `firstWin` — whether
@@ -2799,11 +2804,12 @@ export function readState() {
     // (`deckMends`) — the same "Mends your hero" count the panel prints, so a
     // player building a deck that stays alive sees its shape as it is built — how
     // many act when they fall (`deckWhenFalls`), how many grow each turn
-    // (`deckGrows`) and how many act twice, carrying more than one ability
-    // (`deckTwice`) — the same "Acts twice" count the panel prints, so a player
-    // building around two-ability cards sees that deck taking shape. All seven
-    // are null for an empty deck, matching the note the screen shows instead of
-    // totals of zero.
+    // (`deckGrows`), how many act twice, carrying more than one ability
+    // (`deckTwice`) and how many draw a card (`deckDraws`) — the same "Acts
+    // twice" and "Draws a card" counts the panel prints, so a player building
+    // around two-ability cards or a full hand sees that deck taking shape. All
+    // eight are null for an empty deck, matching the note the screen shows
+    // instead of totals of zero.
     deckAttack: deckTotal ? deckTotal.attack : null,
     deckHealth: deckTotal ? deckTotal.health : null,
     deckWhenPlayed: deckTotal ? deckTotal.whenPlayed : null,
@@ -2811,6 +2817,7 @@ export function readState() {
     deckWhenFalls: deckTotal ? deckTotal.whenFalls : null,
     deckGrows: deckTotal ? deckTotal.grows : null,
     deckTwice: deckTotal ? deckTotal.twice : null,
+    deckDraws: deckTotal ? deckTotal.draws : null,
     wins: state.wins,
     matchesPlayed: state.matchesPlayed,
     // What the Play screen tells a newcomer about a match, and whether that strip
