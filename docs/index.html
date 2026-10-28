@@ -582,6 +582,18 @@
               <dt class="standing-label">Cards left in deck</dt>
               <dd class="standing-value"><span id="match-deck-remaining">7</span></dd>
             </div>
+            <!-- What the opponent's deck is built to do, in the very sentence
+                 the picker prints under their name: carried onto the board for
+                 the length of the match, so the plan the player chose to face
+                 stays in view while they play it. A labelled value like the
+                 numbers above it, so it is read as belonging to that character
+                 and an agent reads the same sentence a visitor does. It goes
+                 with the match and with the opponent it describes: before one
+                 starts, and once one is over, no character is being faced. -->
+            <div class="standing standing-opponent-deck" id="match-opponent-deck-standing" hidden>
+              <dt class="standing-label" id="match-opponent-deck-label">Opponent's deck</dt>
+              <dd class="standing-value"><span id="match-opponent-deck"></span></dd>
+            </div>
           </dl>
 
           <!-- The match as a result, not a second screen: when a hero falls the

@@ -1504,6 +1504,28 @@ body {
   align-self: start;
 }
 
+/* What the faced opponent's deck is built to do, in the picker's own sentence:
+   a caption that takes the room the row of numbers has left rather than a line
+   of its own, so it is read beside the health it explains without costing the
+   board the height a table or the log would have to give up. It is a sentence,
+   not a number, so it reads in the ink of the text around it at text size. */
+.match-standings .standing-opponent-deck {
+  flex: 1 1 16rem;
+  min-width: 0;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 0.4rem;
+  row-gap: 0;
+}
+
+.match-standings .standing-opponent-deck .standing-value {
+  color: var(--ink);
+  font-size: 0.85rem;
+  font-weight: 500;
+  line-height: 1.3;
+}
+
 /* The match as a result. It lands under the health row so the outcome is read
    where the player last looked, and only draws its frame once a hero has
    fallen — the one moment in a match worth marking. */
@@ -2226,6 +2248,12 @@ body {
     font-size: 0.8rem;
   }
 
+  /* The deck sentence keeps its reading size in the tightened health row: it is
+     a sentence, not a figure, so it is not scaled with the numbers beside it. */
+  .match-board .match-standings .standing-opponent-deck .standing-value {
+    font-size: 0.8rem;
+  }
+
   /* The hand and the match's result share one slot: a match that has ended has
      no hand left to hold, so the outcome takes the room the cards had. Each is
      as tall as what it holds and no taller, so the room its slot is given is
@@ -2576,6 +2604,12 @@ body {
   .match-standings .standing-opponent .opponent-portrait {
     width: 2.25rem;
     height: 2.25rem;
+  }
+
+  /* The deck sentence is longer than a number, so on a phone's two-column health
+     row it takes the whole width rather than squeezing into half of it. */
+  .match-standings .standing-opponent-deck {
+    grid-column: 1 / -1;
   }
 
   .match-standings .standing-label {
