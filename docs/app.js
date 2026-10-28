@@ -2390,17 +2390,23 @@ export const COLLECTION_VIEW_TEXT = {
  * falls is not in "mends": the view is for the mending you play, not the
  * mending a trade pays back.
  */
+/**
+ * Whether a card acts twice: more than one of the three moments a face can act
+ * at — it is played, it stays, it falls — has text written for it. One shared
+ * predicate, so the Collection screen's "twice" view and the deck's "Acts twice"
+ * count can never disagree.
+ */
+function actsTwice(card) {
+  return [card.ability, card.growthAbility, card.fallAbility].filter((ability) => ability !== null).length >= 2;
+}
+
 function isInCollectionView(card) {
   if (state.collectionView === "missing") return !card.owned;
   if (state.collectionView === "abilities") return card.ability !== null;
   if (state.collectionView === "mends") return card.ability === HEAL_ON_PLAY;
   if (state.collectionView === "falls") return card.fallAbility !== null;
   if (state.collectionView === "grows") return card.growthAbility !== null;
-  if (state.collectionView === "twice") {
-    // A card acts twice when more than one of the three moments a face can act
-    // at — it is played, it stays, it falls — has text written for it.
-    return [card.ability, card.growthAbility, card.fallAbility].filter((ability) => ability !== null).length >= 2;
-  }
+  if (state.collectionView === "twice") return actsTwice(card);
   return true;
 }
 
@@ -2528,9 +2534,10 @@ function deckCostCurve() {
 /**
  * The deck's strength as two sums — the attack it brings and the health it can
  * absorb — beside how many of its cards act when played, how many act when they
- * fall, how many mend your hero and how many grow each turn, over the same cards
- * the deck panel draws, so the totals and the deck can never disagree. Null for
- * an empty deck, so nothing is shown where there is nothing to total.
+ * fall, how many mend your hero, how many grow each turn and how many act twice,
+ * over the same cards the deck panel draws, so the totals and the deck can never
+ * disagree. Null for an empty deck, so nothing is shown where there is nothing to
+ * total.
  */
 function deckTotals() {
   const cards = listDeckCards(state.deck);
@@ -2545,8 +2552,11 @@ function deckTotals() {
       // view filters by, so the count and that view can never disagree.
       mends: totals.mends + (card.ability === HEAL_ON_PLAY ? 1 : 0),
       grows: totals.grows + (card.growthAbility ? 1 : 0),
+      // The same two-ability predicate the Collection screen's "twice" view
+      // filters by, so the count and that view can never disagree.
+      twice: totals.twice + (actsTwice(card) ? 1 : 0),
     }),
-    { attack: 0, health: 0, whenPlayed: 0, whenFalls: 0, mends: 0, grows: 0 }
+    { attack: 0, health: 0, whenPlayed: 0, whenFalls: 0, mends: 0, grows: 0, twice: 0 }
   );
 }
 
@@ -2595,12 +2605,14 @@ function renderDeckCurve() {
   const mends = document.getElementById("deck-total-mends");
   const whenFalls = document.getElementById("deck-total-when-falls");
   const grows = document.getElementById("deck-total-grows");
+  const twice = document.getElementById("deck-total-twice");
   if (attack) attack.textContent = totals ? String(totals.attack) : "";
   if (health) health.textContent = totals ? String(totals.health) : "";
   if (whenPlayed) whenPlayed.textContent = totals ? String(totals.whenPlayed) : "";
   if (mends) mends.textContent = totals ? String(totals.mends) : "";
   if (whenFalls) whenFalls.textContent = totals ? String(totals.whenFalls) : "";
   if (grows) grows.textContent = totals ? String(totals.grows) : "";
+  if (twice) twice.textContent = totals ? String(totals.twice) : "";
 }
 
 /** Draw the whole Collection screen: the card set, which view it is in, and the deck beside it. */
@@ -2665,8 +2677,9 @@ function commitDeck() {
  * `deckCurve` shape (one `{ cost, count }` per energy cost the deck holds) and
  * its strength as two sums (`deckAttack` and `deckHealth`) beside how many of
  * its cards act when played (`deckWhenPlayed`), how many mend your hero
- * (`deckMends`), how many act when they fall (`deckWhenFalls`) and how many
- * grow each turn (`deckGrows`) — all six null
+ * (`deckMends`), how many act when they fall (`deckWhenFalls`), how many
+ * grow each turn (`deckGrows`) and how many act twice, carrying more than one
+ * ability (`deckTwice`) — all seven null
  * for an empty deck — whether it will survive closing the page, how many matches have
  * been played and won, the result of the last finished match (whether it was a win or a loss, the
  * card a win awarded, whether that completed the set, and `firstWin` — whether
@@ -2776,15 +2789,19 @@ export function readState() {
     // cards act when played (`deckWhenPlayed`), how many mend your hero
     // (`deckMends`) — the same "Mends your hero" count the panel prints, so a
     // player building a deck that stays alive sees its shape as it is built — how
-    // many act when they fall (`deckWhenFalls`) and how many grow each turn
-    // (`deckGrows`). All six are null for an empty deck, matching the note the
-    // screen shows instead of totals of zero.
+    // many act when they fall (`deckWhenFalls`), how many grow each turn
+    // (`deckGrows`) and how many act twice, carrying more than one ability
+    // (`deckTwice`) — the same "Acts twice" count the panel prints, so a player
+    // building around two-ability cards sees that deck taking shape. All seven
+    // are null for an empty deck, matching the note the screen shows instead of
+    // totals of zero.
     deckAttack: deckTotal ? deckTotal.attack : null,
     deckHealth: deckTotal ? deckTotal.health : null,
     deckWhenPlayed: deckTotal ? deckTotal.whenPlayed : null,
     deckMends: deckTotal ? deckTotal.mends : null,
     deckWhenFalls: deckTotal ? deckTotal.whenFalls : null,
     deckGrows: deckTotal ? deckTotal.grows : null,
+    deckTwice: deckTotal ? deckTotal.twice : null,
     wins: state.wins,
     matchesPlayed: state.matchesPlayed,
     // What the Play screen tells a newcomer about a match, and whether that strip
