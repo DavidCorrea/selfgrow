@@ -1327,6 +1327,42 @@ export async function checks() {
     }
   }
 
+  // --- A deck built around drawing is actually faced as an opponent ---------
+
+  // Drawing is the one thing a card's face does that the player must meet as a
+  // board to beat and not only collect: one character brings a deck where most
+  // cards hand their owner another card, so its hand keeps refilling and the
+  // answer is to close the match before its cards outlast the player. If no deck
+  // draws from half its cards or more, the archetype is not an opponent at all;
+  // if a majority-drawing deck's signature does not itself draw, the character
+  // is named for something its own deck does not lead with.
+  if (typeof cardCatalog.drawsACard !== "function") {
+    fail("cards.js does not export drawsACard, so a deck built around drawing cannot be checked");
+  } else {
+    const drawingCardCount = (opponent) =>
+      opponent.deck.filter((id) => {
+        const card = cardCatalog.CARD_BY_ID.get(id);
+        return card ? cardCatalog.drawsACard(card) : false;
+      }).length;
+    const drawingOpponents = cardCatalog.OPPONENTS.filter(
+      (opponent) => drawingCardCount(opponent) * 2 >= opponent.deck.length
+    );
+    if (drawingOpponents.length === 0) {
+      fail(
+        "no opponent's deck draws from half its cards or more, so a player never faces a deck built around drawing"
+      );
+    }
+    for (const opponent of drawingOpponents) {
+      const signatureCard = cardCatalog.CARD_BY_ID.get(opponent.signature);
+      if (!signatureCard || !cardCatalog.drawsACard(signatureCard)) {
+        fail(
+          `opponent "${opponent.id}" brings a deck built around drawing, but its signature card ` +
+            `"${opponent.signature}" does not draw, so the character is named for something its own deck does not lead with`
+        );
+      }
+    }
+  }
+
   // The word over the card says what the next win earns, and — once the whole
   // reward pool is held — says the set is complete instead.
   if (typeof game.nextRewardHeadingText !== "function") {
@@ -3512,6 +3548,10 @@ export async function checks() {
         // Spearroot Colossus it earns), so the half of a card that answers the
         // board is the one its kind of play promises.
         ["twinbough", cardCatalog.STRIKE_ON_PLAY],
+        // The archivist's whole deck hands its owner cards, and the card that
+        // stands for it draws as it lands, so drawing is the when-played half
+        // its kind of play promises rather than a trick on one body.
+        ["quillmere", cardCatalog.DRAW_ON_PLAY],
       ]);
       for (const opponent of opponentChoices) {
         const promised = promisedAbility.get(opponent.id);

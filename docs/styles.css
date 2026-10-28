@@ -47,6 +47,9 @@
   --opponent-rootwarden: #a9c98a;
   --opponent-mossheart: #c3e07a;
   --opponent-twinbough: #f0a4c0;
+  /* Quillmere's accent is parchment, the colour of the scroll its deck keeps
+     handing it, told apart from every other opponent's colour. */
+  --opponent-quillmere: #e6c58a;
 
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
   --radius-card: 20px;
@@ -1103,7 +1106,7 @@ body {
    the record against it, then the look it cuts and the kind of deck it brings —
    so pressing any part of this top half picks that opponent. The radio, the
    portrait and the name share the first row and the two description lines take
-   the full width under them: at seven opponents across a laptop the column beside
+   the full width under them: at eight opponents across a laptop the column beside
    a portrait is too narrow to read a sentence in, and a sentence that wraps to
    six lines is what pushes Start match off the first screen. The padding is what
    the picker has to spare once each character carries a record line. */
@@ -1198,7 +1201,7 @@ body {
 
 /* The look the character cuts and the kind of deck it brings each take the whole
    width of the option, in the rows under the radio, the portrait and the name —
-   the one place in a seven-across picker where a sentence has room to read. */
+   the one place in an eight-across picker where a sentence has room to read. */
 .opponent-look,
 .opponent-deck {
   grid-column: 1 / -1;
@@ -2132,7 +2135,7 @@ body {
   /* Every opponent stands in one row however many the game offers, rather than
      wrapping to a second one and pushing Start match off the first screen. A
      fixed column flow makes each option an equal share of the row instead of a
-     11rem track per character, and the seven of them fit the first screen only
+     11rem track per character, and the eight of them fit the first screen only
      if each stays short: a tighter gap, padding and description size keep the
      wrapped look and deck lines from growing the option past the fold. The
      phone's single-column stack is untouched, since this only applies where the

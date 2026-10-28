@@ -443,7 +443,11 @@ export const REWARD_POOL = [
  * seventh is built around cards that act twice: a deck whose bodies answer the
  * board as they land and pay their owner back as they fall, or mend and grow at
  * once, so a player meets "a card can be two things" as something to beat rather
- * than only as a card to collect. The first entry is the opponent a match is
+ * than only as a card to collect. The eighth is built around drawing itself: a
+ * deck where most cards hand their owner another card, so its hand keeps
+ * refilling and the answer is to close the match before its cards outlast the
+ * player — the one ability a card's face can carry that was a card to collect
+ * before it was ever a board to beat. The first entry is the opponent a match is
  * against unless the player picks another.
  *
  * `signature` is the one card that stands for how that opponent plays: a card
@@ -648,6 +652,38 @@ export const OPPONENTS = [
       "mudback-turtle",
       "spearroot-colossus",
       "elder-oak",
+    ],
+  },
+  {
+    id: "quillmere",
+    name: "Quillmere",
+    look: "a stooped archivist bent low over a scroll it holds out, a pointed hood down over its eyes",
+    description: "Cheap cards that draw — its hand keeps refilling",
+    cardPreference: "cheapest",
+    accent: "--opponent-quillmere",
+    // Scrollbark: the standing bough that peels off a card as it lands, the card
+    // that stands for the archivist's endless supply.
+    signature: "scrollbark",
+    // The one deck built around drawing rather than around a single trigger:
+    // seven of its ten cards hand their owner another card, as they land or as
+    // they fall, so the archivist's hand keeps refilling and a player has to
+    // close the match before its cards outlast them. It plays cheapest for that
+    // same reason: the more small drawing bodies it puts on the table at once,
+    // the faster it cycles, and every one the player answers pays its owner back
+    // a card. Dewdrop Nymph, Mudback Turtle and Root Colossus keep a curve under
+    // the drawing, and Dewdrop Nymph also keeps a when-played mender in the deck
+    // as every other opponent brings one.
+    deck: [
+      "scrollbark",
+      "lantern-bough",
+      "sunspear-bloom",
+      "seed-pod",
+      "mire-spore",
+      "glowcap",
+      "moon-bloom",
+      "dewdrop-nymph",
+      "mudback-turtle",
+      "root-colossus",
     ],
   },
 ];
