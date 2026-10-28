@@ -30,8 +30,9 @@
  *     frame: one figure in a 64x64 square, standing on one shared ground line at
  *     y=56. The figure is that opponent's accent instead of the foil, so
  *     Thornmere, Emberwake, Mistfen, Barrowmere, Rootwarden, Mossheart,
- *     Twinbough and Quillmere are told apart by sight the way a card is — the
- *     same shape language, so a character added later belongs with these.
+ *     Twinbough, Quillmere and Galehollow are told apart by sight the way a card
+ *     is — the same shape language, so a character added later belongs with
+ *     these.
  */
 
 const SVG_NAMESPACE = "http://www.w3.org/2000/svg";
@@ -802,9 +803,9 @@ export function cardArtSvg(cardId, label) {
  * than in a card's frame. Each figure is a different one — a hooded warden, an
  * upright herald, a figure rising from the fen, a hunched grave-tender under a
  * wide hat, a rooted warden half tree and half stone, a bowed mender over a
- * chalice, a forked two-bough spirit, a stooped archivist bent over a scroll —
- * so an opponent is recognised by sight before the name is read, exactly as a
- * card is.
+ * chalice, a forked two-bough spirit, a stooped archivist bent over a scroll, a
+ * lean wind-caller with its arms flung wide in a gale — so an opponent is
+ * recognised by sight before the name is read, exactly as a card is.
  */
 const OPPONENT_PORTRAITS = new Map([
   [
@@ -945,6 +946,23 @@ const OPPONENT_PORTRAITS = new Map([
         <circle class="portrait-accent" cx="40" cy="23" r="1.6" />
         <circle class="portrait-accent" cx="45" cy="23" r="1.6" />
         <rect class="portrait-accent" x="46" y="39.5" width="9" height="1.4" rx="0.7" />
+      `,
+    },
+  ],
+  [
+    "galehollow",
+    {
+      description:
+        "A lean wind-caller with both arms flung wide, its hair and torn hem streaming sideways in the gale it holds open",
+      inner: `
+        <path class="portrait-body" d="M28 30 C24 40 23 50 21 56 L43 56 C42 50 42 40 38 30 Z" />
+        <path class="portrait-body" d="M43 56 C48 52 54 51 58 52 C53 55 49 56 45 56 Z" />
+        <circle class="portrait-body" cx="33" cy="22" r="7" />
+        <path class="portrait-body" d="M28 31 L11 21 L8 26 L25 38 Z" />
+        <path class="portrait-body" d="M38 31 L55 21 L58 26 L41 38 Z" />
+        <path class="portrait-body" d="M37 16 C44 14 50 12 57 8 C51 15 47 20 40 21 C38 21 37 19 37 16 Z" />
+        <circle class="portrait-accent" cx="31" cy="22" r="1.7" />
+        <circle class="portrait-accent" cx="36" cy="22" r="1.7" />
       `,
     },
   ],

@@ -1363,6 +1363,57 @@ export async function checks() {
     }
   }
 
+  // --- A deck built around sweeping is actually faced as an opponent --------
+
+  // Sweeping is the one thing a card's face does that the player had a card to
+  // collect and no opponent built around meeting: a character brings a deck
+  // where several cards deal damage to every card on the other side's table at
+  // once, so a player who fills the table with small bodies is punished for it
+  // and learns to keep the board thin. If no deck sweeps from three of its cards
+  // or more, the archetype is not an opponent at all; if that deck's signature
+  // does not itself sweep, the character is named for something its own deck
+  // does not lead with; and if a first win against it does not earn that
+  // signature, the sweeping card cannot be collected by beating the character
+  // that teaches it.
+  const sweepingCardCount = (opponent) =>
+    opponent.deck.filter((id) => catalogAbility(id) === cardCatalog.CLEAR_ON_PLAY).length;
+  const sweepingOpponents = (cardCatalog.OPPONENTS ?? []).filter(
+    (opponent) => sweepingCardCount(opponent) >= 3
+  );
+  if (sweepingOpponents.length === 0) {
+    fail(
+      "no opponent's deck sweeps from three of its cards or more, so a player never faces a deck built around sweeping the table"
+    );
+  }
+  for (const opponent of sweepingOpponents) {
+    if (catalogAbility(opponent.signature) !== cardCatalog.CLEAR_ON_PLAY) {
+      fail(
+        `opponent "${opponent.id}" brings a deck built around sweeping, but its signature card ` +
+          `"${opponent.signature}" does not sweep the opponent's table, so the character is named for something its own deck does not lead with`
+      );
+    }
+  }
+  const sweeper = sweepingOpponents[0];
+  if (sweeper) {
+    const sweepStore = stubStorage();
+    collection.saveCollection(
+      cardCatalog.STARTER_COLLECTION.map(({ id, copies }) => ({ id, copies })),
+      sweepStore
+    );
+    const sweepFirstWin = collection.recordResult("win", "sweep-signature-first", sweepStore, sweeper.id);
+    if (sweepFirstWin.awarded?.id !== sweeper.signature) {
+      fail(
+        `a first win against "${sweeper.id}", whose deck is built around sweeping, awarded ` +
+          `"${sweepFirstWin.awarded?.id}" instead of its signature "${sweeper.signature}"`
+      );
+    }
+    if (!sweepFirstWin.firstWin) {
+      fail(
+        `a first win against "${sweeper.id}" did not report itself as a first, so its sweeping signature is not a first-win reward`
+      );
+    }
+  }
+
   // The word over the card says what the next win earns, and — once the whole
   // reward pool is held — says the set is complete instead.
   if (typeof game.nextRewardHeadingText !== "function") {
@@ -3552,6 +3603,9 @@ export async function checks() {
         // stands for it draws as it lands, so drawing is the when-played half
         // its kind of play promises rather than a trick on one body.
         ["quillmere", cardCatalog.DRAW_ON_PLAY],
+        // The wind-caller's deck sweeps the whole table as it lands, so the
+        // sweeping half of a card's face is the one its kind of play promises.
+        ["galehollow", cardCatalog.CLEAR_ON_PLAY],
       ]);
       for (const opponent of opponentChoices) {
         const promised = promisedAbility.get(opponent.id);
@@ -3583,9 +3637,10 @@ export async function checks() {
         firing.opponent.energy = abilityCard.cost;
         firing.opponent.maxEnergy = abilityCard.cost;
         // The mend is read off the opponent's own hero, so nothing is placed in
-        // front of it to wound it on the way; a strike needs a card to land on.
+        // front of it to wound it on the way; a strike and a sweep both need a
+        // card to land on, so the player keeps one body on the table for them.
         firing.opponent.health = 8;
-        if (promised === cardCatalog.STRIKE_ON_PLAY) {
+        if (promised === cardCatalog.STRIKE_ON_PLAY || promised === cardCatalog.CLEAR_ON_PLAY) {
           firing.player.table = [{ ...cardCatalog.CARD_BY_ID.get("mudback-turtle"), hasAttacked: false }];
         }
         const firingLogBefore = firing.log.length;
@@ -3617,11 +3672,16 @@ export async function checks() {
                 JSON.stringify(firedLines)
             );
           }
-        } else if (promised === cardCatalog.STRIKE_ON_PLAY) {
-          const strikeLine = `Opponent's ${abilityCard.name} deals ${cardCatalog.STRIKE_ON_PLAY_AMOUNT} to your `;
+        } else if (promised === cardCatalog.STRIKE_ON_PLAY || promised === cardCatalog.CLEAR_ON_PLAY) {
+          const amount =
+            promised === cardCatalog.STRIKE_ON_PLAY
+              ? cardCatalog.STRIKE_ON_PLAY_AMOUNT
+              : cardCatalog.CLEAR_ON_PLAY_AMOUNT;
+          const strikeLine = `Opponent's ${abilityCard.name} deals ${amount} to your `;
+          const verb = promised === cardCatalog.STRIKE_ON_PLAY ? "struck" : "swept";
           if (!firedLines.some((line) => line.startsWith(strikeLine))) {
             fail(
-              `the opponent "${opponent.name}" struck with "${abilityCard.name}" but the log does not say so: ` +
+              `the opponent "${opponent.name}" ${verb} with "${abilityCard.name}" but the log does not say so: ` +
                 `the turn added ${JSON.stringify(firedLines)}`
             );
           }

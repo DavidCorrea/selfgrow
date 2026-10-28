@@ -447,8 +447,12 @@ export const REWARD_POOL = [
  * deck where most cards hand their owner another card, so its hand keeps
  * refilling and the answer is to close the match before its cards outlast the
  * player — the one ability a card's face can carry that was a card to collect
- * before it was ever a board to beat. The first entry is the opponent a match is
- * against unless the player picks another.
+ * before it was ever a board to beat. The ninth is built around sweeping the
+ * opponent's table: a deck of cards that deal damage to every card the other
+ * side has out at once, so a player who fills the table with small bodies is
+ * punished for it and learns to keep the board thin — the one ability that had a
+ * card to collect and no opponent built around meeting it. The first entry is the
+ * opponent a match is against unless the player picks another.
  *
  * `signature` is the one card that stands for how that opponent plays: a card
  * from their own deck and, like every reward card, in `REWARD_POOL`. A first win
@@ -684,6 +688,40 @@ export const OPPONENTS = [
       "dewdrop-nymph",
       "mudback-turtle",
       "root-colossus",
+    ],
+  },
+  {
+    id: "galehollow",
+    name: "Galehollow",
+    look: "a lean wind-caller, arms flung wide, hair and hem torn sideways in the gale it holds open",
+    description: "Wide, rolling gusts — it sweeps your whole table at once",
+    cardPreference: "dearest",
+    accent: "--opponent-galehollow",
+    // Storm Roc: the wide-winged body that sweeps every card on the opposing
+    // table as it lands, the card that stands for the wind-caller's gale.
+    signature: "storm-roc",
+    // The one deck built around sweeping the opponent's table rather than around
+    // a single trigger: four of its ten cards deal damage to every card the
+    // player has out at once, so a player who fills the table with small bodies
+    // is punished for it and the answer is to keep the board thin and answer
+    // each sweeper before the next lands. Only three cards in the game carry the
+    // sweep ability, so the cheapest of them is carried twice to reach the
+    // four-of-ten pattern the other archetype decks use. It plays dearest for
+    // the same reason: it wants one heavy sweeper committed, not a swarm of its
+    // own. Dewdrop Nymph keeps a when-played mender in the deck as every other
+    // opponent brings one, and Glowcap, Mudback Turtle, Moon Bloom, Root Colossus
+    // and Elder Oak keep the curve playable.
+    deck: [
+      "gustling",
+      "gustling",
+      "thorn-gale",
+      "storm-roc",
+      "dewdrop-nymph",
+      "glowcap",
+      "mudback-turtle",
+      "moon-bloom",
+      "root-colossus",
+      "elder-oak",
     ],
   },
 ];
