@@ -766,6 +766,19 @@ const CARD_ART = new Map([
       `,
     },
   ],
+  [
+    "breeze-wisp",
+    {
+      description:
+        "A trailing breeze: a rounded wisp with two wind-tails sweeping behind it to the ground and one small light at its centre",
+      inner: `
+        <path class="art-body" d="M70 26 C76 32 76 42 69 48 C62 54 51 54 44 48 C37 42 37 32 44 26 C51 20 62 20 69 26 Z" />
+        <path class="art-body" d="M44 40 C34 44 22 50 14 54 C26 54 38 50 48 44 Z" />
+        <path class="art-body" d="M48 30 C38 26 26 26 16 30 C26 36 38 37 48 34 Z" />
+        <circle class="art-accent" cx="57" cy="37" r="5" />
+      `,
+    },
+  ],
 ]);
 
 /**

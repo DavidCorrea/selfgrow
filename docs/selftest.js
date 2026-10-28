@@ -9951,13 +9951,24 @@ export async function checks() {
 
     // It is appended to the pool rather than slotted in, so a save written before
     // it existed keeps the next-reward order it already had: every reward that was
-    // already there stays ahead of it, and once only Scrollbark is left unowned it
-    // is the reward the next win earns.
+    // already there stays ahead of it, and any card appended after it stays behind
+    // it, so once only the cards added since are unowned a win still earns
+    // Scrollbark before them. The list below is every reward appended after
+    // Scrollbark, in pool order — extend it in the same change as the card.
     const scrollbarkPool = cardCatalog.REWARD_POOL ?? [];
-    if (scrollbarkPool.indexOf("scrollbark") !== scrollbarkPool.length - 1) {
+    const rewardsAppendedAfterScrollbark = ["breeze-wisp"];
+    const scrollbarkPosition = scrollbarkPool.indexOf("scrollbark");
+    const rewardsAfterScrollbark = scrollbarkPosition === -1 ? null : scrollbarkPool.slice(scrollbarkPosition + 1);
+    if (
+      !rewardsAfterScrollbark ||
+      rewardsAfterScrollbark.length !== rewardsAppendedAfterScrollbark.length ||
+      rewardsAfterScrollbark.some((id, index) => id !== rewardsAppendedAfterScrollbark[index])
+    ) {
       fail(
-        `Scrollbark sits at position ${scrollbarkPool.indexOf("scrollbark")} of the reward pool instead of the ` +
-          "end, so a save written before it existed would be handed a different reward than the one it was promised"
+        `Scrollbark sits at position ${scrollbarkPosition} of the reward pool with ` +
+          `${JSON.stringify(rewardsAfterScrollbark)} after it instead of ` +
+          `${JSON.stringify(rewardsAppendedAfterScrollbark)}, so a save written before it existed would be handed a ` +
+          "different reward than the one it was promised"
       );
     }
     if (typeof collection.nextRewardId !== "function") {
@@ -11167,12 +11178,14 @@ export async function checks() {
 
   // --- Two more cards that clear the opponent's table, across the cost curve --
 
-  // A sweep carried at one price is a single reward; carried at two it is a tool
-  // a deck can be built around — a cheap body a player can hold for the early
-  // turns, and a heavy one for a deck that survives into the late game. Each
-  // prints the ability in the same words as the first clearing card, each is
-  // pictured in the shared style, and each is a reward a win can add.
+  // A sweep carried at one price is a single reward; carried across the curve it
+  // is a tool a deck can be built around — a cheap body a player can hold for the
+  // opening turns, a mid-cost one for the middle, and a heavy one for a deck that
+  // survives into the late game. Each prints the ability in the same words as the
+  // first clearing card, each is pictured in the shared style, and each is a
+  // reward a win can add.
   const sweepingCards = [
+    { id: "breeze-wisp", costBand: [1, 2] },
     { id: "gustling", costBand: [2, 3] },
     { id: "storm-roc", costBand: [5, 6] },
   ];
@@ -11202,6 +11215,53 @@ export async function checks() {
       fail(`the sweeping card "${card.name}" has no picture, so it cannot be known by sight`);
     } else if (!art.description?.trim()) {
       fail(`the sweeping card "${card.name}"'s picture is not described, so it cannot be checked against the style`);
+    }
+  }
+
+  // The cheapest sweeper actually sweeps: played on a table of more than one
+  // card it deals the face's amount to every one of them — the same blow, the
+  // same line, the same amount the other sweeping cards land — and its modest
+  // body is left standing, so the two energy bought the sweep, not the body.
+  const breezeWisp = cardCatalog.CARD_BY_ID.get("breeze-wisp");
+  if (matchEngine && typeof matchEngine.playCard === "function" && breezeWisp) {
+    const wispBoard = matchEngine.createMatch(
+      ["sprout", "pebble-toad", "thornling", "sun-moth", "bramble-hound"],
+      { rng: () => 0 }
+    );
+    wispBoard.player.hand = [{ ...breezeWisp, hasAttacked: false }];
+    wispBoard.player.table = [];
+    wispBoard.player.deck = [];
+    wispBoard.player.energy = breezeWisp.cost;
+    wispBoard.player.maxEnergy = breezeWisp.cost;
+    wispBoard.opponent.table = [
+      { ...cardCatalog.CARD_BY_ID.get("sprout"), health: 3, hasAttacked: false },
+      { ...cardCatalog.CARD_BY_ID.get("pebble-toad"), health: 3, hasAttacked: false },
+    ];
+    wispBoard.opponent.hand = [];
+    wispBoard.opponent.deck = [];
+    const wispLogBefore = wispBoard.log.length;
+    matchEngine.playCard(wispBoard, "breeze-wisp");
+    const wispLines = wispBoard.log.slice(wispLogBefore);
+    for (const target of ["Sprout", "Pebble Toad"]) {
+      const blowLine = wispLines.find((line) => line.includes(target) && line.includes(breezeWisp.name));
+      if (!blowLine) {
+        fail(
+          `playing "${breezeWisp.name}" dealt no blow to ${target}: the play logged ` + JSON.stringify(wispLines)
+        );
+      } else if (!blowLine.includes(`deals ${cardCatalog.CLEAR_ON_PLAY_AMOUNT} to`)) {
+        fail(`the sweep from "${breezeWisp.name}" did not deal the face's amount to ${target}: "${blowLine}"`);
+      }
+    }
+    const hurtCards = wispBoard.opponent.table.filter((card) => card.health === 2);
+    if (wispBoard.opponent.table.length !== 2 || hurtCards.length !== 2) {
+      fail(
+        `playing "${breezeWisp.name}" left the opponent's table as ` +
+          JSON.stringify(wispBoard.opponent.table.map((card) => `${card.name} ${card.health}`)) +
+          " instead of two cards at 2 health, so it did not sweep every card by 1"
+      );
+    }
+    if (!wispBoard.player.table.some((card) => card.id === "breeze-wisp")) {
+      fail(`playing "${breezeWisp.name}" did not leave its own body on the player's table`);
     }
   }
 
