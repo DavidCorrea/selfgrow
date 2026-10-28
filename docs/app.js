@@ -947,7 +947,24 @@ function renderCardPile(list, count, emptyLabel) {
  * scrolls in place, so the newest line — and the final blow at the end of a
  * match — is scrolled into view rather than left below the fold for the player
  * to find.
+ *
+ * The scroll waits for the frame instead of running here: reading `scrollHeight`
+ * forces the browser to lay the page out, and a match writes the log on every
+ * render, so scrolling inline once per render is a layout per render. Coalescing
+ * to one requestAnimationFrame per frame keeps the newest line in view at the
+ * same visible moment, at one layout rather than one per line of the match.
  */
+let logScrollQueued = false;
+
+function scrollMatchLogToNewestLine() {
+  if (logScrollQueued || !matchLogList) return;
+  logScrollQueued = true;
+  requestAnimationFrame(() => {
+    logScrollQueued = false;
+    if (matchLogList) matchLogList.scrollTop = matchLogList.scrollHeight;
+  });
+}
+
 function renderMatchLog(match) {
   if (!matchLogList) return;
   matchLogList.replaceChildren(
@@ -958,7 +975,7 @@ function renderMatchLog(match) {
       return item;
     })
   );
-  matchLogList.scrollTop = matchLogList.scrollHeight;
+  scrollMatchLogToNewestLine();
 }
 
 /**
