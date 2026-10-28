@@ -71,6 +71,16 @@ export const CLEAR_ON_PLAY = `When played: deal ${CLEAR_ON_PLAY_AMOUNT} damage t
 export const DRAW_ON_FALL = "When this falls: draw a card";
 
 /**
+ * Whether a card's face draws you a card — whether it draws as it is played or
+ * as it falls. One shared predicate over the two draw abilities, so the
+ * Collection screen's "draws" view and any count of a deck's drawing cards can
+ * never disagree.
+ */
+export function drawsACard(card) {
+  return card.ability === DRAW_ON_PLAY || card.fallAbility === DRAW_ON_FALL;
+}
+
+/**
  * How much health a card that mends its owner's hero as it falls restores. It is
  * the same amount the when-played heal restores, so one number names the mend
  * however a card pays it back.

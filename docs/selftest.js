@@ -4578,9 +4578,9 @@ export async function checks() {
   if (!setCollectionViewTool) {
     fail('no "set-collection-view" tool is declared, so an agent cannot choose between every card and only those still to collect');
   } else if (setList) {
-    if (setViewButtons.length !== 7) {
+    if (setViewButtons.length !== 8) {
       fail(
-        `the Collection screen offers ${setViewButtons.length} view control(s) where it should offer seven — every card, only those still to collect, only those that act when played, only those that mend your hero when played, only those that act when they fall, only those that grow each turn, and only those that act twice`
+        `the Collection screen offers ${setViewButtons.length} view control(s) where it should offer eight — every card, only those still to collect, only those that act when played, only those that mend your hero when played, only those that draw you a card, only those that act when they fall, only those that grow each turn, and only those that act twice`
       );
     }
 
@@ -4958,6 +4958,161 @@ export async function checks() {
     }
     checkViewCount(mendIds);
 
+    // The "draws" view lists only the cards whose face draws you a card —
+    // whether it draws as it is played or as it falls — owned and unowned alike,
+    // so a player building a hand that keeps refilling can see the cards that
+    // draw instead of reading every face to find them. Which cards those are is
+    // the catalog's answer, not the page's, and it is the one shared predicate a
+    // deck's own draw count will read too.
+    const drawIds = setIds.filter(
+      (id) => catalogAbility(id) === cardCatalog.DRAW_ON_PLAY || catalogFallAbility(id) === cardCatalog.DRAW_ON_FALL
+    );
+    if (!drawIds.length) {
+      fail('no card in the game draws you a card, so the "draws" view has nothing to list');
+    }
+    // A card that draws only as it falls still draws you a card, so the view must
+    // include it — a bug that filtered only the when-played draw would leave it
+    // out and trip this.
+    const fallOnlyDrawId = setIds.find(
+      (id) => catalogAbility(id) !== cardCatalog.DRAW_ON_PLAY && catalogFallAbility(id) === cardCatalog.DRAW_ON_FALL
+    );
+    if (!fallOnlyDrawId) {
+      fail('no card in the game draws only as it falls, so the "draws" view cannot be checked to include it');
+    } else if (!drawIds.includes(fallOnlyDrawId)) {
+      fail(`the "draws" view leaves out "${fallOnlyDrawId}", which draws you a card as it falls`);
+    }
+    // The shared predicate is what the view filters by and what a deck's draw
+    // count will read, so it must agree with the catalog for every card.
+    if (typeof cardCatalog.drawsACard !== "function") {
+      fail('docs/cards.js exports no "drawsACard" predicate, so the "draws" view has no shared definition to filter by');
+    } else {
+      for (const id of setIds) {
+        const expectedDraw = catalogAbility(id) === cardCatalog.DRAW_ON_PLAY || catalogFallAbility(id) === cardCatalog.DRAW_ON_FALL;
+        if (cardCatalog.drawsACard(cardCatalog.CARD_BY_ID.get(id)) !== expectedDraw) {
+          fail(`drawsACard disagrees with the catalog for "${id}"`);
+        }
+      }
+    }
+    const afterDrawView = await setCollectionViewTool.execute({ view: "draws" });
+    if (afterDrawView.collectionView !== "draws") {
+      fail(`switching the set to "draws" reports the view as "${afterDrawView.collectionView}" instead of "draws"`);
+    }
+    const drawRows = [...setList.querySelectorAll("[data-card-id]")].map((row) => row.dataset.cardId);
+    if (drawRows.join(", ") !== drawIds.join(", ")) {
+      const withoutDraw = drawRows.filter(
+        (id) => catalogAbility(id) !== cardCatalog.DRAW_ON_PLAY && catalogFallAbility(id) !== cardCatalog.DRAW_ON_FALL
+      );
+      const hidden = drawIds.filter((id) => !drawRows.includes(id));
+      fail(
+        `the "draws" view lists ${drawRows.length} card(s) in the order ${drawRows.slice(0, 4).join(", ")}, … where the game's ` +
+          `${drawIds.length} drawing card(s) in catalog order are ${drawIds.join(", ")}` +
+          `${withoutDraw.length ? `; it shows ${withoutDraw.join(", ")}, which draw no card` : ""}` +
+          `${hidden.length ? `; it hides ${hidden.join(", ")}, which draw one` : ""}`
+      );
+    }
+    const pressedDraws = setViewButtons
+      .filter((button) => button.getAttribute("aria-pressed") === "true")
+      .map((button) => button.dataset.collectionView);
+    if (pressedDraws.length !== 1 || pressedDraws[0] !== "draws") {
+      fail(`the "draws" view does not mark its own button pressed (pressed: ${pressedDraws.join(", ") || "none"})`);
+    }
+    if (setList.getAttribute("aria-label") === allViewListLabel) {
+      fail(
+        'the set list names what it lists the same way in the "draws" view as in the "all" view, so a screen reader cannot tell which cards are showing'
+      );
+    }
+
+    // The empty note a view prints when it has nothing to list is part of the
+    // view's contract, not decoration: it must exist and name the draw behaviour
+    // so a player meeting an empty "draws" view is told why, not shown a blank.
+    const drawsViewText = game.COLLECTION_VIEW_TEXT?.draws;
+    if (!drawsViewText || typeof drawsViewText.empty !== "string" || !drawsViewText.empty.trim()) {
+      fail('the "draws" view has no empty note, so an empty list would read as a blank rather than saying no card draws you a card');
+    } else if (!/draw/i.test(drawsViewText.empty)) {
+      fail(`the "draws" view's empty note reads "${drawsViewText.empty}" without naming the draw behaviour it stands for`);
+    }
+
+    // Both readers agree on the view, and switching it leaves the collection and
+    // the deck exactly as they were.
+    const drawState = await getState.execute({});
+    if (drawState.collectionView !== "draws") {
+      fail(`get-state reports the collection view as "${drawState.collectionView}" while the "draws" view is showing`);
+    }
+    if (game.readCollection().view !== "draws") {
+      fail(`list-collection reports the collection view as "${game.readCollection().view}" while the "draws" view is showing`);
+    }
+    const collectedWhileDrawing = textOf(
+      document.querySelector('#screen-collection [data-field="distinctCards"]')?.closest(".standing-value")
+    );
+    if (collectedWhileDrawing !== collectedExpected) {
+      fail(
+        `the "draws" view leaves the cards collected reading "${collectedWhileDrawing}" where the set stands at "${collectedExpected}"`
+      );
+    }
+    if (JSON.stringify(asIdCopies(game.readCollection().ownedCards)) !== JSON.stringify(asIdCopies(beforeView.ownedCards))) {
+      fail('switching the set to the "draws" view changed the cards in the collection');
+    }
+    if (JSON.stringify(game.readState().deck) !== JSON.stringify(beforeState.deck)) {
+      fail('switching the set to the "draws" view changed the deck');
+    }
+    checkViewCount(drawIds);
+
+    // The line under the buttons follows the collection, not the catalog: put a
+    // drawing card the player does not hold into the game through the save-code
+    // path — the same thing a win does when it awards one — and prove the "N of M
+    // collected" count rises by exactly one while the view's total holds still,
+    // then put the collection back exactly as it was.
+    const unownedDrawId = drawIds.find((id) => !heldIds.has(id));
+    if (!unownedDrawId) {
+      fail(
+        `the player already holds every drawing card (${drawIds.join(", ")}), so the "draws" view's collected count cannot be shown to rise when one is collected`
+      );
+    } else {
+      const collectionBeforeDrawAward = collection.saveCode();
+      const beforeDrawAward = game.readCollection();
+      const expectedDrawCollected = drawIds.filter((id) => heldIds.has(id)).length + 1;
+      const awardedDrawCode = collection.saveCode(
+        stubStorage({
+          [collection.STORAGE_KEY]: JSON.stringify({
+            version: 1,
+            cards: [
+              ...beforeDrawAward.ownedCards.map(({ id, copies }) => ({ id, copies })),
+              { id: unownedDrawId, copies: 1 },
+            ],
+            deck: game.readState().deck.map((card) => card.id),
+          }),
+        })
+      );
+      try {
+        game.restoreSaveCode(awardedDrawCode);
+        const afterDrawAward = game.readCollection();
+        if (afterDrawAward.viewTotal !== drawIds.length || afterDrawAward.viewCollected !== expectedDrawCollected) {
+          fail(
+            `collecting the drawing card "${unownedDrawId}" reports ${afterDrawAward.viewCollected} of ${afterDrawAward.viewTotal} collected where the "draws" view lists ${drawIds.length} card(s) and the player holds ${expectedDrawCollected} of them`
+          );
+        }
+        const expectedDrawLine = `${expectedDrawCollected} of ${drawIds.length} collected`;
+        if (!viewCountLine || viewCountLine.hidden || textOf(viewCountLine) !== expectedDrawLine) {
+          fail(
+            `after collecting the drawing card "${unownedDrawId}" the "draws" view reads "${textOf(viewCountLine)}" where "${expectedDrawLine}" is expected`
+          );
+        }
+      } catch (error) {
+        fail(`collecting the drawing card "${unownedDrawId}" through a save code was refused: ${error.message}`);
+      } finally {
+        try {
+          game.restoreSaveCode(collectionBeforeDrawAward);
+        } catch (error) {
+          fail(`restoring the collection after the "draws" count check was refused: ${error.message}`);
+        }
+      }
+    }
+
+    const backFromDrawView = await setCollectionViewTool.execute({ view: "all" });
+    if (backFromDrawView.collectionView !== "all") {
+      fail(`switching the set back from "draws" reports the view as "${backFromDrawView.collectionView}"`);
+    }
+
     const backFromMendView = await setCollectionViewTool.execute({ view: "all" });
     if (backFromMendView.collectionView !== "all") {
       fail(`switching the set back from "mends" reports the view as "${backFromMendView.collectionView}"`);
@@ -5095,7 +5250,7 @@ export async function checks() {
     // A view the page does not have is refused with a reason, and changes nothing.
     const refusedView = await setCollectionViewTool.execute({ view: "everything" });
     if (!refusedView.error) {
-      fail('setting the collection view to "everything" was accepted, though the page has only "all", "missing", "abilities", "mends", "falls", "grows" and "twice"');
+      fail('setting the collection view to "everything" was accepted, though the page has only "all", "missing", "abilities", "mends", "draws", "falls", "grows" and "twice"');
     }
     if (game.readCollection().view !== "all") {
       fail(`a refused view left the collection showing "${game.readCollection().view}" instead of "all"`);

@@ -18,6 +18,7 @@ import {
   DEFAULT_OPPONENT,
   DRAW_ON_FALL,
   DRAW_ON_PLAY,
+  drawsACard,
   GROWTH_ABILITY,
   HEAL_ON_FALL,
   HEAL_ON_PLAY,
@@ -52,14 +53,14 @@ const SCREEN_LABELS = {
   play: "Play",
 };
 
-// The seven views the Collection screen's set list can be in: every card in the
+// The eight views the Collection screen's set list can be in: every card in the
 // game, only the ones not collected yet, only the ones whose face carries a
 // when-played ability, only the ones that mend your hero when played, only the
-// ones whose face carries a fall ability, only the ones that grow while they
-// stay, or only the ones that carry more than one ability and so act twice. The
-// list is also the schema a tool checks against, so a caller cannot ask for a
-// view the page does not show.
-const COLLECTION_VIEWS = ["all", "missing", "abilities", "mends", "falls", "grows", "twice"];
+// ones whose face draws you a card, only the ones whose face carries a fall
+// ability, only the ones that grow while they stay, or only the ones that carry
+// more than one ability and so act twice. The list is also the schema a tool
+// checks against, so a caller cannot ask for a view the page does not show.
+const COLLECTION_VIEWS = ["all", "missing", "abilities", "mends", "draws", "falls", "grows", "twice"];
 
 // The two orders the Collection screen's set list can be read in: the catalog's
 // own order, or cheapest first. The list is also the schema a tool checks
@@ -1808,9 +1809,10 @@ export function toggleSaveRestore() {
 /**
  * Choose which cards the Collection screen's set list shows — what a visitor
  * does by pressing the "All cards", "Still to collect", "Acts when played",
- * "Mends your hero", "Acts when they fall", "Grows each turn" or "Acts twice"
- * button, and what the set-collection-view tool does on their behalf. It only
- * changes what the list shows: the collection and the deck are untouched.
+ * "Mends your hero", "Draws a card", "Acts when they fall", "Grows each turn"
+ * or "Acts twice" button, and what the set-collection-view tool does on their
+ * behalf. It only changes what the list shows: the collection and the deck are
+ * untouched.
  * Refused, with the reason, when the view is not one of COLLECTION_VIEWS.
  * Returns the state afterwards, the same shape readState() gives.
  */
@@ -2365,6 +2367,10 @@ export const COLLECTION_VIEW_TEXT = {
     label: "Cards in the game that mend your hero when played",
     empty: "No card in the game mends your hero when played.",
   },
+  draws: {
+    label: "Cards in the game that draw you a card",
+    empty: "No card in the game draws you a card.",
+  },
   falls: {
     label: "Cards in the game that act when they fall",
     empty: "No card in the game acts when it falls.",
@@ -2383,7 +2389,8 @@ export const COLLECTION_VIEW_TEXT = {
  * Whether a card belongs in the view the set list is showing: every card in
  * "all", the ones not collected yet in "missing", the ones whose face does
  * something the moment it is played in "abilities", the ones whose face mends
- * your hero when it is played in "mends", the ones whose face does something
+ * your hero when it is played in "mends", the ones whose face draws you a card
+ * — whether at play or at fall — in "draws", the ones whose face does something
  * the moment it leaves the table in "falls", the ones that grow while they
  * stay in "grows", and the ones whose face carries more than one ability — so
  * it acts at more than one moment — in "twice". A card that heals only as it
@@ -2404,6 +2411,7 @@ function isInCollectionView(card) {
   if (state.collectionView === "missing") return !card.owned;
   if (state.collectionView === "abilities") return card.ability !== null;
   if (state.collectionView === "mends") return card.ability === HEAL_ON_PLAY;
+  if (state.collectionView === "draws") return drawsACard(card);
   if (state.collectionView === "falls") return card.fallAbility !== null;
   if (state.collectionView === "grows") return card.growthAbility !== null;
   if (state.collectionView === "twice") return actsTwice(card);
@@ -2425,8 +2433,9 @@ function collectionViewCards() {
  * in the "missing" view, only the cards not collected yet, so a player working
  * toward a full set can hide what they already have, or, in the "abilities"
  * view, only the cards whose face carries a when-played ability, in the "mends"
- * view, only those that mend your hero when played, in the "falls" view, only
- * those carrying a fall ability, in the "grows" view, only those that grow
+ * view, only those that mend your hero when played, in the "draws" view, only
+ * those whose face draws you a card whether at play or at fall, in the "falls"
+ * view, only those carrying a fall ability, in the "grows" view, only those that grow
  * while they stay, or, in the "twice" view, only those that carry more than one
  * ability and so act at more than one moment, so any ability can be chosen for
  * on purpose. When a view has nothing to list, it says so rather than reading as
