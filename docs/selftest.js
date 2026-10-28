@@ -7262,6 +7262,50 @@ export async function checks() {
         }
       }
 
+      // What the opponent's deck is built to do is the picker's own sentence,
+      // carried onto the board for as long as the match runs: a player mid-match
+      // against it is reminded why their table keeps falling, and the state an
+      // agent reads says the same thing in the same words.
+      const deckKindSentence = cardCatalog.OPPONENT_BY_ID.get(m.opponentId)?.description;
+      if (!deckKindSentence) {
+        fail(`docs/cards.js gives no "kind of deck" sentence for the opponent "${m.opponentId}"`);
+      } else {
+        if (m.opponentDeckKind !== deckKindSentence) {
+          fail(
+            `a running match reports opponentDeckKind ${JSON.stringify(m.opponentDeckKind)} instead of the ` +
+              `sentence docs/cards.js gives for "${m.opponentId}" (${JSON.stringify(deckKindSentence)})`
+          );
+        }
+        const boardDeckLine = document.getElementById("match-opponent-deck");
+        const boardDeckStanding = document.getElementById("match-opponent-deck-standing");
+        if (!boardDeckLine) {
+          fail("the board has nowhere to say what the opponent's deck is built to do (#match-opponent-deck)");
+        } else if (!boardDeckStanding || boardDeckStanding.hidden || getComputedStyle(boardDeckStanding).display === "none") {
+          fail(`a match against ${m.opponentName} is running but the board hides the kind of deck they bring`);
+        } else if (textOf(boardDeckLine) !== deckKindSentence) {
+          fail(
+            `the board describes ${m.opponentName}'s deck as "${textOf(boardDeckLine)}" instead of the ` +
+              `picker's own sentence ("${deckKindSentence}")`
+          );
+        } else if (!textOf(document.getElementById("match-board")).includes(deckKindSentence)) {
+          fail(
+            `the board reads "${textOf(document.getElementById("match-board"))}", which never says what ` +
+              `${m.opponentName}'s deck is built to do`
+          );
+        }
+        // The picker wrote the same words, from the one place opponents are
+        // defined: two surfaces that cannot drift apart.
+        const pickerDeckLine = document.querySelector(
+          `#opponent-options [data-opponent-id="${CSS.escape(m.opponentId)}"] .opponent-deck`
+        );
+        if (pickerDeckLine && textOf(pickerDeckLine) !== deckKindSentence) {
+          fail(
+            `the picker describes ${m.opponentName}'s deck as "${textOf(pickerDeckLine)}" while the match ` +
+              `reports "${deckKindSentence}", so the two surfaces say different things about the same deck`
+          );
+        }
+      }
+
       // The character the picker showed leads the board: the opponent's portrait
       // stands beside the name and health the board prints, drawn in that
       // opponent's own accent and hidden from assistive technology because the
@@ -8336,6 +8380,15 @@ export async function checks() {
       const finishedPortrait = document.getElementById("match-opponent-portrait");
       if (finishedPortrait && (!finishedPortrait.hidden || finishedPortrait.querySelector("svg.opponent-portrait"))) {
         fail(`${played}, but the board still shows the opponent's portrait though the match is over`);
+      }
+      // The sentence about the deck goes with the opponent it describes, so a
+      // result stands on the board without one.
+      const finishedDeckLine = document.getElementById("match-opponent-deck-standing");
+      if (
+        finishedDeckLine &&
+        (!finishedDeckLine.hidden || getComputedStyle(finishedDeckLine).display !== "none")
+      ) {
+        fail(`${played}, but the board still says what kind of deck the opponent brings though the match is over`);
       }
     }
 
@@ -10006,6 +10059,27 @@ export async function checks() {
         if (!shown.includes(chosenOpponent.name)) {
           fail(
             `${what} reads "${shown || "(nothing)"}" instead of naming the opponent "${chosenOpponent.name}"`
+          );
+        }
+      }
+
+      // The kind of deck the board names follows whoever is being faced, not the
+      // opponent the last match happened to be against: facing somebody else
+      // swaps the sentence for theirs.
+      const chosenDeckKind = cardCatalog.OPPONENT_BY_ID.get(chosenOpponent.id)?.description;
+      if (chosenDeckKind) {
+        if (m?.opponentDeckKind !== chosenDeckKind) {
+          fail(
+            `a match against "${chosenOpponent.id}" reports opponentDeckKind ` +
+              `${JSON.stringify(m?.opponentDeckKind)} instead of that opponent's own sentence ` +
+              `(${JSON.stringify(chosenDeckKind)})`
+          );
+        }
+        if (textOf(document.getElementById("match-opponent-deck")) !== chosenDeckKind) {
+          fail(
+            `the board still describes the opponent's deck as ` +
+              `"${textOf(document.getElementById("match-opponent-deck"))}" after facing "${chosenOpponent.name}", ` +
+              `whose deck is ${JSON.stringify(chosenDeckKind)}`
           );
         }
       }

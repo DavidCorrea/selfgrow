@@ -308,6 +308,10 @@ const matchRulesPoints = document.getElementById("match-rules-points");
 const matchRulesToggle = document.getElementById("action-toggle-rules");
 const matchOpponentName = document.getElementById("match-opponent-name");
 const matchOpponentPortrait = document.getElementById("match-opponent-portrait");
+// The kind of deck the character being faced brings, in the picker's own words.
+const matchOpponentDeckStanding = document.getElementById("match-opponent-deck-standing");
+const matchOpponentDeckLabel = document.getElementById("match-opponent-deck-label");
+const matchOpponentDeck = document.getElementById("match-opponent-deck");
 const matchOpponentHealthLabel = document.getElementById("match-opponent-health-label");
 // The label their hero wears when it is the thing an ending turn would strike,
 // standing where their cards would once the table in front of it is empty.
@@ -1226,6 +1230,16 @@ function selectedOpponent() {
 }
 
 /**
+ * The kind of deck a character brings, in the one sentence a player reads about
+ * it: the picker prints it under the character's name and the match board keeps
+ * it beside them, so both say the same words and neither can drift from the
+ * other.
+ */
+export function deckKindText(opponent) {
+  return opponent.description;
+}
+
+/**
  * The opponent a running match is against, out of the one list of them: the one
  * the match's `opponentId` names, then the one its `opponentName` names, then
  * the default — so a match saved before opponents carried an id still resolves.
@@ -1258,6 +1272,25 @@ function renderMatchOpponentPortrait(match) {
   matchOpponentPortrait.style.setProperty("--opponent-accent", `var(${opponent.accent})`);
   matchOpponentPortrait.replaceChildren(portrait);
   matchOpponentPortrait.hidden = false;
+}
+
+/**
+ * Say what the faced opponent's deck is built to do, in the sentence the picker
+ * printed when the player chose them, for as long as the match runs — so the
+ * plan they chose to face stays in view while they play it. It goes with the
+ * opponent it describes: before a match and once one is over there is nobody on
+ * the board to say it about, so the line goes with the portrait.
+ */
+function renderMatchOpponentDeck(match) {
+  if (!matchOpponentDeckStanding || !matchOpponentDeck) return;
+  const opponent = match && !match.over ? matchOpponent(match) : null;
+  matchOpponentDeckStanding.hidden = !opponent;
+  if (!opponent) {
+    matchOpponentDeck.textContent = "";
+    return;
+  }
+  if (matchOpponentDeckLabel) matchOpponentDeckLabel.textContent = `${opponent.name}'s deck`;
+  matchOpponentDeck.textContent = deckKindText(opponent);
 }
 
 /**
@@ -1371,7 +1404,7 @@ function opponentOption(opponent) {
 
   const deck = document.createElement("span");
   deck.className = "opponent-deck";
-  deck.textContent = opponent.description;
+  deck.textContent = deckKindText(opponent);
 
   text.append(head, look, deck);
 
@@ -1461,7 +1494,7 @@ function renderOpponentChoice() {
   }
   const opponent = selectedOpponent();
   if (matchIntroOpponent) matchIntroOpponent.textContent = opponent.name;
-  if (matchIntroDeck) matchIntroDeck.textContent = opponent.description.toLowerCase();
+  if (matchIntroDeck) matchIntroDeck.textContent = deckKindText(opponent).toLowerCase();
 }
 
 /**
@@ -1555,6 +1588,7 @@ function renderMatch() {
   if (concedeButton) concedeButton.hidden = !match || match.over;
   renderMatchResult(match);
   renderMatchOpponentPortrait(match);
+  renderMatchOpponentDeck(match);
   // The one target an ending turn would strike, said in words: the opponent's
   // hero, once the table in front of it is empty. It names the hero because it
   // stands on the empty battlefield rather than beside the hero — and it goes
@@ -3118,10 +3152,13 @@ function describeMatchCard(card) {
  * same two figures the board prints as "Ready to strike", both null when it is
  * not the player's turn or the match is over. `opponentId` and
  * `opponentName` name the character being faced, whose deck is its own rather
- * than a copy of the player's. With no match it says so — `active` false, and
- * `opponentId`/`opponentName` the character the picker has chosen, the name the
- * Play screen prints before one starts — so a reader can tell the difference
- * between "nothing has happened yet" and "a match with an empty hand". A
+ * than a copy of the player's, and `opponentDeckKind` what that character's deck
+ * is built to do — the very sentence the picker prints under their name and the
+ * board keeps beside them while the match is played. With no match it says so —
+ * `active` false, and `opponentId`/`opponentName`/`opponentDeckKind` those of the
+ * character the picker has chosen, the name and the sentence the Play screen
+ * prints before one starts — so a reader can tell the difference between
+ * "nothing has happened yet" and "a match with an empty hand". A
  * finished match also carries its `outcome` — "win" or "loss" from the player's
  * side — whether the player gave it up rather than losing a hero (`conceded`),
  * and whether it has been recorded to the save yet.
@@ -3133,6 +3170,7 @@ export function readMatch() {
       active: false,
       opponentId: state.opponentId,
       opponentName: selectedOpponent().name,
+      opponentDeckKind: deckKindText(selectedOpponent()),
       over: false,
       winner: null,
       outcome: null,
@@ -3170,6 +3208,7 @@ export function readMatch() {
     active: true,
     opponentId: match.opponentId,
     opponentName: match.opponentName,
+    opponentDeckKind: deckKindText(matchOpponent(match)),
     over: match.over,
     winner: match.winner,
     outcome: match.outcome,
