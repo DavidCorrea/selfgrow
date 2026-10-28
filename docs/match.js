@@ -10,8 +10,12 @@
  * whole match — its labels, its log and a saved game picked up later — speaks of
  * the character it was started against. Each opponent also plays that deck the
  * way its description says: one that wants size plays its dearest affordable
- * card, one that wants speed its cheapest, so who you face changes how the game
- * in front of you is played and not only what the labels say.
+ * card, one that wants speed its cheapest, the wind-caller holds its sweeping
+ * cards until the player's table is worth sweeping, the mender mends once its
+ * own hero is wounded, the spirit of two boughs reaches for a card that acts
+ * twice and the herald for one that strikes as it lands — so who you face
+ * changes how the game in front of you is played and not only what the labels
+ * say.
  *
  * The match is a plain object — two sides of numbers and card lists, whose turn
  * it is, and an ordered log of plain sentences. There is no DOM here and no
@@ -334,6 +338,71 @@ function catalogRank(card) {
   return CATALOG_ORDER.get(card.id) ?? Number.MAX_SAFE_INTEGER;
 }
 
+/** The affordable cards in a hand: what a side could play with the energy it has. */
+function affordableCards(hand, energy) {
+  return hand.filter((card) => card.cost <= energy);
+}
+
+/**
+ * The first card to win a chain of tie-breaks, each comparison answering which
+ * of two cards comes first — negative when the first is better. A chain reads as
+ * the rule it is: cost first, then whatever that character cares about next, so
+ * a preference is written as the order it judges cards in rather than as its own
+ * scan of the hand.
+ */
+function pickCard(cards, ...comparisons) {
+  let best = null;
+  for (const card of cards) {
+    if (best === null) {
+      best = card;
+      continue;
+    }
+    const better = comparisons.reduce((result, comparison) => result || comparison(card, best), 0);
+    if (better < 0) best = card;
+  }
+  return best;
+}
+
+/** The most expensive of two cards first — a side that holds out for size. */
+function dearestFirst(card, other) {
+  return other.cost - card.cost;
+}
+
+/** The least expensive of two cards first — a side that wants speed. */
+function cheapestFirst(card, other) {
+  return card.cost - other.cost;
+}
+
+/** The stronger of two cards first, by attack. */
+function strongerFirst(card, other) {
+  return other.attack - card.attack;
+}
+
+/** The card earliest in the catalog first, the last tie-break anywhere. */
+function earlierInCatalog(card, other) {
+  return catalogRank(card) - catalogRank(other);
+}
+
+/** How many of the three moments — played, fallen, growing — a card acts at. */
+function abilityMomentCount(card) {
+  return [card.ability, card.fallAbility, card.growthAbility].filter(Boolean).length;
+}
+
+/** The card that does more than one thing first, at the same cost. */
+function moreAbilitiesFirst(card, other) {
+  return abilityMomentCount(other) - abilityMomentCount(card);
+}
+
+/** The card that sweeps the opposing table first. */
+function sweepingFirst(card, other) {
+  return Number(other.ability === CLEAR_ON_PLAY) - Number(card.ability === CLEAR_ON_PLAY);
+}
+
+/** The card that strikes the board as it lands first. */
+function strikingFirst(card, other) {
+  return Number(other.ability === STRIKE_ON_PLAY) - Number(card.ability === STRIKE_ON_PLAY);
+}
+
 /**
  * The best card a side can afford: the most expensive, then the stronger, then
  * the one earliest in the catalog. This is how an opponent that wants size
@@ -341,59 +410,88 @@ function catalogRank(card) {
  * card.
  */
 function bestAffordable(hand, energy) {
-  let best = null;
-  for (const card of hand) {
-    if (card.cost > energy) continue;
-    if (
-      best === null ||
-      card.cost > best.cost ||
-      (card.cost === best.cost && card.attack > best.attack) ||
-      (card.cost === best.cost && card.attack === best.attack && catalogRank(card) < catalogRank(best))
-    ) {
-      best = card;
-    }
-  }
-  return best;
+  return pickCard(affordableCards(hand, energy), dearestFirst, strongerFirst, earlierInCatalog);
 }
 
 /**
- * The cheapest card a side can afford: the least expensive, then the stronger,
- * then the one earliest in the catalog — the same tie-breaks as `bestAffordable`
- * with cost inverted. This is how an opponent that wants speed chooses: it
- * empties its hand onto the table a small card at a time instead of holding out
- * for one big one.
+ * How much of the player's table a sweeping card has to answer before the
+ * character built around sweeping spends one: a single card is not worth the
+ * energy, two or more is the whole reason the card is in the deck.
  */
-function cheapestAffordable(hand, energy) {
-  let best = null;
-  for (const card of hand) {
-    if (card.cost > energy) continue;
-    if (
-      best === null ||
-      card.cost < best.cost ||
-      (card.cost === best.cost && card.attack > best.attack) ||
-      (card.cost === best.cost && card.attack === best.attack && catalogRank(card) < catalogRank(best))
-    ) {
-      best = card;
-    }
-  }
-  return best;
-}
+const SWEEP_WORTHY_TABLE_SIZE = 2;
+
+/**
+ * How each named preference chooses among the cards a side can afford this turn,
+ * written as the chain of tie-breaks that character judges cards by. Each takes
+ * the match — so a rule can weigh its own hero's health and the player's table —
+ * and the cards it could play, and every one ends with the same attack and
+ * catalog tie-breaks, so the same match, hand and energy always produce the same
+ * card: a character's plan is a rule, not a whim.
+ *
+ * `dearest` and `cheapest` are the two plain rules any deck can be played by.
+ * The rest are the ones a character's own deck promises:
+ *
+ * - `hold-sweep` holds a sweeping card back while the player's table holds a
+ *   single card, and reaches for one the moment it holds two or more; with
+ *   nothing worth sweeping it plays its dearest body instead.
+ * - `mend-when-hurt` mends its hero once it is below the health it started the
+ *   match with, and holds out for its dearest body while it is unharmed.
+ * - `prefer-twice` still plays its dearest card, preferring one that carries
+ *   more than one ability when two cards cost the same.
+ * - `prefer-strike` still plays its cheapest cards first, preferring one that
+ *   strikes the board as it lands when two cards cost the same.
+ */
+const CARD_PREFERENCES = new Map([
+  ["dearest", (match, cards) => pickCard(cards, dearestFirst, strongerFirst, earlierInCatalog)],
+  ["cheapest", (match, cards) => pickCard(cards, cheapestFirst, strongerFirst, earlierInCatalog)],
+  [
+    "hold-sweep",
+    (match, cards) => {
+      const worthSweeping = match.player.table.length >= SWEEP_WORTHY_TABLE_SIZE;
+      const candidates = worthSweeping ? cards : cards.filter((card) => card.ability !== CLEAR_ON_PLAY);
+      return pickCard(candidates, sweepingFirst, dearestFirst, strongerFirst, earlierInCatalog);
+    },
+  ],
+  [
+    "mend-when-hurt",
+    (match, cards) => {
+      const menders =
+        match.opponent.health < HERO_HEALTH ? cards.filter((card) => card.ability === HEAL_ON_PLAY) : [];
+      return pickCard(menders.length ? menders : cards, dearestFirst, strongerFirst, earlierInCatalog);
+    },
+  ],
+  ["prefer-twice", (match, cards) => pickCard(cards, dearestFirst, moreAbilitiesFirst, strongerFirst, earlierInCatalog)],
+  ["prefer-strike", (match, cards) => pickCard(cards, cheapestFirst, strikingFirst, strongerFirst, earlierInCatalog)],
+]);
 
 /**
  * How the opponent chooses a card this turn, read off the character the match is
- * against: `"cheapest"` for one that wants speed, and `"dearest"` for everything
- * else — including a character that names no preference, and a match saved before
- * ids were stamped, which is resolved by name. The character is the one the
- * match's `opponentId` names, then the one its `opponentName` names, then the
- * default opponent; a preference the match cannot place reads as `"dearest"`,
- * which is the rule every opponent played by before the choice existed.
+ * against. The character is the one the match's `opponentId` names, then the one
+ * its `opponentName` names, then the default opponent; a preference the match
+ * cannot place reads as `"dearest"`, which is the rule every opponent played by
+ * before the choice existed.
  */
-function opponentChooser(match) {
+function opponentPreference(match) {
   const opponent =
     (match.opponentId ? OPPONENT_BY_ID.get(match.opponentId) : undefined) ??
     OPPONENTS.find((entry) => entry.name === match.opponentName) ??
     DEFAULT_OPPONENT;
-  return opponent.cardPreference === "cheapest" ? cheapestAffordable : bestAffordable;
+  return CARD_PREFERENCES.get(opponent.cardPreference) ?? CARD_PREFERENCES.get("dearest");
+}
+
+/**
+ * The card the opponent plays next, chosen by the character it is against from
+ * the cards it can afford. Reads the opponent's own hero health and the player's
+ * table, so a preference can wait for the moment its deck was built for. Returns
+ * null when there is nothing it will play — no card it can afford, or a sweeper
+ * it is holding until the player's table is worth sweeping. `hand` and `energy`
+ * default to what the opponent holds and can spend, and are arguments so a check
+ * can ask what it would choose from a hand it wrote itself.
+ */
+export function chooseOpponentCard(match, hand = match.opponent.hand, energy = match.opponent.energy) {
+  const affordable = affordableCards(hand, energy);
+  if (!affordable.length) return null;
+  return opponentPreference(match)(match, affordable);
 }
 
 function appendLog(match, line) {
@@ -703,20 +801,19 @@ export function attack(match, attackerId, target) {
 
 /**
  * The opponent's turn: grow and refill its energy, draw a card while it can,
- * play what it can afford the way its character chooses — dearest or cheapest,
- * per `opponentChooser` — then attack. Returns true when its table's attack
- * ended the match, so the caller stops rather than handing the turn back to a
- * hero that is no longer standing.
+ * play what it can afford the way its character chooses — the named preference
+ * its deck is built around, per `chooseOpponentCard` — then attack. Returns true
+ * when its table's attack ended the match, so the caller stops rather than
+ * handing the turn back to a hero that is no longer standing.
  */
 function takeOpponentTurn(match) {
   const opponent = match.opponent;
   const drawn = beginTurn(match, opponent, "the opponent");
   if (drawn) appendLog(match, `The opponent draws ${drawn.name} — ${opponent.deck.length} left in deck.`);
 
-  const chooseCard = opponentChooser(match);
   let played = 0;
   for (;;) {
-    const card = chooseCard(opponent.hand, opponent.energy);
+    const card = chooseOpponentCard(match, opponent.hand, opponent.energy);
     if (!card) break;
     opponent.hand.splice(opponent.hand.indexOf(card), 1);
     opponent.table.push(card);
