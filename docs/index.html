@@ -357,8 +357,9 @@
              switch it between the whole set, only what is still to collect
              and only the cards that do something the moment they are played,
              that draw a card at play or at fall, the moment they fall, that
-             grow while they stay, or that carry more
-             than one ability and so act twice, so a player
+             grow while they stay, that carry more than one ability and so
+             act twice, or that sweep every card on the opponent's table at
+             once, so a player
              working toward a full set can hide what they already have and a
              player building around any ability can see the cards that carry one;
              the two order buttons read the same cards in the game's own order or
@@ -393,12 +394,15 @@
             <button type="button" class="btn btn-secondary" data-collection-view="twice" aria-pressed="false">
               Acts twice
             </button>
+            <button type="button" class="btn btn-secondary" data-collection-view="sweeps" aria-pressed="false">
+              Sweeps the table
+            </button>
           </div>
           <!-- How much of what the list is showing the player already holds,
                e.g. "2 of 5 collected". Shown for the ability views ("Acts when
                played", "Mends your hero", "Draws a card", "Acts when they
-               fall", "Grows each turn" and "Acts twice"), and hidden in the
-               whole-set and still-to-collect views where the standing above the
+               fall", "Grows each turn", "Acts twice" and "Sweeps the table"),
+               and hidden in the whole-set and still-to-collect views where the standing above the
                list already says it. -->
           <p class="collection-view-count" id="collection-view-count" hidden></p>
           <div class="collection-view" role="group" aria-label="Which order the set lists">
