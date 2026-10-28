@@ -3688,15 +3688,26 @@ export async function checks() {
         fail('a match was started against "no-such-opponent", which is not an opponent this game has');
       }
 
-      // How an opponent plays is part of who it is: each declares whether it
-      // holds out for the dearest card it can afford or spends on the cheapest
-      // first, and not every opponent plays the same way — otherwise facing one
-      // feels exactly like facing the other, whatever the descriptions promise.
+      // How an opponent plays is part of who it is: each names a preference
+      // drawn from the kind of deck it brings — holding out for the dearest card
+      // it can afford, spending on the cheapest first, holding a sweep until the
+      // player's table is worth it, mending once wounded, reaching for a card
+      // that acts twice or one that strikes as it lands — and not every opponent
+      // plays the same way, otherwise facing one feels exactly like facing the
+      // other, whatever the descriptions promise.
+      const namedPreferences = [
+        "dearest",
+        "cheapest",
+        "hold-sweep",
+        "mend-when-hurt",
+        "prefer-twice",
+        "prefer-strike",
+      ];
       for (const opponent of opponentChoices) {
-        if (opponent.cardPreference !== "dearest" && opponent.cardPreference !== "cheapest") {
+        if (!namedPreferences.includes(opponent.cardPreference)) {
           fail(
             `the opponent "${opponent.name}" plays ${JSON.stringify(opponent.cardPreference)} — a preference has to ` +
-              'be "dearest" (its biggest affordable body) or "cheapest" (its smallest cards first)'
+              `be one of ${JSON.stringify(namedPreferences)}`
           );
         }
       }
@@ -3707,12 +3718,22 @@ export async function checks() {
             "like facing the other however differently their decks are described"
         );
       }
+      // A preference no character carries is a plan nobody plays: each of the
+      // ones drawn from a deck's promise has to belong to a character.
+      for (const promised of ["hold-sweep", "mend-when-hurt", "prefer-twice", "prefer-strike"]) {
+        if (!preferences.has(promised)) {
+          fail(
+            `no opponent plays ${JSON.stringify(promised)}, so the character whose deck that rule was built around ` +
+              "plays like every other and a player cannot tell them apart"
+          );
+        }
+      }
 
       // The first turn of the fixed deal shows that difference in the log: with
       // the same shuffle Thornmere's hand holds a cost-3 Glowcap and a cost-3
       // Mudback Turtle, so it holds out for one cost-3 body (the Glowcap, the
       // stronger of the two), while Emberwake's holds a cost-1 Sprout and a
-      // cost-1 Pebble Toad, so it plays both cheap strikers in a single turn. The
+      // cost-1 Pebble Toad, so it plays both cheap bodies in a single turn. The
       // played costs are read back off the table the opponent built.
       const firstTurnPlays = (opponentId) => {
         const match = matchEngine.createMatch(cheapDeck, { rng: fixedRng, opponentId });
@@ -3739,7 +3760,7 @@ export async function checks() {
       if (fastTurn.costs.length < 2) {
         fail(
           `Emberwake's first turn played ${fastTurn.costs.length} card(s) (costs ${JSON.stringify(fastTurn.costs)}) — ` +
-            "the fast deck should fill its table with several cheap strikers in one turn"
+            "the fast deck should fill its table with several cheap bodies in one turn"
         );
       } else if (!nonDecreasing(fastTurn.costs)) {
         fail(`Emberwake played its first turn's costs ${JSON.stringify(fastTurn.costs)}, which does not lead with its cheapest cards`);
@@ -3766,6 +3787,196 @@ export async function checks() {
           `the match log reads the same for both opponents (${JSON.stringify(slowTurn.lines)}), so a player cannot see ` +
             "them play differently"
         );
+      }
+
+      // Each named preference is product code, so it is asked directly from
+      // hands written here rather than only through whatever a shuffle dealt.
+      // A character's plan is a rule: the same hand and energy always produce
+      // the same card, and each rule picks the card its deck was built around.
+      if (typeof matchEngine.chooseOpponentCard !== "function") {
+        fail(
+          "docs/match.js does not export chooseOpponentCard, so how an opponent picks the card it plays cannot be " +
+            "checked from a hand the check writes itself"
+        );
+      } else {
+        const matchCardOf = (id) => ({ ...cardCatalog.CARD_BY_ID.get(id), hasAttacked: false });
+        const abilityFields = ["ability", "fallAbility", "growthAbility"];
+        const momentCount = (card) => abilityFields.filter((field) => card?.[field]).length;
+        const choiceOf = (opponent, handIds, energy, prepare = () => {}) => {
+          const match = matchEngine.createMatch(cheapDeck, { rng: fixedRng, opponentId: opponent.id });
+          prepare(match);
+          const chosen = matchEngine.chooseOpponentCard(match, handIds.map(matchCardOf), energy);
+          return chosen ? chosen.id : null;
+        };
+        const opponentPlaying = (preference) => {
+          const found = opponentChoices.find((opponent) => opponent.cardPreference === preference);
+          if (!found) {
+            fail(`no opponent plays ${JSON.stringify(preference)}, so what that rule chooses cannot be checked`);
+          }
+          return found;
+        };
+        const fillTable = (match, count) => {
+          match.player.table = Array.from({ length: count }, () => matchCardOf("pebble-toad"));
+        };
+
+        // The same hand, energy and board always produce the same card, for
+        // every character — a plan a player can learn, not a whim. The player's
+        // table holds two bodies so a character that waits for a wide table has
+        // something to answer.
+        for (const opponent of opponentChoices) {
+          const hand = opponent.deck.slice(0, 4);
+          const energy = Math.max(...hand.map((id) => cardCatalog.CARD_BY_ID.get(id).cost));
+          const wide = (match) => fillTable(match, 2);
+          const first = choiceOf(opponent, hand, energy, wide);
+          const again = choiceOf(opponent, hand, energy, wide);
+          if (!first) {
+            fail(
+              `the opponent "${opponent.name}" chose no card from its own ${hand.length}-card hand with ` +
+                `${energy} energy, though every card in it is affordable`
+            );
+          } else if (first !== again) {
+            fail(
+              `the opponent "${opponent.name}" chose "${again}" from the same hand and energy it chose "${first}" ` +
+                "from a moment before, so its choice is not deterministic"
+            );
+          }
+        }
+
+        // The sweeping character holds its gale until the player's table is
+        // worth it: not with one card standing, and spent once two are.
+        const sweeper = opponentPlaying("hold-sweep");
+        if (sweeper) {
+          const sweeping = sweeper.deck
+            .map((id) => cardCatalog.CARD_BY_ID.get(id))
+            .filter((card) => card.ability === cardCatalog.CLEAR_ON_PLAY)
+            .sort((a, b) => a.cost - b.cost)[0];
+          const plain = sweeper.deck
+            .map((id) => cardCatalog.CARD_BY_ID.get(id))
+            .filter((card) => card.ability !== cardCatalog.CLEAR_ON_PLAY && card.cost <= sweeping.cost)
+            .sort((a, b) => b.cost - a.cost || b.attack - a.attack)[0];
+          if (!sweeping || !plain) {
+            fail(
+              `"${sweeper.name}" brings no affordable sweeping card beside a plain body, so its plan of holding a ` +
+                "gale until the table is worth it cannot be checked"
+            );
+          } else {
+            const energy = Math.max(sweeping.cost, plain.cost);
+            const hand = [sweeping.id, plain.id];
+            const oneCard = choiceOf(sweeper, hand, energy, (match) => fillTable(match, 1));
+            const twoCards = choiceOf(sweeper, hand, energy, (match) => fillTable(match, 2));
+            if (oneCard === sweeping.id) {
+              fail(
+                `"${sweeper.name}" spent "${sweeping.name}" while the player's table held a single card — a sweep is ` +
+                  "worth holding until the table it answers is wider"
+              );
+            }
+            if (twoCards !== sweeping.id) {
+              fail(
+                `"${sweeper.name}" played "${twoCards}" while the player's table held two cards, instead of its ` +
+                  `sweeping "${sweeping.name}", so its gale is never spent when it would answer a wide table`
+              );
+            }
+          }
+        }
+
+        // The mending character mends once its own hero is wounded, and holds
+        // out for a stronger card while it is at the health it started with.
+        const mender = opponentPlaying("mend-when-hurt");
+        if (mender) {
+          const mendCard = mender.deck
+            .map((id) => cardCatalog.CARD_BY_ID.get(id))
+            .filter((card) => card.ability === cardCatalog.HEAL_ON_PLAY)
+            .sort((a, b) => a.cost - b.cost)[0];
+          const stronger = cardCatalog.CARDS.find(
+            (card) => card.cost === mendCard?.cost && card.attack > mendCard.attack && card.ability !== cardCatalog.HEAL_ON_PLAY
+          );
+          if (!mendCard || !stronger) {
+            fail(
+              `"${mender.name}" brings no mending card beside a stronger one of the same cost, so whether it mends ` +
+                "only once wounded cannot be checked"
+            );
+          } else {
+            const hand = [mendCard.id, stronger.id];
+            const unharmed = choiceOf(mender, hand, mendCard.cost);
+            const wounded = choiceOf(mender, hand, mendCard.cost, (match) => {
+              match.opponent.health = matchEngine.HERO_HEALTH - 1;
+            });
+            if (unharmed === mendCard.id) {
+              fail(
+                `"${mender.name}" mended with "${mendCard.name}" at its full ${matchEngine.HERO_HEALTH} health ` +
+                  `instead of playing the stronger "${stronger.name}" — it should mend only once it is wounded`
+              );
+            }
+            if (wounded !== mendCard.id) {
+              fail(
+                `"${mender.name}" played "${wounded}" while its hero stood wounded at ` +
+                  `${matchEngine.HERO_HEALTH - 1} health, instead of mending with "${mendCard.name}"`
+              );
+            }
+          }
+        }
+
+        // The doubled spirit reaches for a card that acts twice, and the herald
+        // for one that strikes as it lands — each over a stronger card of the
+        // same cost that does neither, so what chose is the preference rather
+        // than the size of the body.
+        for (const [preference, isWanted, wantedWords] of [
+          ["prefer-twice", (card) => momentCount(card) > 1, "carries more than one ability"],
+          ["prefer-strike", (card) => card.ability === cardCatalog.STRIKE_ON_PLAY, "strikes the board as it lands"],
+        ]) {
+          const chooser = opponentPlaying(preference);
+          if (!chooser) continue;
+          const pair = cardCatalog.CARDS.map((card) => ({
+            card,
+            rival: cardCatalog.CARDS.find(
+              (other) => other.cost === card.cost && other.attack > card.attack && !isWanted(other)
+            ),
+          })).find(({ card, rival }) => isWanted(card) && rival);
+          if (!pair) {
+            fail(
+              `no card that ${wantedWords} has a stronger card of the same cost beside it, so what ` +
+                `"${chooser.name}" prefers at equal cost cannot be checked`
+            );
+            continue;
+          }
+          const chosen = choiceOf(chooser, [pair.card.id, pair.rival.id], pair.card.cost);
+          if (chosen !== pair.card.id) {
+            fail(
+              `"${chooser.name}" played "${chosen}" instead of "${pair.card.name}": both cost ${pair.card.cost}, ` +
+                `and only "${pair.card.name}" ${wantedWords} — at equal cost the character should reach for it`
+            );
+          }
+        }
+
+        // Whatever a character chooses, the card it played is named in the log,
+        // so a player can read the plan off their opponent's turn.
+        for (const preference of ["hold-sweep", "mend-when-hurt", "prefer-twice", "prefer-strike"]) {
+          const chooser = opponentPlaying(preference);
+          if (!chooser || !matchEngine.chooseOpponentCard) continue;
+          const hand = chooser.deck.slice(0, 3).map(matchCardOf);
+          const energy = Math.max(...hand.map((card) => card.cost));
+          const match = matchEngine.createMatch(cheapDeck, { rng: fixedRng, opponentId: chooser.id });
+          fillTable(match, 2);
+          match.opponent.health = matchEngine.HERO_HEALTH - 1;
+          match.opponent.hand = hand;
+          match.opponent.deck = [];
+          match.opponent.energy = energy;
+          match.opponent.maxEnergy = energy;
+          const expected = matchEngine.chooseOpponentCard(match, hand, energy);
+          if (!expected) {
+            fail(`"${chooser.name}" chose no card from a hand written for it, so its turn cannot be read back`);
+            continue;
+          }
+          const logBefore = match.log.length;
+          matchEngine.endTurn(match);
+          const lines = match.log.slice(logBefore).filter((line) => /^Opponent plays /.test(line));
+          if (!lines.some((line) => line.includes(expected.name))) {
+            fail(
+              `"${chooser.name}" played "${expected.name}" but the turn's log reads ${JSON.stringify(lines)}, so a ` +
+                "player cannot see what its plan played"
+            );
+          }
+        }
       }
 
       // However an opponent chooses its cards, a match against it still reaches a
@@ -3875,12 +4086,18 @@ export async function checks() {
         firing.opponent.energy = abilityCard.cost;
         firing.opponent.maxEnergy = abilityCard.cost;
         // The mend is read off the opponent's own hero, so nothing is placed in
-        // front of it to wound it on the way; a strike and a sweep both need a
-        // card to land on, so the player keeps one body on the table for them.
+        // front of it to wound it on the way; a strike needs a card to land on,
+        // so the player keeps one body on the table for it. A sweep is only
+        // worth spending on a wide table — the character built around it holds
+        // its gale back for one card — so a sweeping opponent meets two bodies,
+        // the table its card is in the deck to answer.
         firing.opponent.health = 8;
-        if (promised === cardCatalog.STRIKE_ON_PLAY || promised === cardCatalog.CLEAR_ON_PLAY) {
-          firing.player.table = [{ ...cardCatalog.CARD_BY_ID.get("mudback-turtle"), hasAttacked: false }];
-        }
+        const bodiesForAbility =
+          promised === cardCatalog.CLEAR_ON_PLAY ? 2 : promised === cardCatalog.STRIKE_ON_PLAY ? 1 : 0;
+        firing.player.table = Array.from({ length: bodiesForAbility }, () => ({
+          ...cardCatalog.CARD_BY_ID.get("mudback-turtle"),
+          hasAttacked: false,
+        }));
         const firingLogBefore = firing.log.length;
         matchEngine.endTurn(firing);
         const firedLines = firing.log.slice(firingLogBefore);

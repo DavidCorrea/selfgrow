@@ -456,14 +456,28 @@ export const REWARD_POOL = [
  * `accent` names a colour token from styles.css rather than a colour, so the one
  * place a colour is written stays the stylesheet, and the opponent's portrait in
  * docs/cardart.js is painted in it. `cardPreference` is how the opponent
- * spends its turn: `"dearest"` plays the biggest body it can afford, `"cheapest"`
- * plays its smallest cards first so its table fills with several at once — the
- * choice that makes the kind of deck its `description` promises the kind of match
- * it plays. Each deck also brings a card that does something as it lands, chosen
- * to suit that same promise — the slow, wearing character mends, scythes the
- * player's whole table at once and strikes back as one of its bodies falls, the
- * fast ones strike — so a player meets the ability inside a match and learns to
- * watch for it on the opponent's turn. One deck trades bodies on purpose and is
+ * spends its turn, drawn from the kind of match its `description` promises:
+ *
+ * - `"dearest"` plays the biggest body it can afford;
+ * - `"cheapest"` plays its smallest cards first so its table fills with several
+ *   at once;
+ * - `"hold-sweep"` holds a sweeping card back while the player's table holds a
+ *   single card, and plays one the moment it holds two or more;
+ * - `"mend-when-hurt"` mends its hero once it is below the health it started the
+ *   match with, and plays its dearest body while it is unharmed;
+ * - `"prefer-twice"` plays dearest, preferring a card that carries more than one
+ *   ability when two cards cost the same;
+ * - `"prefer-strike"` plays cheapest, preferring a card that strikes the board as
+ *   it lands when two cards cost the same.
+ *
+ * The choice stays deterministic — the same hand and energy always pick the same
+ * card — so what an opponent does can be read off the character it is.
+ *
+ * Each deck also brings a card that does something as it lands, chosen to suit
+ * that same promise — the slow, wearing character mends, scythes the player's
+ * whole table at once and strikes back as one of its bodies falls, the fast ones
+ * strike — so a player meets the ability inside a match and learns to watch for
+ * it on the opponent's turn. One deck trades bodies on purpose and is
  * built around what a card does as it falls, the half of a card's behaviour no
  * other opponent centres on, so the fourth character is a lesson of its own. The
  * fifth is built around the one ability none of the others teach: a deck of
@@ -521,7 +535,7 @@ export const OPPONENTS = [
     name: "Emberwake",
     look: "a burning herald, all sparks and lit grass",
     description: "Fast, cheap strikers that hit before you can answer",
-    cardPreference: "cheapest",
+    cardPreference: "prefer-strike",
     accent: "--opponent-emberwake",
     // Cinder Shrike: the fiery-tipped striker that hits as it lands, the card
     // that stands for the herald's rush.
@@ -629,7 +643,7 @@ export const OPPONENTS = [
     name: "Mossheart",
     look: "a bowed mender of the deep wood, green to the shoulders where the moss has taken hold",
     description: "Slow, high-health bodies that mend — they outlast you",
-    cardPreference: "dearest",
+    cardPreference: "mend-when-hurt",
     accent: "--opponent-mossheart",
     // Mossheart Chalice: the mended bowl that heals its holder's hero as it is
     // lifted, the card that stands for the mender's long patience.
@@ -637,11 +651,12 @@ export const OPPONENTS = [
     // The one deck built around mending rather than around a single trigger:
     // four of its ten cards mend the hero the moment they land, a fifth pays a
     // mend back as it falls, and every other body is cheap for the health it
-    // carries. It plays dearest for the same reason — one wall at a time, each
-    // dealt with before the next — so the mends it keeps taking are what a
-    // player has to outpace before the match runs long and the slow deck wins by
-    // not dying. Its bodies are slow enough to leave the player free to race it,
-    // which is the lesson: against a mender, a stalled board is a losing one.
+    // carries. It mends once its own hero is wounded rather than the moment the
+    // match starts, so a player who never lands a blow never sees it spend its
+    // turn on health, and the mends it keeps taking are what a player has to
+    // outpace before the match runs long and the slow deck wins by not dying.
+    // Its bodies are slow enough to leave the player free to race it, which is
+    // the lesson: against a mender, a stalled board is a losing one.
     deck: [
       "dewdrop-nymph",
       "sprout",
@@ -660,7 +675,7 @@ export const OPPONENTS = [
     name: "Twinbough",
     look: "a forked spirit of two boughs, one trunk splitting into twin crowns",
     description: "Two things at once — bodies that answer the board and pay you back",
-    cardPreference: "dearest",
+    cardPreference: "prefer-twice",
     accent: "--opponent-twinbough",
     // Spearroot Colossus: the heavy body that strikes the board as it lands and
     // strikes again as it falls, the card that stands for the forked spirit's
@@ -671,10 +686,11 @@ export const OPPONENTS = [
     // falls, one that mends and grows, one that strikes as it lands and draws as
     // it falls, and one that strikes both ways — so a player meets a card doing
     // two things at once as a board to answer rather than only as a card to
-    // collect. It plays dearest for that reason: it wants one doubled body a
-    // turn, each dealt with before the next, because every body it commits both
-    // answers the board and is owed something when it is removed. Seed Pod and
-    // Comfrey Root feed the same idea — bodies cheap enough to trade that pay
+    // collect. It still plays dearest — one doubled body a turn, each dealt with
+    // before the next — but among cards of the same cost it reaches for the one
+    // that acts twice, because every body it commits both answers the board and
+    // is owed something when it is removed. Seed Pod and Comfrey Root feed the
+    // same idea — bodies cheap enough to trade that pay
     // their owner back as they fall — while Climbing Ivy, Glowcap, Mudback
     // Turtle and Elder Oak keep the curve playable.
     deck: [
@@ -727,7 +743,7 @@ export const OPPONENTS = [
     name: "Galehollow",
     look: "a lean wind-caller, arms flung wide, hair and hem torn sideways in the gale it holds open",
     description: "Wide, rolling gusts — it sweeps your whole table at once",
-    cardPreference: "dearest",
+    cardPreference: "hold-sweep",
     accent: "--opponent-galehollow",
     // Storm Roc: the wide-winged body that sweeps every card on the opposing
     // table as it lands, the card that stands for the wind-caller's gale.
