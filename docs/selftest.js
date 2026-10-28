@@ -6,9 +6,10 @@
  * player's, that a match in progress is saved as it changes so the home screen
  * can offer to continue it, that a match played to the last blow ends with a
  * result both a player and an agent can read, that a collection card's parts
- * stay in their own column at a phone's width with nothing off the edge, and
- * that an agent reads and drives that same surface rather than a second one
- * nobody can see.
+ * stay in their own column at a phone's width with nothing off the edge, that
+ * each point of the Play screen's how-a-match-works strip lays its label and
+ * its line out where neither covers the other, and that an agent reads and
+ * drives that same surface rather than a second one nobody can see.
  *
  * Runs on the real page, in the real browser. Returns plain-language failures,
  * empty when everything holds.
@@ -4743,6 +4744,40 @@ export async function checks() {
           }
         }
       }
+
+      // Each point's label and its line are two boxes of their own that must not
+      // share pixels. The fourth point carries the longest label, and while the
+      // label and its line sat in one inline flow their union boxes covered each
+      // other — so the one point that teaches what a card does while it is
+      // played, on falling and while it stays growing was the point that was
+      // hardest to read. Measured the way the App Review measures it, a shared
+      // area over 40% of the smaller box being text drawn over text.
+      const pointsWereFolded = rulesPoints.hidden;
+      if (pointsWereFolded) rulesToggle.click();
+      [...rulesPoints.querySelectorAll(".match-rule")].forEach((point, index) => {
+        const labelBox = point.querySelector("dt")?.getBoundingClientRect();
+        const lineBox = point.querySelector("dd")?.getBoundingClientRect();
+        const ruleLabel = rulesState.points[index]?.label ?? `rule ${index + 1}`;
+        if (!labelBox?.width || !labelBox?.height || !lineBox?.width || !lineBox?.height) {
+          fail(
+            `match rule ${index + 1} ("${ruleLabel}") has no label box or no line box on screen, so its label ` +
+              "and its explanation are not both laid out where a visitor can read them"
+          );
+          return;
+        }
+        const sharedWidth = Math.min(labelBox.right, lineBox.right) - Math.max(labelBox.left, lineBox.left);
+        const sharedHeight = Math.min(labelBox.bottom, lineBox.bottom) - Math.max(labelBox.top, lineBox.top);
+        const share = (Math.max(0, sharedWidth) * Math.max(0, sharedHeight)) /
+          Math.min(labelBox.width * labelBox.height, lineBox.width * lineBox.height);
+        if (share > 0.4) {
+          fail(
+            `match rule ${index + 1}'s label "${ruleLabel}" is drawn over its own explanation: the two share ` +
+              `${Math.round(share * 100)}% of the smaller box, so the point reads as scrambled text rather than ` +
+              "one label followed by its line"
+          );
+        }
+      });
+      if (pointsWereFolded) rulesToggle.click();
 
       // The same words, reachable by an agent: the tool returns the rules the page
       // prints and whether they are showing.
