@@ -4264,14 +4264,91 @@ export async function checks() {
       fail(`the remove-card-to-deck tool reported removing "${candidate}" but the page still holds it`);
     }
 
-    let refusedUnknown = false;
-    try {
-      await addToDeckTool.execute({ cardId: "not-a-real-card" });
-    } catch {
-      refusedUnknown = true;
+    // A refused deck change answers like every other mutating tool: a normal
+    // result naming the reason in an `error` field, not a thrown error. The
+    // collection and deck are captured first so each refusal can be shown to
+    // change nothing.
+    const beforeRefusals = game.readState();
+    const beforeRefusalCards = game.readCollection().ownedCards;
+
+    const refusedUnknown = await addToDeckTool.execute({ cardId: "not-a-real-card" });
+    if (!refusedUnknown.error) {
+      fail(
+        'add-card-to-deck accepted a card the player does not own ("not-a-real-card") without ' +
+          "naming the reason in an `error` field"
+      );
     }
-    if (!refusedUnknown) {
-      fail('add-card-to-deck accepted a card the player does not own ("not-a-real-card")');
+
+    // A card whose every owned copy is already in the deck is refused the same
+    // way, and the reason names how many copies are owned and that all of them
+    // are placed.
+    const allPlacedId = ownedIds.find((id) => ownedCopies(id) > 0 && heldCopies(id) === ownedCopies(id));
+    if (!allPlacedId) {
+      fail("no owned card has all its copies in the deck, so the all-copies refusal cannot be checked");
+    } else {
+      const refusedAllPlaced = await addToDeckTool.execute({ cardId: allPlacedId });
+      if (!refusedAllPlaced.error) {
+        fail(
+          `adding "${allPlacedId}", all ${ownedCopies(allPlacedId)} owned copies of which are already in the ` +
+            "deck, was accepted instead of naming the reason in an `error` field"
+        );
+      } else if (
+        !refusedAllPlaced.error.includes(String(ownedCopies(allPlacedId))) ||
+        !/already in your deck/.test(refusedAllPlaced.error)
+      ) {
+        fail(
+          `adding "${allPlacedId}" with all copies already placed named the reason as ` +
+            `"${refusedAllPlaced.error}", which does not say how many copies are owned and that all of them are in the deck`
+        );
+      }
+    }
+
+    // Removing a card no copy of which is in the deck is refused, naming it.
+    const notInDeckId = ownedIds.find((id) => !deckIds().includes(id));
+    if (!notInDeckId) {
+      fail("no owned card is outside the deck, so the removal refusal cannot be checked");
+    } else {
+      const refusedRemove = await removeFromDeckTool.execute({ cardId: notInDeckId });
+      if (!refusedRemove.error) {
+        fail(`removing "${notInDeckId}" was accepted, though no copy of it is in the deck`);
+      } else if (!/not in your deck/.test(refusedRemove.error)) {
+        fail(
+          `removing "${notInDeckId}" named the reason as "${refusedRemove.error}", which does not say it is not in the deck`
+        );
+      }
+    }
+
+    // A deck already at its limit refuses one more add, naming the limit. The
+    // refused card is a spare-owned one, so only the full deck stands in its way.
+    const deckLimit = game.readState().deckLimit;
+    const paddingId = ownedIds.find((id) => !deckIds().includes(id));
+    await addToDeckTool.execute({ cardId: paddingId });
+    if (deckIds().length !== deckLimit) {
+      fail(
+        `adding "${paddingId}" left the deck at ${deckIds().length} cards instead of its limit of ${deckLimit}, ` +
+          "so the full-deck refusal cannot be checked"
+      );
+    }
+    const overLimitId = ownedIds.find((id) => !deckIds().includes(id));
+    const refusedOverLimit = await addToDeckTool.execute({ cardId: overLimitId });
+    if (!refusedOverLimit.error) {
+      fail(`adding "${overLimitId}" was accepted, though the deck already holds its limit of ${deckLimit}`);
+    } else if (!refusedOverLimit.error.includes(String(deckLimit))) {
+      fail(
+        `adding to a deck already at its limit of ${deckLimit} named the reason as ` +
+          `"${refusedOverLimit.error}", which does not name the limit`
+      );
+    }
+
+    // Taking the padding card back out leaves the deck and the collection exactly
+    // as they were before any of these refusals, so no later check is disturbed.
+    await removeFromDeckTool.execute({ cardId: paddingId });
+    const afterRefusals = game.readState();
+    if (JSON.stringify(afterRefusals.deck) !== JSON.stringify(beforeRefusals.deck)) {
+      fail("the refused deck changes left the deck different from before, though a refusal must change nothing");
+    }
+    if (JSON.stringify(game.readCollection().ownedCards) !== JSON.stringify(beforeRefusalCards)) {
+      fail("the refused deck changes altered the collection, though a refusal must change nothing");
     }
   }
 
