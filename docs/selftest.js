@@ -11454,14 +11454,16 @@ export async function checks() {
         `"${sunspear.name}" acts twice but is not in the reward pool, so a win can never add it to a collection`
       );
     } else {
-      // A growth card appended behind the bloom is allowed — it is reached once
-      // the bloom is held — so the bloom must still be last once those newer
-      // reward cards are set aside. Nothing may be slotted in before or between
-      // the rewards that were already there.
-      const growthRewardIds = new Set(
-        cardCatalog.CARDS.filter((card) => card.growthAbility).map((card) => card.id)
+      // Later reward cards appended behind the bloom are allowed — they are
+      // reached once the bloom is held — so the bloom must still be last once
+      // those newer reward cards are set aside: the growth cards and the mending
+      // cards that followed them. Nothing may be slotted in before or between the
+      // rewards that were already there.
+      const newerRewardIds = new Set(
+        cardCatalog.CARDS.filter((card) => card.growthAbility || card.ability === cardCatalog.HEAL_ON_PLAY)
+          .map((card) => card.id)
       );
-      const rewardsBeforeGrowth = cardCatalog.REWARD_POOL.filter((id) => !growthRewardIds.has(id));
+      const rewardsBeforeGrowth = cardCatalog.REWARD_POOL.filter((id) => !newerRewardIds.has(id));
       if (rewardsBeforeGrowth[rewardsBeforeGrowth.length - 1] !== sunspear.id) {
         fail(
           `the reward pool reads ${JSON.stringify(cardCatalog.REWARD_POOL)}, so "${sunspear.name}" is not appended ` +
@@ -11648,8 +11650,18 @@ export async function checks() {
     if (!cardCatalog.REWARD_POOL.includes(growthCard.id)) {
       fail(`"${growthCard.name}" grows but is not in the reward pool, so a win can never add it to a collection`);
     } else {
-      const appendedTail = cardCatalog.REWARD_POOL.slice(-growthCards.length);
-      if (appendedTail.join(",") !== growthCards.map((card) => card.id).join(",")) {
+      // The growth cards are appended behind every reward before them, so a save
+      // made before they existed keeps the next-reward order it had. Later
+      // rewards (the mending cards) may follow them, so the block is not
+      // necessarily the tail — it must simply sit contiguously, in order.
+      const firstGrowthAt = Math.min(
+        ...growthCards.map((card) => cardCatalog.REWARD_POOL.indexOf(card.id))
+      );
+      const growthBlock = cardCatalog.REWARD_POOL.slice(firstGrowthAt, firstGrowthAt + growthCards.length);
+      if (
+        firstGrowthAt < 0 ||
+        growthBlock.join(",") !== growthCards.map((card) => card.id).join(",")
+      ) {
         fail(
           `the reward pool reads ${JSON.stringify(cardCatalog.REWARD_POOL)}, so a growth card is not appended ` +
             "behind the rewards that were already there and a save made before it existed would be handed a " +
@@ -12095,6 +12107,178 @@ export async function checks() {
             `the log does not name the growth of "${card.name}": the turn added ` +
               `${JSON.stringify(curveMatch.log.slice(curveLogBefore))}`
           );
+        }
+      }
+    }
+  }
+
+  // --- Mending cards spread across the cost curve ---------------------------
+
+  // Every mending card the game shipped with costs one or two, so a player who
+  // wants to build a deck around staying alive runs out of plan after the
+  // opening turns and has no big mending body to collect toward. Three cards at
+  // costs three, four and six close that gap: a body to hold the middle and a
+  // heavy one for a long game, each mending the hero as it lands. Each is a
+  // reward, so a win is how one is earned, and each is named here so a mending
+  // card left out of the set the collection pays out is caught.
+  const mendingCurveIds = ["dewglass-moth", "mossheart-chalice", "elderheart-willow"];
+  const mendingCurveCards = mendingCurveIds.map((id) => cardCatalog.CARD_BY_ID.get(id));
+
+  if (mendingCurveCards.some((card) => !card)) {
+    fail(
+      `the mending deck is missing ${JSON.stringify(mendingCurveIds.filter((id) => !cardCatalog.CARD_BY_ID.get(id)))} ` +
+        "from the card catalog, so it has no body to play at that point in a match"
+    );
+  } else {
+    // Each at its own cost, with the stats the card promises, so the mending
+    // body is real at every point in the match.
+    const expectedMendingStats = [
+      { id: "dewglass-moth", cost: 3, attack: 2, health: 4 },
+      { id: "mossheart-chalice", cost: 4, attack: 3, health: 5 },
+      { id: "elderheart-willow", cost: 6, attack: 5, health: 8 },
+    ];
+    for (const expected of expectedMendingStats) {
+      const card = cardCatalog.CARD_BY_ID.get(expected.id);
+      if (card.cost !== expected.cost || card.attack !== expected.attack || card.health !== expected.health) {
+        fail(
+          `"${card.name}" reads ${card.cost}/${card.attack}/${card.health} instead of the promised ` +
+            `${expected.cost}/${expected.attack}/${expected.health} (cost/attack/health)`
+        );
+      }
+      if (card.ability !== cardCatalog.HEAL_ON_PLAY) {
+        fail(
+          `"${card.name}" carries the ability ${JSON.stringify(card.ability ?? null)} instead of the shared ` +
+            `${JSON.stringify(cardCatalog.HEAL_ON_PLAY)}, so it does not mend the hero when played`
+        );
+      }
+    }
+
+    const mendingCosts = mendingCurveCards.map((card) => card.cost);
+    if (new Set(mendingCosts).size !== mendingCosts.length) {
+      fail(`two mending cards share a cost (${JSON.stringify(mendingCosts)}), so the curve is not spread`);
+    }
+    if (![3, 4, 6].every((cost) => mendingCosts.includes(cost))) {
+      fail(
+        `the mending cards' costs ${JSON.stringify(mendingCosts)} do not reach 3, 4 and 6, so the mending body ` +
+          "does not span the cost curve"
+      );
+    }
+
+    const mendingStarterIds = new Set(cardCatalog.STARTER_COLLECTION.map((entry) => entry.id));
+    for (const card of mendingCurveCards) {
+      // A reward, and not dealt at the start, so a win is how one is earned.
+      if (!cardCatalog.REWARD_POOL.includes(card.id)) {
+        fail(`the mending card "${card.name}" is not in the reward pool, so a win can never add it to a collection`);
+      }
+      if (mendingStarterIds.has(card.id)) {
+        fail(`the mending card "${card.name}" is dealt at the start as well as earned, so a win for it is not new`);
+      }
+
+      // A described picture, unique in the set and drawn only from its shapes.
+      const mendingArt = cardArt?.cardArt(card.id);
+      if (!mendingArt || !(mendingArt.inner || "").trim() || !mendingArt.description?.trim()) {
+        fail(`the mending card "${card.name}" has no described picture, so it cannot be known by sight`);
+        continue;
+      }
+      const mendingClasses = [...mendingArt.inner.matchAll(/class="([^"]*)"/g)].map(([, className]) => className);
+      const outsideStyle = mendingClasses.filter((className) => !["art-body", "art-accent"].includes(className));
+      if (mendingClasses.length === 0 || outsideStyle.length > 0) {
+        fail(
+          `the mending card "${card.name}" is drawn with ${JSON.stringify(mendingClasses)} instead of only the ` +
+            "set's art-body and art-accent shapes"
+        );
+      }
+      const mendingTwin = cardCatalog.CARDS.find(
+        (other) => other.id !== card.id && (cardArt?.cardArt(other.id)?.inner || "") === mendingArt.inner
+      );
+      if (mendingTwin) {
+        fail(
+          `the mending card "${card.name}" is drawn identically to "${mendingTwin.name}", so the two cannot ` +
+            "be told apart"
+        );
+      }
+
+      // The line is printed on the face in the collection, and an agent reads it
+      // from the field written for the ability.
+      const mendingFace = document.querySelector(`#collection-list [data-card-id="${card.id}"]`);
+      if (faceAbility(mendingFace) !== cardCatalog.HEAL_ON_PLAY) {
+        fail(
+          `the mending card "${card.name}" in the collection does not print ` +
+            `${JSON.stringify(cardCatalog.HEAL_ON_PLAY)} on its face (it reads ${JSON.stringify(faceAbility(mendingFace))})`
+        );
+      }
+      if (listCollection) {
+        const mendingEntry = (await listCollection.execute()).cards.find((listed) => listed.id === card.id);
+        if (!mendingEntry) {
+          fail(`list-collection does not return the mending card "${card.name}", so an agent cannot find it in the set`);
+        } else if (mendingEntry.ability !== cardCatalog.HEAL_ON_PLAY) {
+          fail(
+            `list-collection returns "${card.name}" with ability ${JSON.stringify(mendingEntry.ability ?? null)} ` +
+              `instead of ${JSON.stringify(cardCatalog.HEAL_ON_PLAY)}`
+          );
+        }
+      }
+    }
+
+    // The set grew by exactly these three, so the count a player sees includes
+    // them and they are listed for an agent.
+    if (listCollection) {
+      const listedSet = await listCollection.execute();
+      if (listedSet.setTotal !== cardCatalog.CARDS.length) {
+        fail(
+          `list-collection reports a set of ${listedSet.setTotal} cards while the catalog holds ` +
+            `${cardCatalog.CARDS.length}, so the mending cards are not counted in the set`
+        );
+      }
+      const listedIds = new Set((listedSet.cards ?? []).map((listed) => listed.id));
+      const missingFromSet = mendingCurveIds.filter((id) => !listedIds.has(id));
+      if (missingFromSet.length) {
+        fail(`list-collection leaves ${JSON.stringify(missingFromSet)} out of the set, so they cannot be collected to`);
+      }
+    }
+
+    // The trigger itself, in a real match: a wounded hero rises by the amount on
+    // the face and never past the 20 a hero starts with, and the log names the
+    // card and your health afterwards.
+    if (!matchEngine) {
+      fail("docs/match.js could not be imported, so the mending cards cannot be played");
+    } else {
+      const mendingDeck = ["sprout", "pebble-toad", "thornling", "sun-moth", "bramble-hound"];
+      for (const card of mendingCurveCards) {
+        for (const startHealth of [8, heroHealth - 1]) {
+          const mendingMatch = matchEngine.createMatch(mendingDeck, { rng: () => 0 });
+          mendingMatch.player.hand = [{ ...card, hasAttacked: false }];
+          mendingMatch.player.deck = [];
+          mendingMatch.player.table = [];
+          mendingMatch.player.energy = card.cost;
+          mendingMatch.player.maxEnergy = card.cost;
+          mendingMatch.player.health = startHealth;
+          mendingMatch.opponent.table = [];
+          mendingMatch.opponent.hand = [];
+          mendingMatch.opponent.deck = [];
+          const mendingLogBefore = mendingMatch.log.length;
+          matchEngine.playCard(mendingMatch, card.id);
+          const expected = Math.min(heroHealth, startHealth + cardCatalog.HEAL_ON_PLAY_AMOUNT);
+          if (mendingMatch.player.health !== expected) {
+            fail(
+              `playing "${card.name}" from ${startHealth} health left your hero at ${mendingMatch.player.health} ` +
+                `instead of ${expected}, so the ${cardCatalog.HEAL_ON_PLAY_AMOUNT} on its face did not fire or the cap was missed`
+            );
+          }
+          if (!mendingMatch.player.table.some((onTable) => onTable.id === card.id)) {
+            fail(`playing "${card.name}" did not put it on the table, so it is not a card a deck can play`);
+          }
+          const mendingLines = mendingMatch.log.slice(mendingLogBefore);
+          if (
+            !mendingLines.some(
+              (line) => line.includes(card.name) && line.includes(`your health ${mendingMatch.player.health}`)
+            )
+          ) {
+            fail(
+              `the log for "${card.name}" does not name the card and your health afterwards: the play added ` +
+                JSON.stringify(mendingLines)
+            );
+          }
         }
       }
     }
