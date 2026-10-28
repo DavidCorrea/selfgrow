@@ -1861,26 +1861,32 @@ export async function checks() {
   // an agent asks for, and as the labelled totals a visitor sees.
   const attackValue = () => document.getElementById("deck-total-attack");
   const healthValue = () => document.getElementById("deck-total-health");
-  // How many of the deck's cards act when played, act when they fall or grow
-  // each turn, read the same two ways: from the state an agent asks for, and
-  // from the labelled counts a visitor sees beside the totals.
+  // How many of the deck's cards act when played, act when they fall, mend your
+  // hero or grow each turn, read the same two ways: from the state an agent asks
+  // for, and from the labelled counts a visitor sees beside the totals.
   const whenPlayedValue = () => document.getElementById("deck-total-when-played");
+  const mendsValue = () => document.getElementById("deck-total-mends");
   const whenFallsValue = () => document.getElementById("deck-total-when-falls");
   const growsValue = () => document.getElementById("deck-total-grows");
   // The sum over the deck the state holds, derived here so a wrong total on the
   // page or in the state fails rather than agreeing with itself.
   const deckSum = (field) => game.readState().deck.reduce((total, card) => total + card[field], 0);
   const abilityCount = (field) => game.readState().deck.filter((card) => card[field]).length;
+  // A mending card is one whose when-played face heals the hero — the same
+  // predicate the Collection screen's "mends" view counts, so a count that
+  // disagreed with that view would fail here rather than read zero forever.
+  const mendsCount = () =>
+    game.readState().deck.filter((card) => card.ability === cardCatalog.HEAL_ON_PLAY).length;
   const shownTotal = (element) => (element ? Number(textOf(element)) : NaN);
 
   if (!curveBlock()) {
     fail("the collection screen has no cost curve under the deck (#deck-curve), so the deck's shape cannot be read");
   }
-  if (!whenPlayedValue() || !whenFallsValue() || !growsValue()) {
+  if (!whenPlayedValue() || !mendsValue() || !whenFallsValue() || !growsValue()) {
     fail(
-      "the deck panel shows no counts of its when-played, when-falls and growing cards " +
-        "(#deck-total-when-played / #deck-total-when-falls / #deck-total-grows), so a player building around any " +
-        "ability cannot read them"
+      "the deck panel shows no counts of its when-played, mending, when-falls and growing cards " +
+        "(#deck-total-when-played / #deck-total-mends / #deck-total-when-falls / #deck-total-grows), so a player " +
+        "building around any ability cannot read them"
     );
   }
   if (!attackValue() || !healthValue()) {
@@ -2039,26 +2045,33 @@ export async function checks() {
         "instead of only its own empty note"
     );
   }
-  // An empty deck has no cards to count either: all three ability counts are
+  // An empty deck has no cards to count either: all four ability counts are
   // null in the state and blank on the page, so zero is never printed where
   // there is nothing to count.
   if (
     game.readState().deckWhenPlayed !== null ||
+    game.readState().deckMends !== null ||
     game.readState().deckWhenFalls !== null ||
     game.readState().deckGrows !== null
   ) {
     fail(
       "an empty deck reports ability counts instead of null: " +
         `deckWhenPlayed ${JSON.stringify(game.readState().deckWhenPlayed)}, ` +
+        `deckMends ${JSON.stringify(game.readState().deckMends)}, ` +
         `deckWhenFalls ${JSON.stringify(game.readState().deckWhenFalls)}, ` +
         `deckGrows ${JSON.stringify(game.readState().deckGrows)}`
     );
   }
-  if (textOf(whenPlayedValue()) || textOf(whenFallsValue()) || textOf(growsValue())) {
+  if (
+    textOf(whenPlayedValue()) ||
+    textOf(mendsValue()) ||
+    textOf(whenFallsValue()) ||
+    textOf(growsValue())
+  ) {
     fail(
       `an empty deck still shows ability counts ("${textOf(whenPlayedValue())}" played, ` +
-        `"${textOf(whenFallsValue())}" falls, "${textOf(growsValue())}" grow) ` +
-        "instead of only its own empty note"
+        `"${textOf(mendsValue())}" mending, "${textOf(whenFallsValue())}" falls, ` +
+        `"${textOf(growsValue())}" grow) instead of only its own empty note`
     );
   }
 
@@ -2108,24 +2121,31 @@ export async function checks() {
     fail(`a one-card deck shows a total health of ${textOf(healthValue())} instead of the summed ${loneHealth}`);
   }
   // A one-card deck's ability counts are that card's own: one for a face it
-  // carries, zero for the one it does not, all three in the state and on the
+  // carries, zero for the one it does not, all four in the state and on the
   // page.
   const lonePlayed = abilityCount("ability");
+  const loneMends = mendsCount();
   const loneFalls = abilityCount("fallAbility");
   const loneGrows = abilityCount("growthAbility");
   if (
     game.readState().deckWhenPlayed !== lonePlayed ||
+    game.readState().deckMends !== loneMends ||
     game.readState().deckWhenFalls !== loneFalls ||
     game.readState().deckGrows !== loneGrows
   ) {
     fail(
       `a one-card deck reports ${JSON.stringify(game.readState().deckWhenPlayed)}/` +
-        `${JSON.stringify(game.readState().deckWhenFalls)}/${JSON.stringify(game.readState().deckGrows)} ` +
-        `when-played/when-falls/growing instead of the counted ${lonePlayed}/${loneFalls}/${loneGrows}`
+        `${JSON.stringify(game.readState().deckMends)}/${JSON.stringify(game.readState().deckWhenFalls)}/` +
+        `${JSON.stringify(game.readState().deckGrows)} ` +
+        `when-played/mending/when-falls/growing instead of the counted ` +
+        `${lonePlayed}/${loneMends}/${loneFalls}/${loneGrows}`
     );
   }
   if (shownTotal(whenPlayedValue()) !== lonePlayed) {
     fail(`a one-card deck shows ${textOf(whenPlayedValue())} when-played card(s) instead of the counted ${lonePlayed}`);
+  }
+  if (shownTotal(mendsValue()) !== loneMends) {
+    fail(`a one-card deck shows ${textOf(mendsValue())} mending card(s) instead of the counted ${loneMends}`);
   }
   if (shownTotal(whenFallsValue()) !== loneFalls) {
     fail(`a one-card deck shows ${textOf(whenFallsValue())} when-falls card(s) instead of the counted ${loneFalls}`);
@@ -2157,12 +2177,18 @@ export async function checks() {
   // in the state and blank on the page, matching the totals beside them.
   if (
     game.readState().deckWhenPlayed !== null ||
+    game.readState().deckMends !== null ||
     game.readState().deckWhenFalls !== null ||
     game.readState().deckGrows !== null
   ) {
     fail("emptying the deck again left ability counts on the state instead of null");
   }
-  if (textOf(whenPlayedValue()) || textOf(whenFallsValue()) || textOf(growsValue())) {
+  if (
+    textOf(whenPlayedValue()) ||
+    textOf(mendsValue()) ||
+    textOf(whenFallsValue()) ||
+    textOf(growsValue())
+  ) {
     fail("emptying the deck again left its ability counts printed on the page");
   }
 
@@ -2287,25 +2313,32 @@ export async function checks() {
     fail(`the deck panel shows a total health of ${textOf(healthValue())} instead of the summed ${fullHealth}`);
   }
   // The ability counts stand beside the totals: how many of the ten cards carry
-  // a when-played face, how many carry a when-falls one and how many grow each
-  // turn, each the count over the deck the state holds and printed the same on
-  // the page.
+  // a when-played face, how many of those mend your hero, how many carry a
+  // when-falls one and how many grow each turn, each the count over the deck the
+  // state holds and printed the same on the page.
   const fullPlayed = abilityCount("ability");
+  const fullMends = mendsCount();
   const fullFalls = abilityCount("fallAbility");
   const fullGrows = abilityCount("growthAbility");
   if (
     game.readState().deckWhenPlayed !== fullPlayed ||
+    game.readState().deckMends !== fullMends ||
     game.readState().deckWhenFalls !== fullFalls ||
     game.readState().deckGrows !== fullGrows
   ) {
     fail(
       `a ten-card deck reports ${JSON.stringify(game.readState().deckWhenPlayed)}/` +
-        `${JSON.stringify(game.readState().deckWhenFalls)}/${JSON.stringify(game.readState().deckGrows)} ` +
-        `when-played/when-falls/growing instead of the counted ${fullPlayed}/${fullFalls}/${fullGrows}`
+        `${JSON.stringify(game.readState().deckMends)}/${JSON.stringify(game.readState().deckWhenFalls)}/` +
+        `${JSON.stringify(game.readState().deckGrows)} ` +
+        `when-played/mending/when-falls/growing instead of the counted ` +
+        `${fullPlayed}/${fullMends}/${fullFalls}/${fullGrows}`
     );
   }
   if (shownTotal(whenPlayedValue()) !== fullPlayed) {
     fail(`the deck panel shows ${textOf(whenPlayedValue())} when-played card(s) instead of the counted ${fullPlayed}`);
+  }
+  if (shownTotal(mendsValue()) !== fullMends) {
+    fail(`the deck panel shows ${textOf(mendsValue())} mending card(s) instead of the counted ${fullMends}`);
   }
   if (shownTotal(whenFallsValue()) !== fullFalls) {
     fail(`the deck panel shows ${textOf(whenFallsValue())} when-falls card(s) instead of the counted ${fullFalls}`);
@@ -2639,6 +2672,53 @@ export async function checks() {
       game.restoreSaveCode(originalCode);
     } catch (error) {
       fail(`restoring the collection after the growing-card check was refused: ${error.message}`);
+    }
+  }
+
+  // The count of mending cards is proved the other way round: the deck already
+  // holds a card that mends your hero, so take one out and prove the count — in
+  // the state and on the page — falls by exactly one, then put it back and prove
+  // it returns. This is the only way the count can be shown to follow the deck
+  // rather than always read the same number.
+  const deckMendCard = game.readState().deck.find((card) => card.ability === cardCatalog.HEAL_ON_PLAY);
+  if (!deckMendCard) {
+    fail("the ten-card deck holds no card that mends your hero, so a deck's mending cards cannot be checked");
+  } else {
+    const mendsBefore = game.readState().deckMends;
+    if (mendsBefore < 1) {
+      fail(
+        `a deck holding the mending card "${deckMendCard.id}" reports deckMends ` +
+          `${JSON.stringify(mendsBefore)} instead of at least 1`
+      );
+    } else {
+      game.removeCardFromDeck(deckMendCard.id);
+      const mendsAfter = game.readState().deckMends;
+      if (mendsAfter !== mendsBefore - 1) {
+        fail(
+          `removing the mending card "${deckMendCard.id}" from the deck changed deckMends from ` +
+            `${JSON.stringify(mendsBefore)} to ${JSON.stringify(mendsAfter)} instead of ${mendsBefore - 1}`
+        );
+      }
+      if (shownTotal(mendsValue()) !== mendsAfter) {
+        fail(
+          `the deck panel shows ${textOf(mendsValue())} mending card(s) after removing ` +
+            `"${deckMendCard.id}" instead of the counted ${mendsAfter}`
+        );
+      }
+      game.addCardToDeck(deckMendCard.id);
+      const mendsBack = game.readState().deckMends;
+      if (mendsBack !== mendsBefore) {
+        fail(
+          `adding the mending card "${deckMendCard.id}" back to the deck left deckMends at ` +
+            `${JSON.stringify(mendsBack)} instead of ${mendsBefore}`
+        );
+      }
+      if (shownTotal(mendsValue()) !== mendsBack) {
+        fail(
+          `the deck panel shows ${textOf(mendsValue())} mending card(s) after adding ` +
+            `"${deckMendCard.id}" back instead of the counted ${mendsBack}`
+        );
+      }
     }
   }
 
@@ -4133,33 +4213,39 @@ export async function checks() {
       );
     }
 
-    // How many of the deck's cards act when played, act when they fall or grow
-    // each turn is part of what the panel shows, so it is part of what get-state
-    // returns: the counts over the deck the page holds.
+    // How many of the deck's cards act when played, mend your hero, act when
+    // they fall or grow each turn is part of what the panel shows, so it is part
+    // of what get-state returns: the counts over the deck the page holds.
     const livePlayedCount = live.deck.filter((card) => card.ability).length;
+    const liveMendsCount = live.deck.filter((card) => card.ability === cardCatalog.HEAL_ON_PLAY).length;
     const liveFallsCount = live.deck.filter((card) => card.fallAbility).length;
     const liveGrowsCount = live.deck.filter((card) => card.growthAbility).length;
     if (
       reported.deckWhenPlayed !== live.deckWhenPlayed ||
+      reported.deckMends !== live.deckMends ||
       reported.deckWhenFalls !== live.deckWhenFalls ||
       reported.deckGrows !== live.deckGrows
     ) {
       fail(
         `get-state reports ${JSON.stringify(reported.deckWhenPlayed)}/` +
-          `${JSON.stringify(reported.deckWhenFalls)}/${JSON.stringify(reported.deckGrows)} ` +
-          `when-played/when-falls/growing counts while the page says ` +
-          `${JSON.stringify(live.deckWhenPlayed)}/${JSON.stringify(live.deckWhenFalls)}/${JSON.stringify(live.deckGrows)}`
+          `${JSON.stringify(reported.deckMends)}/${JSON.stringify(reported.deckWhenFalls)}/` +
+          `${JSON.stringify(reported.deckGrows)} when-played/mending/when-falls/growing counts while the page says ` +
+          `${JSON.stringify(live.deckWhenPlayed)}/${JSON.stringify(live.deckMends)}/` +
+          `${JSON.stringify(live.deckWhenFalls)}/${JSON.stringify(live.deckGrows)}`
       );
     }
     if (
       reported.deckWhenPlayed !== livePlayedCount ||
+      reported.deckMends !== liveMendsCount ||
       reported.deckWhenFalls !== liveFallsCount ||
       reported.deckGrows !== liveGrowsCount
     ) {
       fail(
         `get-state reports ${JSON.stringify(reported.deckWhenPlayed)}/` +
-          `${JSON.stringify(reported.deckWhenFalls)}/${JSON.stringify(reported.deckGrows)} ` +
-          `when-played/when-falls/growing counts instead of the counted ${livePlayedCount}/${liveFallsCount}/${liveGrowsCount}`
+          `${JSON.stringify(reported.deckMends)}/${JSON.stringify(reported.deckWhenFalls)}/` +
+          `${JSON.stringify(reported.deckGrows)} when-played/mending/when-falls/growing counts instead of the ` +
+          "counted " +
+          `${livePlayedCount}/${liveMendsCount}/${liveFallsCount}/${liveGrowsCount}`
       );
     }
 
