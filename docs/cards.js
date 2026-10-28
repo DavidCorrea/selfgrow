@@ -300,6 +300,15 @@ export const CARDS = [
   // trigger the match runs can never drift. It is a reward card, so a player
   // collects toward it and a win is how it is earned.
   { id: "scrollbark", name: "Scrollbark", cost: 5, attack: 4, health: 5, ability: DRAW_ON_PLAY },
+  // The cheap end of the sweeping curve. Every clearing card before this one
+  // costs three, five or six, so a player who wants an answer to a wide board
+  // has nothing to play until the third turn and only meets the ability in the
+  // late game. This one fills that gap at cost two, and its attack and health
+  // are deliberately modest so the price is paid for the sweep rather than the
+  // body. It carries the shared CLEAR_ON_PLAY constant, so its face and the
+  // trigger the match runs can never drift from the other sweepers, and it is a
+  // reward card like them, so a win is how a player earns it.
+  { id: "breeze-wisp", name: "Breeze Wisp", cost: 2, attack: 1, health: 2, ability: CLEAR_ON_PLAY },
 ];
 
 /** Lookup by id — the shape the saved collection speaks in. */
@@ -408,6 +417,11 @@ export const REWARD_POOL = [
   // will award, and a mid-curve body, so a player collecting toward it meets
   // drawing as something worth building a deck and an opponent around.
   "scrollbark",
+  // Appended for the same reason as every reward before it: a save written
+  // before the wisp existed keeps the next-reward order and the place it already
+  // had in the queue untouched. It is the cheap sweeping card, so a player who
+  // wants to build around clearing a wide board early collects toward it.
+  "breeze-wisp",
 ];
 
 /**
