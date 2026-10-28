@@ -120,7 +120,7 @@ const MATCH_RULES = [
   // word "fall" and the fall and growth halves after it, so each half reads on
   // its own.
   {
-    label: "Some cards act when played, when they fall or while they stay",
+    label: "Some cards act when played, when they fall or while they stay — a card can carry more than one",
     text: `a played card can ${listed(whenPlayedEffects)}; a card that falls can ${listed(fallEffects)}; a card that stays grows ${growthEffect}`,
   },
 ];

@@ -5794,6 +5794,30 @@ export async function checks() {
             );
           }
         }
+
+        // The point also says a card can carry more than one of those abilities,
+        // so a newcomer who meets a two-ability card in a match has the rule that
+        // explains it on the screen where the card is met. The cards are counted
+        // with the same predicate the Collection screen's "twice" view uses, so
+        // the rule and the set cannot disagree.
+        const twiceCards = cardCatalog.CARDS.filter(
+          (card) => [card.ability, card.growthAbility, card.fallAbility].filter((a) => a !== null).length >= 2
+        );
+        const saysMoreThanOne = /more than one|more than once|act twice/.test(fourthRule);
+        if (twiceCards.length > 0 && !saysMoreThanOne) {
+          fail(
+            `the game holds ${twiceCards.length} card(s) that carry more than one ability (e.g. ` +
+              `"${twiceCards[0].id}"), but the fourth match rule reads "${whenActedPoint.label} — ` +
+              `${whenActedPoint.text}", which never says a card can carry more than one, so a newcomer who ` +
+              "meets such a card has nothing that explains it"
+          );
+        }
+        if (saysMoreThanOne && twiceCards.length === 0) {
+          fail(
+            `the fourth match rule reads "${whenActedPoint.label} — ${whenActedPoint.text}", which teaches ` +
+              "that a card can carry more than one ability, but no card in the game carries two"
+          );
+        }
       }
 
       // The control names its action and carries the expanded state a screen
