@@ -11659,16 +11659,16 @@ export async function checks() {
       );
     } else {
       // Later reward cards appended behind the bloom are allowed — they are
-      // reached once the bloom is held — so the bloom must still be last once
-      // those newer reward cards are set aside: the growth cards and the mending
-      // cards that followed them. Nothing may be slotted in before or between the
-      // rewards that were already there.
-      const newerRewardIds = new Set(
-        cardCatalog.CARDS.filter((card) => card.growthAbility || card.ability === cardCatalog.HEAL_ON_PLAY)
-          .map((card) => card.id)
+      // reached once the bloom is held — so the bloom must still be the last of
+      // the rewards the catalog introduced at or before it. "Newer" is read from
+      // the catalog's own order rather than from what ability a card happens to
+      // carry, so a later card with any ability (another card that acts twice,
+      // say) can never be mistaken for one that came before the bloom.
+      const sunspearCatalogIndex = cardCatalog.CARDS.findIndex((card) => card.id === sunspear.id);
+      const rewardsAtOrBeforeBloom = cardCatalog.REWARD_POOL.filter(
+        (id) => cardCatalog.CARDS.findIndex((card) => card.id === id) <= sunspearCatalogIndex
       );
-      const rewardsBeforeGrowth = cardCatalog.REWARD_POOL.filter((id) => !newerRewardIds.has(id));
-      if (rewardsBeforeGrowth[rewardsBeforeGrowth.length - 1] !== sunspear.id) {
+      if (rewardsAtOrBeforeBloom[rewardsAtOrBeforeBloom.length - 1] !== sunspear.id) {
         fail(
           `the reward pool reads ${JSON.stringify(cardCatalog.REWARD_POOL)}, so "${sunspear.name}" is not appended ` +
             "behind the rewards that were already there and a save made before it existed would be handed a " +
@@ -11854,22 +11854,27 @@ export async function checks() {
     if (!cardCatalog.REWARD_POOL.includes(growthCard.id)) {
       fail(`"${growthCard.name}" grows but is not in the reward pool, so a win can never add it to a collection`);
     } else {
-      // The growth cards are appended behind every reward before them, so a save
-      // made before they existed keeps the next-reward order it had. Later
-      // rewards (the mending cards) may follow them, so the block is not
-      // necessarily the tail — it must simply sit contiguously, in order.
-      const firstGrowthAt = Math.min(
-        ...growthCards.map((card) => cardCatalog.REWARD_POOL.indexOf(card.id))
-      );
-      const growthBlock = cardCatalog.REWARD_POOL.slice(firstGrowthAt, firstGrowthAt + growthCards.length);
-      if (
-        firstGrowthAt < 0 ||
-        growthBlock.join(",") !== growthCards.map((card) => card.id).join(",")
-      ) {
+      // The pool lists every reward in the order the catalog introduces it, so a
+      // save made before a card existed keeps the next-reward order it had and a
+      // win pays the set out in introduction order. Growth cards included: a
+      // growth card appended behind a later batch of cards still sits after every
+      // reward introduced before it, while one leapfrogged ahead of an older
+      // reward is caught. This is stronger than requiring the growth cards to be
+      // one contiguous block, which any card added after them would break without
+      // a single reward actually moving.
+      const catalogPositionById = new Map(cardCatalog.CARDS.map((card, index) => [card.id, index]));
+      const outOfOrderRewards = [];
+      let lastRewardPosition = -1;
+      for (const id of cardCatalog.REWARD_POOL) {
+        const position = catalogPositionById.get(id) ?? -1;
+        if (position <= lastRewardPosition) outOfOrderRewards.push(id);
+        lastRewardPosition = position;
+      }
+      if (outOfOrderRewards.length > 0) {
         fail(
-          `the reward pool reads ${JSON.stringify(cardCatalog.REWARD_POOL)}, so a growth card is not appended ` +
-            "behind the rewards that were already there and a save made before it existed would be handed a " +
-            "different next reward"
+          `the reward pool reads ${JSON.stringify(cardCatalog.REWARD_POOL)}, so ${JSON.stringify(outOfOrderRewards)} ` +
+            "is not listed in the order the catalog introduces it and a save made before it existed would be " +
+            "handed a different next reward"
         );
       }
     }
@@ -12484,6 +12489,405 @@ export async function checks() {
             );
           }
         }
+      }
+    }
+  }
+
+  // --- Cards that each act twice, spread across the cost curve --------------
+
+  // A card that acts twice — one ability as it lands and another as it falls, or
+  // a when-played paired with a growth — is a plan a deck can be built around
+  // rather than a single trick, and one such card in the whole set is a
+  // curiosity. Three cards, each carrying two of the abilities the game already
+  // has, spread from the cheap end of the curve to the heavy end, make "does two
+  // things" a shape a player can collect toward at every point in a match. Each
+  // prints both abilities in the words the single-ability cards use, is a reward
+  // a win earns, and is drawn so it is known by sight like every other card. Each
+  // is named here with the two abilities it must carry.
+  const twoAbilitySpecs = [
+    {
+      id: "mire-spore",
+      cost: 1,
+      ability: cardCatalog.DRAW_ON_PLAY,
+      fallAbility: cardCatalog.HEAL_ON_FALL,
+      whenPlayedPeer: "glowcap",
+      fallPeer: "comfrey-root",
+    },
+    {
+      id: "heartwood-sapling",
+      cost: 3,
+      ability: cardCatalog.HEAL_ON_PLAY,
+      growthAbility: cardCatalog.GROWTH_ABILITY,
+      whenPlayedPeer: "dewdrop-nymph",
+      growthPeer: "climbing-ivy",
+    },
+    {
+      id: "spearroot-colossus",
+      cost: 6,
+      ability: cardCatalog.STRIKE_ON_PLAY,
+      fallAbility: cardCatalog.STRIKE_ON_FALL,
+      whenPlayedPeer: "cinder-shrike",
+      fallPeer: "whipthorn",
+    },
+  ];
+  const abilityFields = ["ability", "growthAbility", "fallAbility"];
+  const twoAbilityCards = twoAbilitySpecs.map((spec) => cardCatalog.CARD_BY_ID.get(spec.id));
+  const missingTwoAbilityIds = twoAbilitySpecs
+    .filter((spec) => !cardCatalog.CARD_BY_ID.get(spec.id))
+    .map((spec) => spec.id);
+
+  if (missingTwoAbilityIds.length > 0) {
+    fail(
+      `the two-ability cards are missing ${JSON.stringify(missingTwoAbilityIds)} from the card catalog, so no card ` +
+        "acts twice"
+    );
+  } else {
+    // The three reach from a cheap early play to a heavy late one, each at its
+    // own cost, so "does two things" is a curve rather than one point on it.
+    const twoAbilityCosts = twoAbilityCards.map((card) => card.cost);
+    if (twoAbilityCosts.join(",") !== twoAbilitySpecs.map((spec) => spec.cost).join(",")) {
+      fail(
+        `the two-ability cards cost ${JSON.stringify(twoAbilityCosts)} instead of the promised ` +
+          `${JSON.stringify(twoAbilitySpecs.map((spec) => spec.cost))}, so the curve is not spread`
+      );
+    }
+    if (new Set(twoAbilityCosts).size !== twoAbilityCosts.length) {
+      fail(`two two-ability cards share a cost (${JSON.stringify(twoAbilityCosts)}), so the curve is not spread`);
+    }
+
+    for (let index = 0; index < twoAbilitySpecs.length; index += 1) {
+      const spec = twoAbilitySpecs[index];
+      const card = twoAbilityCards[index];
+
+      // Exactly the two abilities it is meant to carry, in the fields written
+      // for them, and no third: the same shared constants the single-ability
+      // cards use, so no word on the face can drift from its trigger.
+      const expectedFields = abilityFields.filter((field) => spec[field] != null);
+      const carriedFields = abilityFields.filter((field) => card[field] != null);
+      if (carriedFields.join(",") !== expectedFields.join(",")) {
+        fail(
+          `"${card.name}" carries abilities in ${JSON.stringify(carriedFields)} instead of exactly ` +
+            `${JSON.stringify(expectedFields)}, so it does not act twice the way it is meant to`
+        );
+      }
+      for (const field of expectedFields) {
+        if (card[field] !== spec[field]) {
+          fail(
+            `"${card.name}" carries ${field} ${JSON.stringify(card[field] ?? null)} instead of the shared ` +
+              `${JSON.stringify(spec[field])}`
+          );
+        }
+      }
+
+      // A reward a win earns and the starter deck does not hold, appended behind
+      // every reward the catalog introduces before it, so collecting toward the
+      // card is the point and a save keeps the order it already had.
+      const poolIndex = cardCatalog.REWARD_POOL.indexOf(card.id);
+      if (poolIndex < 0) {
+        fail(`"${card.name}" acts twice but is not in the reward pool, so a win can never add it to a collection`);
+      } else {
+        const cardPosition = cardCatalog.CARDS.findIndex((entry) => entry.id === card.id);
+        const leapfrogged = cardCatalog.REWARD_POOL.filter((id) => {
+          const otherPosition = cardCatalog.CARDS.findIndex((entry) => entry.id === id);
+          return otherPosition < cardPosition && cardCatalog.REWARD_POOL.indexOf(id) > poolIndex;
+        });
+        if (leapfrogged.length > 0) {
+          fail(
+            `the reward pool reads ${JSON.stringify(cardCatalog.REWARD_POOL)}, so "${card.name}" is not appended ` +
+              `behind ${JSON.stringify(leapfrogged)}, and a save made before it existed would be handed a different next reward`
+          );
+        }
+      }
+      if (cardCatalog.STARTER_COLLECTION.some((entry) => entry.id === card.id)) {
+        fail(`"${card.name}" is a reward card but is also dealt at the start, so a new player already owns it`);
+      }
+
+      // A described picture in the shared flat-silhouette style, unique in the
+      // set, so the card is known by sight like every finished reward card.
+      const twoAbilityArt = cardArt?.cardArt(card.id);
+      if (!twoAbilityArt || !(twoAbilityArt.inner || "").trim()) {
+        fail(`"${card.name}" has no picture, so the card that acts twice cannot be known by sight`);
+      } else if (!twoAbilityArt.description?.trim()) {
+        fail(`"${card.name}"'s picture is not described, so it cannot be checked against the style`);
+      } else {
+        const drawnClasses = [...twoAbilityArt.inner.matchAll(/class="([^"]*)"/g)].map(([, className]) => className);
+        const outsideStyle = drawnClasses.filter((className) => !["art-body", "art-accent"].includes(className));
+        if (drawnClasses.length === 0 || outsideStyle.length > 0) {
+          fail(
+            `"${card.name}" is drawn with ${JSON.stringify(drawnClasses)} instead of only the set's art-body ` +
+              "and art-accent shapes, so its picture does not follow the shared art style"
+          );
+        }
+        const twin = cardCatalog.CARDS.find(
+          (other) => other.id !== card.id && (cardArt?.cardArt(other.id)?.inner || "") === twoAbilityArt.inner
+        );
+        if (twin) {
+          fail(`"${card.name}" is drawn identically to "${twin.name}", so the two cannot be told apart by sight`);
+        }
+      }
+
+      // Both lines are printed on the face, in the order the ability list is
+      // written — when-played first, then growth, then fall — wherever the card
+      // is shown: the collection and the face a win earns.
+      const expectedLines = abilityFields.map((field) => card[field]).filter(Boolean);
+      const linesOf = (face) => [...(face?.querySelectorAll(".card-ability") ?? [])].map((line) => textOf(line));
+      const collectionFace = document.querySelector(`#collection-list [data-card-id="${card.id}"]`);
+      if (linesOf(collectionFace).join(" | ") !== expectedLines.join(" | ")) {
+        fail(
+          `the "${card.name}" shown in the collection prints ${JSON.stringify(linesOf(collectionFace))} on its ` +
+            `face instead of ${JSON.stringify(expectedLines)}`
+        );
+      }
+      if (linesOf(game.awardCardFigure(card)).join(" | ") !== expectedLines.join(" | ")) {
+        fail(
+          `the earned-card face of "${card.name}" prints ${JSON.stringify(linesOf(game.awardCardFigure(card)))} ` +
+            `instead of ${JSON.stringify(expectedLines)}`
+        );
+      }
+
+      // An agent that lists the set reads both abilities in the fields written
+      // for them, so what the face says and what a caller reads are one answer.
+      if (listCollection) {
+        const entry = (await listCollection.execute()).cards.find((listed) => listed.id === card.id);
+        if (!entry) {
+          fail(`list-collection does not return "${card.name}", so an agent cannot find the card that acts twice`);
+        } else {
+          for (const field of abilityFields) {
+            if ((entry[field] ?? null) !== (card[field] ?? null)) {
+              fail(
+                `list-collection returns "${card.name}" with ${field} ${JSON.stringify(entry[field] ?? null)} ` +
+                  `instead of ${JSON.stringify(card[field] ?? null)}`
+              );
+            }
+          }
+        }
+      }
+    }
+
+    // Both halves of every card, in a real match, run exactly as the
+    // single-ability card that carries them does: the same effect and the same
+    // log line, so a second ability on one card changes nothing about how either
+    // half behaves.
+    if (!matchEngine) {
+      fail("docs/match.js could not be imported, so the cards that act twice cannot be played");
+    } else {
+      const twoAbilityDeck = ["sprout", "pebble-toad", "thornling", "sun-moth", "bramble-hound"];
+      const fresh = (card) => ({ ...card, health: card.health, hasAttacked: false });
+
+      // Played from the hand with a known card on the deck and an opponent body
+      // in front of it, so the when-played half alone fires.
+      const playRun = (cardId) => {
+        const card = cardCatalog.CARD_BY_ID.get(cardId);
+        const match = matchEngine.createMatch(twoAbilityDeck, { rng: () => 0 });
+        match.player.table = [];
+        match.player.hand = [fresh(card)];
+        match.player.deck = [fresh(cardCatalog.CARD_BY_ID.get("mudback-turtle"))];
+        match.player.energy = card.cost;
+        match.player.maxEnergy = card.cost;
+        match.player.health = 10;
+        match.opponent.table = [fresh(cardCatalog.CARD_BY_ID.get("elder-oak"))];
+        match.opponent.hand = [];
+        match.opponent.deck = [];
+        const before = match.log.length;
+        matchEngine.playCard(match, card.id);
+        return { match, lines: match.log.slice(before), card };
+      };
+
+      // Alone on the opponent's table with one health, killed by the player's
+      // biggest body, so the fall half alone fires.
+      const fallRun = (cardId) => {
+        const card = cardCatalog.CARD_BY_ID.get(cardId);
+        const match = matchEngine.createMatch(twoAbilityDeck, { rng: () => 0 });
+        match.player.table = [fresh(cardCatalog.CARD_BY_ID.get("elder-oak"))];
+        match.player.hand = [];
+        match.player.deck = [];
+        match.player.health = 10;
+        match.opponent.table = [{ ...fresh(card), health: 1 }];
+        match.opponent.hand = [];
+        match.opponent.deck = [];
+        match.opponent.health = 10;
+        const before = match.log.length;
+        matchEngine.attack(match, "elder-oak", card.id);
+        return { match, lines: match.log.slice(before), card };
+      };
+
+      // Alone on the player's table while a turn passes, so the growth half
+      // alone fires.
+      const growthRun = (cardId) => {
+        const card = cardCatalog.CARD_BY_ID.get(cardId);
+        const match = matchEngine.createMatch(twoAbilityDeck, { rng: () => 0 });
+        match.player.table = [fresh(card)];
+        match.player.hand = [];
+        match.player.deck = [];
+        match.opponent.table = [];
+        match.opponent.hand = [];
+        match.opponent.deck = [];
+        const before = match.log.length;
+        matchEngine.endTurn(match);
+        return { match, lines: match.log.slice(before), card };
+      };
+
+      // The one log line an ability prints, with the card's own name blanked so
+      // two cards carrying the same ability can be compared word for word.
+      const triggerLine = (lines, card, matched) => {
+        const line = lines.find((entry) => matched(entry, card));
+        return line ? line.split(card.name).join("«card»") : null;
+      };
+
+      const whenPlayedChecks = {
+        [cardCatalog.DRAW_ON_PLAY]: {
+          matched: (line) => line.includes("draws"),
+          effectProblem: (match) =>
+            match.player.hand.some((held) => held.id === "mudback-turtle")
+              ? null
+              : `drew ${JSON.stringify(match.player.hand.map((held) => held.id))} instead of the Mudback Turtle on top of the deck`,
+        },
+        [cardCatalog.HEAL_ON_PLAY]: {
+          matched: (line) => line.includes("heals"),
+          effectProblem: (match) =>
+            match.player.health === 10 + cardCatalog.HEAL_ON_PLAY_AMOUNT
+              ? null
+              : `left your hero at ${match.player.health} instead of ${10 + cardCatalog.HEAL_ON_PLAY_AMOUNT}`,
+        },
+        [cardCatalog.STRIKE_ON_PLAY]: {
+          matched: (line, card) => line.includes(card.name) && line.includes("deals"),
+          effectProblem: (match) => {
+            const front = match.opponent.table[0];
+            const expected = cardCatalog.CARD_BY_ID.get("elder-oak").health - cardCatalog.STRIKE_ON_PLAY_AMOUNT;
+            return front && front.health === expected
+              ? null
+              : `left the opponent's front card at ${front?.health} instead of ${expected}`;
+          },
+        },
+      };
+
+      const fallChecks = {
+        [cardCatalog.HEAL_ON_FALL]: {
+          matched: (line) => line.includes("heals"),
+          effectProblem: (match) =>
+            match.opponent.health === 10 + cardCatalog.HEAL_ON_FALL_AMOUNT
+              ? null
+              : `left the opponent's hero at ${match.opponent.health} instead of ${10 + cardCatalog.HEAL_ON_FALL_AMOUNT}`,
+        },
+        [cardCatalog.STRIKE_ON_FALL]: {
+          matched: (line, card) => line.startsWith("Opponent's") && line.includes(card.name),
+          effectProblem: (match) => {
+            const front = match.player.table[0];
+            const expected = cardCatalog.CARD_BY_ID.get("elder-oak").health - cardCatalog.STRIKE_ON_PLAY_AMOUNT;
+            return front && front.health === expected
+              ? null
+              : `left your front card at ${front?.health} instead of ${expected}`;
+          },
+        },
+      };
+
+      for (const spec of twoAbilitySpecs) {
+        const card = cardCatalog.CARD_BY_ID.get(spec.id);
+
+        // The when-played half: effect and log line against its peer.
+        const whenPlayedCheck = whenPlayedChecks[spec.ability];
+        const ownPlay = playRun(card.id);
+        const ownPlayLine = triggerLine(ownPlay.lines, ownPlay.card, whenPlayedCheck.matched);
+        if (!ownPlayLine) {
+          fail(
+            `playing "${card.name}" logged ${JSON.stringify(ownPlay.lines)}, none of which is the line its ` +
+              `${JSON.stringify(spec.ability)} ability prints`
+          );
+        } else {
+          const problem = whenPlayedCheck.effectProblem(ownPlay.match);
+          if (problem) fail(`the when-played ability of "${card.name}" ${problem}`);
+          const peerCard = cardCatalog.CARD_BY_ID.get(spec.whenPlayedPeer);
+          const peerPlayLine = triggerLine(playRun(peerCard.id).lines, peerCard, whenPlayedCheck.matched);
+          if (peerPlayLine !== ownPlayLine) {
+            fail(
+              `playing "${card.name}" logs ${JSON.stringify(ownPlayLine)} as its when-played ability while ` +
+                `"${peerCard.name}", which carries only that ability, logs ${JSON.stringify(peerPlayLine)}`
+            );
+          }
+        }
+
+        // The fall half, the same way.
+        if (spec.fallAbility) {
+          const fallCheck = fallChecks[spec.fallAbility];
+          const ownFall = fallRun(card.id);
+          const ownFallLine = triggerLine(ownFall.lines, ownFall.card, fallCheck.matched);
+          if (!ownFallLine) {
+            fail(
+              `killing "${card.name}" logged ${JSON.stringify(ownFall.lines)}, none of which is the line its ` +
+                `${JSON.stringify(spec.fallAbility)} ability prints`
+            );
+          } else {
+            const problem = fallCheck.effectProblem(ownFall.match);
+            if (problem) fail(`the fall ability of "${card.name}" ${problem}`);
+            const peerCard = cardCatalog.CARD_BY_ID.get(spec.fallPeer);
+            const peerFallLine = triggerLine(fallRun(peerCard.id).lines, peerCard, fallCheck.matched);
+            if (peerFallLine !== ownFallLine) {
+              fail(
+                `killing "${card.name}" logs ${JSON.stringify(ownFallLine)} as its fall ability while ` +
+                  `"${peerCard.name}", which carries only that ability, logs ${JSON.stringify(peerFallLine)}`
+              );
+            }
+          }
+        }
+
+        // The growth half: the same words as the card that only grows, with each
+        // card's own new attack in place.
+        if (spec.growthAbility) {
+          const ownGrowth = growthRun(card.id);
+          const ownGrowthLine = ownGrowth.lines.find((line) => /grows \+1 attack/i.test(line));
+          const expectedGrowthLine =
+            `${card.name} grows +${cardCatalog.GROWTH_ABILITY_AMOUNT} attack for you — it now has ` +
+            `${card.attack + cardCatalog.GROWTH_ABILITY_AMOUNT} attack.`;
+          if (ownGrowthLine !== expectedGrowthLine) {
+            fail(
+              `"${card.name}" logged ${JSON.stringify(ownGrowthLine)} for its growth instead of ` +
+                `${JSON.stringify(expectedGrowthLine)}`
+            );
+          }
+          const grown = ownGrowth.match.player.table.find((onTable) => onTable.id === card.id);
+          if (grown?.attack !== card.attack + cardCatalog.GROWTH_ABILITY_AMOUNT) {
+            fail(
+              `"${card.name}" grew to ${grown?.attack} attack instead of the ` +
+                `${card.attack + cardCatalog.GROWTH_ABILITY_AMOUNT} its growth gives`
+            );
+          }
+          const growthPeer = cardCatalog.CARD_BY_ID.get(spec.growthPeer);
+          const peerGrowthLine = growthRun(growthPeer.id).lines.find((line) => /grows \+1 attack/i.test(line));
+          const expectedPeerLine =
+            `${growthPeer.name} grows +${cardCatalog.GROWTH_ABILITY_AMOUNT} attack for you — it now has ` +
+            `${growthPeer.attack + cardCatalog.GROWTH_ABILITY_AMOUNT} attack.`;
+          if (peerGrowthLine !== expectedPeerLine) {
+            fail(
+              `the single-ability "${growthPeer.name}" does not log the shared growth line — it logged ` +
+                `${JSON.stringify(peerGrowthLine)}`
+            );
+          }
+        }
+      }
+    }
+
+    // Each is earnable: holding every reward the catalog introduces before it,
+    // the next win promises and awards exactly this card.
+    for (const spec of twoAbilitySpecs) {
+      const card = cardCatalog.CARD_BY_ID.get(spec.id);
+      const poolIndex = cardCatalog.REWARD_POOL.indexOf(card.id);
+      if (poolIndex < 0) continue;
+      const earnStore = stubStorage();
+      const held = cardCatalog.STARTER_COLLECTION.map(({ id, copies }) => ({ id, copies })).concat(
+        cardCatalog.REWARD_POOL.slice(0, poolIndex).map((id) => ({ id, copies: 1 }))
+      );
+      collection.saveCollection(held, earnStore);
+      const promised = collection.nextRewardId(held);
+      if (promised !== card.id) {
+        fail(
+          `with every reward before "${card.name}" held, the next win promises ${JSON.stringify(promised)} ` +
+            `instead of "${card.id}", so the card that acts twice cannot be earned`
+        );
+        continue;
+      }
+      const won = collection.recordResult("win", `check-two-ability-${card.id}`, earnStore);
+      if (won.awarded?.id !== card.id) {
+        fail(`a win that should add "${card.name}" awarded ${JSON.stringify(won.awarded?.id ?? null)} instead`);
       }
     }
   }
