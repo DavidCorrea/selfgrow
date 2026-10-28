@@ -53,15 +53,27 @@ const SCREEN_LABELS = {
   play: "Play",
 };
 
-// The nine views the Collection screen's set list can be in: every card in the
+// The ten views the Collection screen's set list can be in: every card in the
 // game, only the ones not collected yet, only the ones whose face carries a
 // when-played ability, only the ones that mend your hero when played, only the
-// ones whose face draws you a card, only the ones whose face carries a fall
-// ability, only the ones that grow while they stay, only the ones that carry
-// more than one ability and so act twice, or only the ones whose face sweeps
-// every card on the opponent's table. The list is also the schema a tool
-// checks against, so a caller cannot ask for a view the page does not show.
-const COLLECTION_VIEWS = ["all", "missing", "abilities", "mends", "draws", "falls", "grows", "twice", "sweeps"];
+// ones that strike the opponent's front card when played, only the ones whose
+// face draws you a card, only the ones whose face carries a fall ability, only
+// the ones that grow while they stay, only the ones that carry more than one
+// ability and so act twice, or only the ones whose face sweeps every card on
+// the opponent's table. The list is also the schema a tool checks against, so a
+// caller cannot ask for a view the page does not show.
+const COLLECTION_VIEWS = [
+  "all",
+  "missing",
+  "abilities",
+  "mends",
+  "strikes",
+  "draws",
+  "falls",
+  "grows",
+  "twice",
+  "sweeps",
+];
 
 // The two orders the Collection screen's set list can be read in: the catalog's
 // own order, or cheapest first. The list is also the schema a tool checks
@@ -2384,6 +2396,10 @@ export const COLLECTION_VIEW_TEXT = {
     label: "Cards in the game that mend your hero when played",
     empty: "No card in the game mends your hero when played.",
   },
+  strikes: {
+    label: "Cards in the game that strike the opponent's front card when played",
+    empty: "No card in the game strikes the opponent's front card when played.",
+  },
   draws: {
     label: "Cards in the game that draw you a card",
     empty: "No card in the game draws you a card.",
@@ -2410,9 +2426,11 @@ export const COLLECTION_VIEW_TEXT = {
  * Whether a card belongs in the view the set list is showing: every card in
  * "all", the ones not collected yet in "missing", the ones whose face does
  * something the moment it is played in "abilities", the ones whose face mends
- * your hero when it is played in "mends", the ones whose face draws you a card
- * — whether at play or at fall — in "draws", the ones whose face does something
- * the moment it leaves the table in "falls", the ones that grow while they
+ * your hero when it is played in "mends", the ones whose face strikes the
+ * opponent's front card when it is played in "strikes", the ones whose face
+ * draws you a card — whether at play or at fall — in "draws", the ones whose
+ * face does something the moment it leaves the table in "falls", the ones that
+ * grow while they
  * stay in "grows", the ones whose face carries more than one ability — so it
  * acts at more than one moment — in "twice", and the ones whose face sweeps
  * every card on the opponent's table — dealing damage to each of them at once
@@ -2433,6 +2451,7 @@ function isInCollectionView(card) {
   if (state.collectionView === "missing") return !card.owned;
   if (state.collectionView === "abilities") return card.ability !== null;
   if (state.collectionView === "mends") return card.ability === HEAL_ON_PLAY;
+  if (state.collectionView === "strikes") return card.ability === STRIKE_ON_PLAY;
   if (state.collectionView === "draws") return drawsACard(card);
   if (state.collectionView === "falls") return card.fallAbility !== null;
   if (state.collectionView === "grows") return card.growthAbility !== null;
@@ -2456,7 +2475,8 @@ function collectionViewCards() {
  * in the "missing" view, only the cards not collected yet, so a player working
  * toward a full set can hide what they already have, or, in the "abilities"
  * view, only the cards whose face carries a when-played ability, in the "mends"
- * view, only those that mend your hero when played, in the "draws" view, only
+ * view, only those that mend your hero when played, in the "strikes" view, only
+ * those that strike the opponent's front card when played, in the "draws" view, only
  * those whose face draws you a card whether at play or at fall, in the "falls"
  * view, only those carrying a fall ability, in the "grows" view, only those that grow
  * while they stay, in the "twice" view, only those that carry more than one
@@ -2899,7 +2919,8 @@ export function readState() {
     opponentsBeaten: opponentsBeatenCount(),
     opponentsTotal: OPPONENTS.length,
     // Which cards the Collection screen's set list is showing: "all", "missing",
-    // "abilities", "mends", "draws", "falls", "grows", "twice" or "sweeps".
+    // "abilities", "mends", "strikes", "draws", "falls", "grows", "twice" or
+    // "sweeps".
     collectionView: state.collectionView,
     // How that list is read: "catalog" for the game's own order, "cost" cheapest first.
     collectionOrder: state.collectionOrder,
@@ -3182,7 +3203,8 @@ export function readMatch() {
  * `distinctCards` of `setTotal` is how close the set is to complete. `view`
  * says which cards the Collection screen's set list is showing — every card,
  * only the ones not collected yet, only those that act when played, only those
- * that mend your hero when played, only those that act when they fall, only
+ * that mend your hero when played, only those that strike the opponent's front
+ * card when played, only those that act when they fall, only
  * those that grow while they stay, only those that carry more than one
  * ability and so act twice, or only those that sweep the opponent's table —
  * and `order` how those cards are read, in
@@ -3202,14 +3224,15 @@ export function readCollection() {
     distinctCards: state.distinctCards,
     setTotal: state.setTotal,
     // Which cards the Collection screen's set list is showing: "all", "missing",
-    // "abilities", "mends", "draws", "falls", "grows", "twice" or "sweeps".
+    // "abilities", "mends", "strikes", "draws", "falls", "grows", "twice" or
+    // "sweeps".
     view: state.collectionView,
     // How that list is read: "catalog" for the game's own order, "cost" cheapest first.
     order: state.collectionOrder,
     // How many of the cards the active view lists the player already holds, and
     // how many it lists in all — the "2 of 5 collected" line under the view
-    // buttons in the ability views ("abilities", "mends", "falls", "grows" and
-    // "twice" and "sweeps").
+    // buttons in the ability views ("abilities", "mends", "strikes", "falls",
+    // "grows", "twice" and "sweeps").
     viewCollected: viewCards.filter((card) => card.owned).length,
     viewTotal: viewCards.length,
     // How many of the deck's cards sweep the opponent's table, read over the
