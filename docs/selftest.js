@@ -4121,6 +4121,28 @@ export async function checks() {
   const setCollectionViewTool = toolNamed("set-collection-view");
   const setViewButtons = [...document.querySelectorAll("[data-collection-view]")];
   const setList = document.getElementById("collection-list");
+  // The "N of M collected" line some views print under the buttons. For the view
+  // showing now, it must read how many of the cards it lists the player holds
+  // out of how many it lists, and list-collection must report the same pair — a
+  // count that disagrees with the cards above it, or a line that is missing when
+  // it should show, trips this.
+  const viewCountLine = document.getElementById("collection-view-count");
+  let heldIds = new Set();
+  const checkViewCount = (viewIds) => {
+    const listed = game.readCollection();
+    const collected = viewIds.filter((id) => heldIds.has(id)).length;
+    if (listed.viewTotal !== viewIds.length || listed.viewCollected !== collected) {
+      fail(
+        `the "${listed.view}" view reports ${listed.viewCollected} of ${listed.viewTotal} collected where it lists ${viewIds.length} card(s) and the player holds ${collected} of them`
+      );
+    }
+    const expected = `${collected} of ${viewIds.length} collected`;
+    if (!viewCountLine || viewCountLine.hidden) {
+      fail(`the "${listed.view}" view does not show how many of its cards are collected`);
+    } else if (textOf(viewCountLine) !== expected) {
+      fail(`the "${listed.view}" view reads "${textOf(viewCountLine)}" where "${expected}" is expected`);
+    }
+  };
   if (!setCollectionViewTool) {
     fail('no "set-collection-view" tool is declared, so an agent cannot choose between every card and only those still to collect');
   } else if (setList) {
@@ -4147,13 +4169,16 @@ export async function checks() {
     if (allRows.length !== setIds.length) {
       fail(`the collection's "all" view lists ${allRows.length} card(s) where the game has ${setIds.length}`);
     }
+    if (viewCountLine && !viewCountLine.hidden) {
+      fail('the "all" view shows a per-view collected line where the standing above the list already says it');
+    }
 
     // Switching to "missing" lists only the cards the player does not hold.
     const afterMissingView = await setCollectionViewTool.execute({ view: "missing" });
     if (afterMissingView.collectionView !== "missing") {
       fail(`switching the set to "missing" reports the view as "${afterMissingView.collectionView}" instead of "missing"`);
     }
-    const heldIds = new Set(beforeView.ownedCards.map((card) => card.id));
+    heldIds = new Set(beforeView.ownedCards.map((card) => card.id));
     const expectedMissing = setIds.filter((id) => !heldIds.has(id));
     const missingRows = [...setList.querySelectorAll("[data-card-id]")].map((row) => row.dataset.cardId);
     const wrongMissing = missingRows.filter((id) => heldIds.has(id));
@@ -4175,6 +4200,9 @@ export async function checks() {
       .map((button) => button.dataset.collectionView);
     if (pressedMissing.length !== 1 || pressedMissing[0] !== "missing") {
       fail(`the "missing" view does not mark its own button pressed (pressed: ${pressedMissing.join(", ") || "none"})`);
+    }
+    if (viewCountLine && !viewCountLine.hidden) {
+      fail('the "missing" view shows a per-view collected line where the standing above the list already says it');
     }
 
     // Switching the view touches neither the collection nor the deck.
@@ -4267,6 +4295,7 @@ export async function checks() {
         `the "abilities" view leaves the cards collected reading "${collectedWhileShowing}" where the set stands at "${collectedExpected}"`
       );
     }
+    checkViewCount(abilityIds);
     const afterAbilityCollection = game.readCollection();
     if (JSON.stringify(asIdCopies(afterAbilityCollection.ownedCards)) !== JSON.stringify(asIdCopies(beforeView.ownedCards))) {
       fail('switching the set to the "abilities" view changed the cards in the collection');
@@ -4333,6 +4362,7 @@ export async function checks() {
     if (game.readCollection().view !== "falls") {
       fail(`list-collection reports the collection view as "${game.readCollection().view}" while the "falls" view is showing`);
     }
+    checkViewCount(fallIds);
 
     const backFromFallView = await setCollectionViewTool.execute({ view: "all" });
     if (backFromFallView.collectionView !== "all") {
@@ -4408,6 +4438,7 @@ export async function checks() {
     if (JSON.stringify(game.readState().deck) !== JSON.stringify(beforeState.deck)) {
       fail('switching the set to the "grows" view changed the deck');
     }
+    checkViewCount(growthIds);
 
     const backFromGrowthView = await setCollectionViewTool.execute({ view: "all" });
     if (backFromGrowthView.collectionView !== "all") {

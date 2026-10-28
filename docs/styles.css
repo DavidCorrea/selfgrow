@@ -301,6 +301,17 @@ body {
   color: var(--on-foil);
 }
 
+/* How much of an ability view the player already holds, e.g. "2 of 5
+   collected": a quiet line under the view buttons, so it reads as a caption on
+   the list rather than a heading over it. Hidden in the views that do not
+   print it. */
+.collection-view-count {
+  margin: 0;
+  color: var(--ink-muted);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
 /* A view with nothing to list says so rather than reading as an empty set —
    every card collected in the "missing" view, no ability cards in the
    "abilities" one. */
