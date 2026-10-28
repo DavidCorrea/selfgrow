@@ -650,6 +650,54 @@ const CARD_ART = new Map([
       `,
     },
   ],
+  [
+    "dewglass-moth",
+    {
+      description:
+        "A moth: a slim upright body with two droplet wings outspread, eyes on the wing joints and a droplet resting on its back",
+      inner: `
+        <path class="art-body" d="M40 34 C29 16 18 15 21 30 C23 39 32 48 40 50 Z" />
+        <path class="art-body" d="M56 34 C67 16 78 15 75 30 C73 39 64 48 56 50 Z" />
+        <ellipse class="art-body" cx="48" cy="40" rx="8" ry="14" />
+        <circle class="art-body" cx="48" cy="24" r="5.5" />
+        <circle class="art-accent" cx="34" cy="38" r="2.6" />
+        <circle class="art-accent" cx="62" cy="38" r="2.6" />
+      `,
+    },
+  ],
+  [
+    "mossheart-chalice",
+    {
+      description:
+        "A chalice: a wide bowl on a stem over a splayed foot, moss tufts at the foot and a heart set into the bowl",
+      inner: `
+        <path class="art-body" d="M28 20 C28 39 38 47 48 47 C58 47 68 39 68 20 Z" />
+        <path class="art-body" d="M26 14 L70 14 L72 20 L24 20 Z" />
+        <rect class="art-body" x="45" y="47" width="6" height="7" rx="2" />
+        <path class="art-body" d="M34 54 C38 50 44 52 48 54 C52 52 58 50 62 54 Z" />
+        <path class="art-body" d="M26 50 C20 47 15 49 13 53 C19 55 23 55 28 54 Z" />
+        <path class="art-body" d="M70 50 C76 47 81 49 83 53 C77 55 73 55 68 54 Z" />
+        <path class="art-accent" d="M48 33 C44 27 38 29 40 35 C41 39 48 43 48 43 C48 43 55 39 56 35 C58 29 52 27 48 33 Z" />
+      `,
+    },
+  ],
+  [
+    "elderheart-willow",
+    {
+      description:
+        "A willow: a stout trunk under a drooping frond crown, roots sprawling at its foot and a heart cut into the bark",
+      inner: `
+        <path class="art-body" d="M14 54 C23 45 35 43 48 43 C61 43 73 45 82 54 Z" />
+        <path class="art-body" d="M38 52 C36 40 40 28 48 22 C56 28 60 40 58 52 Z" />
+        <path class="art-body" d="M48 22 C35 17 21 15 11 21 L13 31 C25 27 40 31 48 39 Z" />
+        <path class="art-body" d="M48 22 C61 17 75 15 85 21 L83 31 C71 27 56 31 48 39 Z" />
+        <path class="art-body" d="M11 21 C7 19 6 26 11 28 L13 31 Z" />
+        <path class="art-body" d="M85 21 C89 19 90 26 85 28 L83 31 Z" />
+        <circle class="art-body" cx="48" cy="15" r="7" />
+        <path class="art-accent" d="M48 45 C44 40 38 42 40 47 C41 50 48 53 48 53 C48 53 55 50 56 47 C58 42 52 40 48 45 Z" />
+      `,
+    },
+  ],
 ]);
 
 /**

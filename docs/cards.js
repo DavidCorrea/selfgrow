@@ -250,6 +250,17 @@ export const CARDS = [
   { id: "budding-sapling", name: "Budding Sapling", cost: 2, attack: 2, health: 2, growthAbility: GROWTH_ABILITY },
   { id: "sunroot-treant", name: "Sunroot Treant", cost: 4, attack: 3, health: 5, growthAbility: GROWTH_ABILITY },
   { id: "worldroot-ancient", name: "Worldroot Ancient", cost: 6, attack: 6, health: 7, growthAbility: GROWTH_ABILITY },
+  // Three more cards that mend as they land, spread across the cost curve so a
+  // player who wants to build a deck around staying alive has a plan at every
+  // point in a match rather than only a cheap opening. Every mending card the
+  // game already had costs one or two; these are the first at three, four and
+  // six, so a slow deck can keep collecting a bigger body to hold the board and
+  // mend its hero at once. Each carries the same HEAL_ON_PLAY words as every
+  // other mender, so the amount on the face and the amount the trigger pays can
+  // never drift apart, and each is a reward card so a win is how one is earned.
+  { id: "dewglass-moth", name: "Dewglass Moth", cost: 3, attack: 2, health: 4, ability: HEAL_ON_PLAY },
+  { id: "mossheart-chalice", name: "Mossheart Chalice", cost: 4, attack: 3, health: 5, ability: HEAL_ON_PLAY },
+  { id: "elderheart-willow", name: "Elderheart Willow", cost: 6, attack: 5, health: 8, ability: HEAL_ON_PLAY },
 ];
 
 /** Lookup by id — the shape the saved collection speaks in. */
@@ -335,6 +346,15 @@ export const REWARD_POOL = [
   "budding-sapling",
   "sunroot-treant",
   "worldroot-ancient",
+  // The three mending cards are appended for the same reason as every reward
+  // before them: a save written before they existed keeps the next-reward order
+  // and the place it already had in the queue untouched. Mossheart Chalice is
+  // the signature a future mending opponent will award, but it needs nothing
+  // here beyond pool membership: a first win already resolves the signature from
+  // the opponent's own field, so any pool card can be earned that way.
+  "dewglass-moth",
+  "mossheart-chalice",
+  "elderheart-willow",
 ];
 
 /**
