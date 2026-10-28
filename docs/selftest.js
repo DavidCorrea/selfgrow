@@ -4279,9 +4279,9 @@ export async function checks() {
   if (!setCollectionViewTool) {
     fail('no "set-collection-view" tool is declared, so an agent cannot choose between every card and only those still to collect');
   } else if (setList) {
-    if (setViewButtons.length !== 5) {
+    if (setViewButtons.length !== 6) {
       fail(
-        `the Collection screen offers ${setViewButtons.length} view control(s) where it should offer five — every card, only those still to collect, only those that act when played, only those that act when they fall, and only those that grow each turn`
+        `the Collection screen offers ${setViewButtons.length} view control(s) where it should offer six — every card, only those still to collect, only those that act when played, only those that mend your hero when played, only those that act when they fall, and only those that grow each turn`
       );
     }
 
@@ -4578,10 +4578,96 @@ export async function checks() {
       fail(`switching the set back from "grows" reports the view as "${backFromGrowthView.collectionView}"`);
     }
 
+    // The "mends" view lists only the cards whose face mends your hero when it
+    // is played — owned and unowned alike — so a player building a mending deck
+    // can see the cards that mend instead of hunting the whole set. Which cards
+    // those are is the catalog's answer, not the page's.
+    const mendIds = setIds.filter((id) => catalogAbility(id) === cardCatalog.HEAL_ON_PLAY);
+    if (!mendIds.length) {
+      fail('no card in the game mends your hero when played, so the "mends" view has nothing to list');
+    }
+    // A card that heals only as it falls is not a card that mends when played,
+    // so the view must leave it out — a bug that filtered the fall ability too
+    // would list it here and trip this.
+    const fallOnlyHealId = setIds.find(
+      (id) => catalogAbility(id) !== cardCatalog.HEAL_ON_PLAY && catalogFallAbility(id) === cardCatalog.HEAL_ON_FALL
+    );
+    if (!fallOnlyHealId) {
+      fail('no card in the game heals only as it falls, so the "mends" view cannot be checked to leave it out of the cards that mend when played');
+    } else if (mendIds.includes(fallOnlyHealId)) {
+      fail(`the "mends" view counts "${fallOnlyHealId}", which heals only as it falls, among the cards that mend when played`);
+    }
+    const afterMendView = await setCollectionViewTool.execute({ view: "mends" });
+    if (afterMendView.collectionView !== "mends") {
+      fail(`switching the set to "mends" reports the view as "${afterMendView.collectionView}" instead of "mends"`);
+    }
+    const mendRows = [...setList.querySelectorAll("[data-card-id]")].map((row) => row.dataset.cardId);
+    if (mendRows.join(", ") !== mendIds.join(", ")) {
+      const withoutMend = mendRows.filter((id) => catalogAbility(id) !== cardCatalog.HEAL_ON_PLAY);
+      const hidden = mendIds.filter((id) => !mendRows.includes(id));
+      fail(
+        `the "mends" view lists ${mendRows.length} card(s) in the order ${mendRows.slice(0, 4).join(", ")}, … where the game's ` +
+          `${mendIds.length} mending card(s) in catalog order are ${mendIds.join(", ")}` +
+          `${withoutMend.length ? `; it shows ${withoutMend.join(", ")}, which do not mend your hero when played` : ""}` +
+          `${hidden.length ? `; it hides ${hidden.join(", ")}, which do` : ""}`
+      );
+    }
+    const pressedMends = setViewButtons
+      .filter((button) => button.getAttribute("aria-pressed") === "true")
+      .map((button) => button.dataset.collectionView);
+    if (pressedMends.length !== 1 || pressedMends[0] !== "mends") {
+      fail(`the "mends" view does not mark its own button pressed (pressed: ${pressedMends.join(", ") || "none"})`);
+    }
+    if (setList.getAttribute("aria-label") === allViewListLabel) {
+      fail(
+        'the set list names what it lists the same way in the "mends" view as in the "all" view, so a screen reader cannot tell which cards are showing'
+      );
+    }
+
+    // The empty note a view prints when it has nothing to list is part of the
+    // view's contract, not decoration: it must exist and name the mend behaviour
+    // so a player meeting an empty "mends" view is told why, not shown a blank.
+    const mendsViewText = game.COLLECTION_VIEW_TEXT?.mends;
+    if (!mendsViewText || typeof mendsViewText.empty !== "string" || !mendsViewText.empty.trim()) {
+      fail('the "mends" view has no empty note, so an empty list would read as a blank rather than saying no card mends your hero when played');
+    } else if (!/mend|heal/i.test(mendsViewText.empty)) {
+      fail(`the "mends" view's empty note reads "${mendsViewText.empty}" without naming the mend behaviour it stands for`);
+    }
+
+    // Both readers agree on the view, and switching it leaves the count of cards
+    // collected, the collection and the deck exactly as they were.
+    const mendState = await getState.execute({});
+    if (mendState.collectionView !== "mends") {
+      fail(`get-state reports the collection view as "${mendState.collectionView}" while the "mends" view is showing`);
+    }
+    if (game.readCollection().view !== "mends") {
+      fail(`list-collection reports the collection view as "${game.readCollection().view}" while the "mends" view is showing`);
+    }
+    const collectedWhileMending = textOf(
+      document.querySelector('#screen-collection [data-field="distinctCards"]')?.closest(".standing-value")
+    );
+    if (collectedWhileMending !== collectedExpected) {
+      fail(
+        `the "mends" view leaves the cards collected reading "${collectedWhileMending}" where the set stands at "${collectedExpected}"`
+      );
+    }
+    if (JSON.stringify(asIdCopies(game.readCollection().ownedCards)) !== JSON.stringify(asIdCopies(beforeView.ownedCards))) {
+      fail('switching the set to the "mends" view changed the cards in the collection');
+    }
+    if (JSON.stringify(game.readState().deck) !== JSON.stringify(beforeState.deck)) {
+      fail('switching the set to the "mends" view changed the deck');
+    }
+    checkViewCount(mendIds);
+
+    const backFromMendView = await setCollectionViewTool.execute({ view: "all" });
+    if (backFromMendView.collectionView !== "all") {
+      fail(`switching the set back from "mends" reports the view as "${backFromMendView.collectionView}"`);
+    }
+
     // A view the page does not have is refused with a reason, and changes nothing.
     const refusedView = await setCollectionViewTool.execute({ view: "everything" });
     if (!refusedView.error) {
-      fail('setting the collection view to "everything" was accepted, though the page has only "all", "missing", "abilities", "falls" and "grows"');
+      fail('setting the collection view to "everything" was accepted, though the page has only "all", "missing", "abilities", "mends", "falls" and "grows"');
     }
     if (game.readCollection().view !== "all") {
       fail(`a refused view left the collection showing "${game.readCollection().view}" instead of "all"`);

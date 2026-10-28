@@ -285,8 +285,9 @@ body {
 }
 
 /* The view buttons above the set: a small row that switches the list between
-   the whole set, what is still to collect, and the cards that act when played.
-   They wrap onto more than one row at a phone's width rather than squeezing. */
+   the whole set, what is still to collect, and the cards that share an ability
+   — when played, mending, when they fall or growing. They wrap onto more than
+   one row at a phone's width rather than squeezing. */
 .collection-view {
   display: flex;
   flex-wrap: wrap;
