@@ -44,6 +44,7 @@
   --opponent-emberwake: #ffa06b;
   --opponent-mistfen: #8fc7e6;
   --opponent-barrowmere: #c4a0e8;
+  --opponent-rootwarden: #a9c98a;
 
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
   --radius-card: 20px;
@@ -972,9 +973,10 @@ body {
    cannot, so a phone in portrait reads one character per row and the first
    screen still holds all of them. The 13rem floor is the least a portrait and
    the words beside it need to sit next to each other without squeezing the look
-   and the deck into a column of two words, and it is narrow enough that all
-   four opponents stand in one row on a laptop window rather than wrapping to a
-   second one and pushing Start match off the first screen. */
+   and the deck into a column of two words; the picker is given the whole width
+   of the screen on a wide window (see #screen-play), so every opponent stands
+   in one row rather than wrapping to a second one and pushing Start match off
+   the first screen. */
 .opponent-options {
   display: grid;
   align-items: stretch;
@@ -984,9 +986,9 @@ body {
 
 /* An option is the character being picked and the deck they bring: the label
    above, which is the radio, and the deck folded in under it. The label takes
-   the room it needs and the fold is held at the foot, so the four options in a
-   row are the same height and their deck lines read as one line across the
-   picker however differently the four characters' words wrap. */
+   the room it needs and the fold is held at the foot, so the options in a row
+   are the same height and their deck lines read as one line across the picker
+   however differently the characters' words wrap. */
 .opponent-option {
   display: grid;
   grid-template-rows: 1fr auto;
@@ -1001,8 +1003,8 @@ body {
 /* The character is the radio's label — its mark in its own accent, its name and
    the record against it, then the look it cuts and the kind of deck it brings —
    so pressing any part of this top half picks that opponent. The padding is what
-   the picker has to spare once each character carries a record line: four
-   options and the rules strip still share the first screen. */
+   the picker has to spare once each character carries a record line: the picker
+   and the rules strip still share the first screen. */
 .opponent-choice {
   display: grid;
   grid-template-columns: auto auto minmax(0, 1fr);
@@ -1040,8 +1042,8 @@ body {
 
 /* The portrait of each option is the character itself, drawn in that opponent's
    accent, the one detail cut into it in the ink that prints on foil. Two and a
-   quarter rem is big enough to know a face at a glance, and small enough that
-   four options still stand in one row on a laptop window. */
+   quarter rem is big enough to know a face at a glance, and small enough that a
+   row of opponents still fits the first screen on a laptop window. */
 .opponent-portrait {
   width: 2.25rem;
   height: 2.25rem;
@@ -1113,9 +1115,8 @@ body {
 
 /* The deck an opponent brings, folded under the character: one line saying how
    many cards it holds, and the faces a match against them is dealt. Ten faces
-   under each of four opponents would push the picker and Start match off the
-   first screen, so the deck waits one press away, in the option that promises
-   it. */
+   under every opponent would push the picker and Start match off the first
+   screen, so the deck waits one press away, in the option that promises it. */
 .opponent-deck-fold {
   border-top: 1px solid var(--edge-soft);
   padding: 0.1rem 0.55rem 0.2rem;
@@ -1975,8 +1976,7 @@ body {
     grid-column: 1 / -1;
   }
 
-  /* Before a match the opponents to choose and the note stand where the board
-     will be. */
+  /* Before a match the note stands where the board will be. */
   #screen-play > #match-intro,
   #screen-play > .match-board {
     grid-row: 2;
@@ -1984,15 +1984,26 @@ body {
     min-height: 0;
   }
 
-  /* A finished match keeps the picker above it — the next one can be against
-     someone else — so the board takes the row below the choice instead of
-     sharing its cell with it. */
-  #screen-play:has(> #match-intro:not([hidden])) {
-    grid-template-rows: auto auto minmax(0, 1fr);
+  /* The choice takes the whole width for a row of its own, rather than the
+     left column the note uses: every opponent then stands in one line however
+     many the game offers, so the picker keeps its height and Start match keeps
+     the first screen. */
+  #screen-play > #opponent-picker {
+    grid-row: 3;
+    grid-column: 1 / -1;
   }
 
-  #screen-play:has(> #match-intro:not([hidden])) > .match-board {
-    grid-row: 3;
+  /* A finished match keeps the picker above it — the next one can be against
+     someone else — so the board takes the row below the choice instead of
+     sharing its cell with it. The rows only grow to hold the picker while it
+     is on screen; once a match is running the picker and the note are gone and
+     the board takes their place. */
+  #screen-play:has(> #opponent-picker:not([hidden])) {
+    grid-template-rows: auto auto auto minmax(0, 1fr);
+  }
+
+  #screen-play:has(> #opponent-picker:not([hidden])) > .match-board {
+    grid-row: 4;
     /* The choice costs the board a row, so the board keeps a height its tables
        and log can be read at and the page scrolls rather than squashing them. */
     min-height: 26rem;
@@ -2233,8 +2244,8 @@ body {
     justify-self: stretch;
   }
 
-  /* The note, the rules and the picker share the first screen on a phone, so
-     their gaps tighten a little: still grouped, but closer together. */
+  /* The note and the rules sit together above the picker on a phone, so their
+     gap tightens a little: still grouped, but closer together. */
   .match-intro {
     gap: 0.6rem;
   }
@@ -2279,7 +2290,7 @@ body {
 
   /* The deck line under each character keeps its press and its thumb-sized
      height, and takes no other room, so the picker stays as short on a phone as
-     four stacked options can be. */
+     one stacked option per character can be. */
   .opponent-deck-fold {
     padding: 0 0.6rem 0.15rem;
   }

@@ -352,13 +352,14 @@
       <section id="screen-play" class="screen" aria-labelledby="play-heading" hidden>
         <h2 class="screen-heading" id="play-heading" tabindex="-1">Play a match</h2>
 
-        <!-- What stands in for the board before a match begins: who you choose
-             to face, the deck the match would be dealt from, and the fewest
-             cards it needs. The opponent's name is filled in from the one place
-             the opponents are defined, so the page and the match cannot disagree
-             about who it is. The picker is filled in from that same list, and is
-             hidden with this note once a match is running — a match is against
-             the character it was started against. -->
+        <!-- What stands in for the board before a match begins: who you are
+             about to face, the deck the match would be dealt from, and the
+             fewest cards it needs, with the how-a-match-works strip under the
+             note. The opponent's name is filled in from the one place the
+             opponents are defined, so the page and the match cannot disagree
+             about who it is. The note and the strip are hidden once a match is
+             running — a match is against the character it was started
+             against. -->
         <div class="match-intro" id="match-intro">
           <p class="screen-note" id="match-intro-line">
             You face <span id="match-intro-opponent">the opponent</span>, who brings
@@ -371,7 +372,7 @@
                short labelled points — what a card costs, how the table fights,
                which hero losing ends it, and what a card's face can say it does
                when it is played, when it falls or while it stays growing — that
-               stand before the picker and the Start match button, and fold away
+               stand above the picker and the Start match button, and fold away
                behind one control so a returning player gets the space back. What
                a card does as it falls, and what a card that stays does as it
                grows, share the fourth point rather than taking rows of their
@@ -394,12 +395,20 @@
             </div>
             <dl class="match-rules-points" id="match-rules-points"></dl>
           </section>
-
-          <fieldset class="opponent-picker" id="opponent-picker" hidden>
-            <legend class="opponent-picker-legend">Choose your opponent</legend>
-            <div class="opponent-options" id="opponent-options"></div>
-          </fieldset>
         </div>
+
+        <!-- Who the next match is against, as one radio per character. It stands
+             outside the note above so that on a wide window it can take the
+             whole width of the screen for its own row: every opponent then
+             reads in one line rather than wrapping, which is what keeps the
+             choice and the Start match button on the first screen however many
+             characters the game grows. It is hidden with the note once a match
+             is running — a match is against the character it was started
+             against. -->
+        <fieldset class="opponent-picker" id="opponent-picker" hidden>
+          <legend class="opponent-picker-legend">Choose your opponent</legend>
+          <div class="opponent-options" id="opponent-options"></div>
+        </fieldset>
 
         <!-- The whole match, as labelled text: whose turn it is, both heroes'
              health, the player's energy, the hand, both tables, and an ordered log. Nothing here is
