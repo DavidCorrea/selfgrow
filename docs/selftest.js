@@ -4397,9 +4397,9 @@ export async function checks() {
   if (!setCollectionViewTool) {
     fail('no "set-collection-view" tool is declared, so an agent cannot choose between every card and only those still to collect');
   } else if (setList) {
-    if (setViewButtons.length !== 6) {
+    if (setViewButtons.length !== 7) {
       fail(
-        `the Collection screen offers ${setViewButtons.length} view control(s) where it should offer six — every card, only those still to collect, only those that act when played, only those that mend your hero when played, only those that act when they fall, and only those that grow each turn`
+        `the Collection screen offers ${setViewButtons.length} view control(s) where it should offer seven — every card, only those still to collect, only those that act when played, only those that mend your hero when played, only those that act when they fall, only those that grow each turn, and only those that act twice`
       );
     }
 
@@ -4782,10 +4782,139 @@ export async function checks() {
       fail(`switching the set back from "mends" reports the view as "${backFromMendView.collectionView}"`);
     }
 
+    // The "twice" view lists only the cards whose face carries more than one
+    // ability — a when-played one, a growth one or a fall one, two of the three
+    // — owned and unowned alike, so a player building around a card that does
+    // two things at once can see those cards instead of reading every face to
+    // find them, and a newcomer learns such cards exist. A card carrying a
+    // single ability must be absent from it. Which cards carry two is the
+    // catalog's answer, not the page's.
+    const abilityCount = (id) =>
+      [catalogAbility(id), catalogGrowthAbility(id), catalogFallAbility(id)].filter((ability) => ability !== null).length;
+    const twiceIds = setIds.filter((id) => abilityCount(id) >= 2);
+    if (!twiceIds.length) {
+      fail('no card in the game carries two abilities, so the "twice" view has nothing to list');
+    }
+    const afterTwiceView = await setCollectionViewTool.execute({ view: "twice" });
+    if (afterTwiceView.collectionView !== "twice") {
+      fail(`switching the set to "twice" reports the view as "${afterTwiceView.collectionView}" instead of "twice"`);
+    }
+    const twiceRows = [...setList.querySelectorAll("[data-card-id]")].map((row) => row.dataset.cardId);
+    if (twiceRows.join(", ") !== twiceIds.join(", ")) {
+      const singleAbility = twiceRows.filter((id) => abilityCount(id) < 2);
+      const hidden = twiceIds.filter((id) => !twiceRows.includes(id));
+      fail(
+        `the "twice" view lists ${twiceRows.length} card(s) in the order ${twiceRows.slice(0, 4).join(", ")}, … where the game's ` +
+          `${twiceIds.length} two-ability card(s) in catalog order are ${twiceIds.join(", ")}` +
+          `${singleAbility.length ? `; it shows ${singleAbility.join(", ")}, which carry fewer than two abilities` : ""}` +
+          `${hidden.length ? `; it hides ${hidden.join(", ")}, which carry two` : ""}`
+      );
+    }
+    const pressedTwice = setViewButtons
+      .filter((button) => button.getAttribute("aria-pressed") === "true")
+      .map((button) => button.dataset.collectionView);
+    if (pressedTwice.length !== 1 || pressedTwice[0] !== "twice") {
+      fail(`the "twice" view does not mark its own button pressed (pressed: ${pressedTwice.join(", ") || "none"})`);
+    }
+    if (setList.getAttribute("aria-label") === allViewListLabel) {
+      fail(
+        'the set list names what it lists the same way in the "twice" view as in the "all" view, so a screen reader cannot tell which cards are showing'
+      );
+    }
+
+    // The empty note a view prints when it has nothing to list is part of the
+    // view's contract, not decoration: it must exist and name the two abilities
+    // a card would need, so a player meeting an empty "twice" view is told why,
+    // not shown a blank.
+    const twiceViewText = game.COLLECTION_VIEW_TEXT?.twice;
+    if (!twiceViewText || typeof twiceViewText.empty !== "string" || !twiceViewText.empty.trim()) {
+      fail('the "twice" view has no empty note, so an empty list would read as a blank rather than saying no card carries two abilities');
+    } else if (!/two abilities|acts twice/i.test(twiceViewText.empty)) {
+      fail(`the "twice" view's empty note reads "${twiceViewText.empty}" without naming the two abilities it stands for`);
+    }
+
+    // Both readers agree on the view, and switching it leaves the count of cards
+    // collected, the collection and the deck exactly as they were.
+    const twiceState = await getState.execute({});
+    if (twiceState.collectionView !== "twice") {
+      fail(`get-state reports the collection view as "${twiceState.collectionView}" while the "twice" view is showing`);
+    }
+    if (game.readCollection().view !== "twice") {
+      fail(`list-collection reports the collection view as "${game.readCollection().view}" while the "twice" view is showing`);
+    }
+    const collectedWhileTwice = textOf(
+      document.querySelector('#screen-collection [data-field="distinctCards"]')?.closest(".standing-value")
+    );
+    if (collectedWhileTwice !== collectedExpected) {
+      fail(
+        `the "twice" view leaves the cards collected reading "${collectedWhileTwice}" where the set stands at "${collectedExpected}"`
+      );
+    }
+    if (JSON.stringify(asIdCopies(game.readCollection().ownedCards)) !== JSON.stringify(asIdCopies(beforeView.ownedCards))) {
+      fail('switching the set to the "twice" view changed the cards in the collection');
+    }
+    if (JSON.stringify(game.readState().deck) !== JSON.stringify(beforeState.deck)) {
+      fail('switching the set to the "twice" view changed the deck');
+    }
+    checkViewCount(twiceIds);
+
+    // The line under the buttons follows the collection, not the catalog: put a
+    // two-ability card the player does not hold into the game through the
+    // save-code path — the same thing a win does when it awards one — and prove
+    // the "N of M collected" count rises by exactly one while the view's total
+    // holds still, then put the collection back exactly as it was.
+    const unownedTwiceId = twiceIds.find((id) => !heldIds.has(id));
+    if (!unownedTwiceId) {
+      fail(
+        `the player already holds every two-ability card (${twiceIds.join(", ")}), so the "twice" view's collected count cannot be shown to rise when one is collected`
+      );
+    } else {
+      const collectionBeforeAward = collection.saveCode();
+      const beforeAward = game.readCollection();
+      const expectedCollected = twiceIds.filter((id) => heldIds.has(id)).length + 1;
+      const awardedCode = collection.saveCode(
+        stubStorage({
+          [collection.STORAGE_KEY]: JSON.stringify({
+            version: 1,
+            cards: [...beforeAward.ownedCards.map(({ id, copies }) => ({ id, copies })), { id: unownedTwiceId, copies: 1 }],
+            deck: game.readState().deck.map((card) => card.id),
+          }),
+        })
+      );
+      try {
+        game.restoreSaveCode(awardedCode);
+        const afterAward = game.readCollection();
+        if (afterAward.viewTotal !== twiceIds.length || afterAward.viewCollected !== expectedCollected) {
+          fail(
+            `collecting the two-ability card "${unownedTwiceId}" reports ${afterAward.viewCollected} of ${afterAward.viewTotal} collected where the "twice" view lists ${twiceIds.length} card(s) and the player holds ${expectedCollected} of them`
+          );
+        }
+        const expectedLine = `${expectedCollected} of ${twiceIds.length} collected`;
+        if (!viewCountLine || viewCountLine.hidden || textOf(viewCountLine) !== expectedLine) {
+          fail(
+            `after collecting the two-ability card "${unownedTwiceId}" the "twice" view reads "${textOf(viewCountLine)}" where "${expectedLine}" is expected`
+          );
+        }
+      } catch (error) {
+        fail(`collecting the two-ability card "${unownedTwiceId}" through a save code was refused: ${error.message}`);
+      } finally {
+        try {
+          game.restoreSaveCode(collectionBeforeAward);
+        } catch (error) {
+          fail(`restoring the collection after the "twice" count check was refused: ${error.message}`);
+        }
+      }
+    }
+
+    const backFromTwiceView = await setCollectionViewTool.execute({ view: "all" });
+    if (backFromTwiceView.collectionView !== "all") {
+      fail(`switching the set back from "twice" reports the view as "${backFromTwiceView.collectionView}"`);
+    }
+
     // A view the page does not have is refused with a reason, and changes nothing.
     const refusedView = await setCollectionViewTool.execute({ view: "everything" });
     if (!refusedView.error) {
-      fail('setting the collection view to "everything" was accepted, though the page has only "all", "missing", "abilities", "mends", "falls" and "grows"');
+      fail('setting the collection view to "everything" was accepted, though the page has only "all", "missing", "abilities", "mends", "falls", "grows" and "twice"');
     }
     if (game.readCollection().view !== "all") {
       fail(`a refused view left the collection showing "${game.readCollection().view}" instead of "all"`);
