@@ -483,6 +483,37 @@ export async function checks() {
       }
     }
 
+    // An opponent's signature card stands for that character and is won only by
+    // beating them, so its row in the set list names them — a player browsing
+    // the set reads who to beat for a card they are still missing. A card that
+    // is nobody's signature carries no such mark.
+    const signatureOpponentByCardId = new Map(
+      cardCatalog.OPPONENTS.map((opponent) => [opponent.signature, opponent])
+    );
+    for (const row of list.querySelectorAll("[data-card-id]")) {
+      const id = row.dataset.cardId;
+      const name = cardCatalog.CARD_BY_ID.get(id)?.name ?? id;
+      const opponent = signatureOpponentByCardId.get(id);
+      const mark = row.querySelector(".signature-note");
+      const marked = textOf(mark);
+      if (!opponent) {
+        if (mark) {
+          fail(
+            `the collection screen marks "${name}" as an opponent's signature ("${marked}"), though it is not ` +
+              `the signature card of any opponent`
+          );
+        }
+        continue;
+      }
+      const expected = `${opponent.name}'s signature`;
+      if (marked !== expected) {
+        fail(
+          `the collection screen's row for "${name}" reads ${JSON.stringify(marked || "(no signature note)")} ` +
+            `where it should name the opponent whose signature it is as ${JSON.stringify(expected)}`
+        );
+      }
+    }
+
     // How much of the set is collected, as a labelled number out of the total.
     const collectedStanding = document
       .querySelector('#screen-collection [data-field="distinctCards"]')
@@ -3998,6 +4029,32 @@ export async function checks() {
         );
       }
     }
+    // A signature card is an opponent's card, won by beating them, so an agent
+    // reading the set is told whose signature each one is — and a card that is
+    // nobody's signature is not marked as one, or every card would read alike.
+    const signatureOpponentByCardId = new Map(
+      cardCatalog.OPPONENTS.map((opponent) => [opponent.signature, opponent])
+    );
+    for (const card of listedCards) {
+      const opponent = signatureOpponentByCardId.get(card.id);
+      const named = card.signatureOf ?? null;
+      if (!opponent) {
+        if (named) {
+          fail(
+            `list-collection names ${JSON.stringify(named)} as the opponent whose signature "${card.name}" is, ` +
+              `though no opponent's signature card is "${card.id}"`
+          );
+        }
+        continue;
+      }
+      if (named?.id !== opponent.id || named?.name !== opponent.name) {
+        fail(
+          `list-collection does not name ${opponent.name} as the opponent whose signature "${card.name}" is: ` +
+            `it reports signatureOf ${JSON.stringify(named)}`
+        );
+      }
+    }
+
     if (listed.distinctCards !== owned.distinctCards) {
       fail(`list-collection reports ${listed.distinctCards} different cards while the page says ${owned.distinctCards}`);
     }
