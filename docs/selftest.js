@@ -2358,6 +2358,170 @@ export async function checks() {
     fail("emptying the deck again left its ability counts printed on the page");
   }
 
+  // --- Taking a card out from the deck list itself ---------------------------
+
+  // A deck is shaped in the deck panel, so each face there carries its own
+  // control to take that copy out: tuning a deck must not mean leaving it for
+  // the collection and hunting the card down again in a long set. Built from an
+  // empty deck and taken apart again, so the checks after this one still start
+  // from the deck they expect.
+  const deckRowRemoveControl = (id) => document.querySelector(`[data-deck-row-remove="${id}"]`);
+  const deckRowIds = () =>
+    deckList ? [...deckList.querySelectorAll(".deck-card")].map((row) => row.dataset.cardId) : [];
+
+  const doubledId = owned.cards.find((card) => card.copies >= 2)?.id;
+  const companionId = ownedIds.find((id) => id !== doubledId);
+  if (!doubledId || !companionId) {
+    fail(
+      "the collection holds no card in two copies beside another card, so taking a copy out of the deck list " +
+        "cannot be checked"
+    );
+  } else {
+    // The deck panel is on screen, as it is for a player building a deck there.
+    game.showScreen("collection");
+    for (const id of [doubledId, doubledId, companionId]) game.addCardToDeck(id);
+
+    // Every face the panel draws carries the control, it is a real button, and
+    // it names the card it would remove rather than being an anonymous cross.
+    const faceRows = deckList ? [...deckList.querySelectorAll(".deck-card")] : [];
+    if (faceRows.length !== 3) {
+      fail(`a three-card deck is drawn as ${faceRows.length} face(s) in the deck list`);
+    }
+    for (const row of faceRows) {
+      const card = game.readState().deck.find((entry) => entry.id === row.dataset.cardId);
+      const control = row.querySelector("[data-deck-row-remove]");
+      if (!control) {
+        fail(
+          `deck card "${row.dataset.cardId}" carries no control to remove it, so a deck cannot be shaped ` +
+            "from the deck list"
+        );
+        continue;
+      }
+      if (control.tagName !== "BUTTON") {
+        fail(
+          `the remove control on deck card "${row.dataset.cardId}" is a <${control.tagName.toLowerCase()}>, ` +
+            "not a button, so it cannot be reached and pressed by keyboard"
+        );
+      }
+      if (card && !textOf(control).includes(card.name)) {
+        fail(
+          `the remove control on deck card "${card.name}" does not name it: it reads "${textOf(control)}"`
+        );
+      }
+    }
+
+    // One press takes exactly one copy out. The card held twice stays listed
+    // once, and the size, curve and totals follow the deck on the spot.
+    const twiceHeld = deckRowRemoveControl(doubledId);
+    if (!twiceHeld) {
+      fail(`the deck list offers no remove control for "${doubledId}"`);
+    } else {
+      twiceHeld.click();
+      if (heldCopies(doubledId) !== 1) {
+        fail(
+          `one press on the deck list's remove control left ${heldCopies(doubledId)} copies of ` +
+            `"${doubledId}" in the deck instead of 1`
+        );
+      }
+      if (game.readState().deckSize !== 2) {
+        fail(
+          `one press on the deck list's remove control left the deck at ${game.readState().deckSize} cards ` +
+            "instead of 2"
+        );
+      }
+      if (JSON.stringify(deckRowIds()) !== JSON.stringify(deckIds())) {
+        fail(
+          `after a removal from the deck list the faces read ${JSON.stringify(deckRowIds())} while the state ` +
+            `holds ${JSON.stringify(deckIds())}`
+        );
+      }
+      if (curveSum() !== game.readState().deckSize) {
+        fail(
+          `after a removal from the deck list the cost curve counts ${curveSum()} card(s) while the deck ` +
+            `holds ${game.readState().deckSize}`
+        );
+      }
+      if (game.readState().deckAttack !== deckSum("attack") || game.readState().deckHealth !== deckSum("health")) {
+        fail(
+          `after a removal from the deck list the deck reports ` +
+            `${JSON.stringify(game.readState().deckAttack)}/${JSON.stringify(game.readState().deckHealth)} ` +
+            `attack/health instead of the summed ${deckSum("attack")}/${deckSum("health")}`
+        );
+      }
+      if (shownTotal(attackValue()) !== deckSum("attack") || shownTotal(healthValue()) !== deckSum("health")) {
+        fail(
+          `after a removal from the deck list the panel shows ` +
+            `${textOf(attackValue())}/${textOf(healthValue())} attack/health instead of the summed ` +
+            `${deckSum("attack")}/${deckSum("health")}`
+        );
+      }
+      // Focus stays on that card's own control while a copy of it is still
+      // listed, so a keyboard user pressing twice never loses their place.
+      const stillListed = deckRowRemoveControl(doubledId);
+      if (stillListed && document.activeElement !== stillListed) {
+        fail(
+          "a removal from the deck list did not leave focus on the same card's remove control, though a copy " +
+            "of it is still listed"
+        );
+      }
+      // A second copy of the card goes with a second press, and then the card
+      // leaves the list entirely.
+      stillListed?.click();
+      if (heldCopies(doubledId) !== 0 || deckRowIds().includes(doubledId)) {
+        fail(
+          `pressing the remove control twice left "${doubledId}" in the deck, though it was held twice`
+        );
+      }
+    }
+
+    // Taking the last card out leaves the deck panel saying the deck is empty,
+    // exactly as emptying the whole deck in one action does — and focus lands on
+    // the list rather than on the page body.
+    for (let guard = 0; deckIds().length > 0 && guard < 12; guard += 1) {
+      const firstId = deckIds()[0];
+      const control = deckRowRemoveControl(firstId);
+      if (!control) {
+        fail(`the deck list offers no remove control for "${firstId}", so it cannot be emptied from the list`);
+        break;
+      }
+      control.click();
+    }
+    if (deckIds().length !== 0) {
+      fail(`the deck could not be emptied from its own list: ${deckIds().length} card(s) remain`);
+    }
+    const listEmptyNote = deckList ? textOf(deckList.querySelector(".deck-empty")) : "";
+    if (!/no cards/i.test(listEmptyNote)) {
+      fail(
+        `removing the last card from the deck list leaves it reading "${listEmptyNote || "(nothing)"}" ` +
+          "instead of the deck's empty note"
+      );
+    }
+    if (deckList && deckList.querySelector(".deck-card")) {
+      fail("the deck list still shows a card face after its last card was removed from the list");
+    }
+    if (curveBlock() && !curveBlock().hidden) {
+      fail("the deck panel still shows a cost curve after the last card was taken out of its list");
+    }
+    // The block is set hidden, but a `display` in the stylesheet outranks that
+    // attribute unless it is compensated for — so it is measured on screen while
+    // the Collection screen is open, not read off its attribute.
+    if (curveBlock() && curveBlock().getClientRects().length !== 0) {
+      fail(
+        "the deck panel still draws its totals and curve heading for an empty deck, though they are set hidden, " +
+          "so the note saying the deck is empty is not the only thing there"
+      );
+    }
+    if (deckList && document.activeElement !== deckList) {
+      fail("removing a deck's last card did not move focus to the deck list, so a keyboard user loses their place");
+    }
+
+    // Whatever the presses managed, the deck goes back to empty: a missing
+    // control is then reported once above instead of tripping every check after
+    // it, and the deck is left as the rest of these checks expect to find it.
+    while (deckIds().length > 0) game.removeCardFromDeck(deckIds()[0]);
+    game.showScreen("home");
+  }
+
   // A card owned in several copies can be put in the deck that many times, so a
   // collection of duplicates is worth building around. The starter collection
   // holds three Sprouts, which is a real owned card rather than a fixture.
@@ -6397,6 +6561,67 @@ export async function checks() {
     }
     if (JSON.stringify(game.readCollection().ownedCards) !== JSON.stringify(beforeRefusalCards)) {
       fail("the refused deck changes altered the collection, though a refusal must change nothing");
+    }
+
+    // The deck panel offers that same removal beside each card it lists, and the
+    // tool reports the deck the page shows: a copy taken out from the list and a
+    // copy taken out by a tool leave one deck, read the same way by a visitor
+    // and by an agent.
+    const pageDeckIds = () =>
+      deckList ? [...deckList.querySelectorAll(".deck-card")].map((row) => row.dataset.cardId) : [];
+    const fromListId = deckIds()[0];
+    const fromListControl = fromListId
+      ? document.querySelector(`[data-deck-row-remove="${fromListId}"]`)
+      : null;
+    if (!fromListId || deckIds().length < 2) {
+      fail(
+        `the deck holds ${deckIds().length} card(s) here, so taking a copy out of the deck list beside the ` +
+          "remove-card-to-deck tool cannot be checked"
+      );
+    } else if (!fromListControl) {
+      fail(
+        `the deck panel lists "${fromListId}" with no control to remove it, so a deck cannot be shaped from the list`
+      );
+    } else {
+      const listCopiesBefore = heldCopies(fromListId);
+      fromListControl.click();
+      if (heldCopies(fromListId) !== listCopiesBefore - 1) {
+        fail(
+          `the deck list's remove control left ${heldCopies(fromListId)} of "${fromListId}" in the deck ` +
+            `instead of ${listCopiesBefore - 1}`
+        );
+      }
+      if (JSON.stringify(pageDeckIds()) !== JSON.stringify(deckIds())) {
+        fail(
+          `after a removal from the deck list the faces read ${JSON.stringify(pageDeckIds())} while the state ` +
+            `holds ${JSON.stringify(deckIds())}`
+        );
+      }
+
+      const toolRemovedSecond = await removeFromDeckTool.execute({ cardId: deckIds()[0] });
+      const toolDeckIds = (toolRemovedSecond.deck ?? []).map((card) => card.id);
+      if (JSON.stringify(toolDeckIds) !== JSON.stringify(deckIds())) {
+        fail(
+          `the remove-card-to-deck tool returned the deck ${JSON.stringify(toolDeckIds)} while the state holds ` +
+            `${JSON.stringify(deckIds())}`
+        );
+      }
+      if (JSON.stringify(pageDeckIds()) !== JSON.stringify(toolDeckIds)) {
+        fail(
+          `the remove-card-to-deck tool reports the deck ${JSON.stringify(toolDeckIds)} while the deck list ` +
+            `draws ${JSON.stringify(pageDeckIds())}`
+        );
+      }
+      if (
+        toolRemovedSecond.deckSize !== deckIds().length ||
+        JSON.stringify(toolRemovedSecond.deckCurve ?? null) !== JSON.stringify(curve() ?? null)
+      ) {
+        fail(
+          `after a tool removal the deck reports ${JSON.stringify(toolRemovedSecond.deckSize)} card(s) with the ` +
+            `curve ${JSON.stringify(toolRemovedSecond.deckCurve ?? null)} while the page reads ` +
+            `${deckIds().length} and ${JSON.stringify(curve() ?? null)}`
+        );
+      }
     }
   }
 

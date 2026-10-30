@@ -516,7 +516,7 @@ function renderHomeDeck() {
     homeDeckList.replaceChildren(empty);
     return;
   }
-  homeDeckList.replaceChildren(...cards.map(deckCardRow));
+  homeDeckList.replaceChildren(...cards.map((card) => deckCardRow(card)));
 }
 
 /** The name of a card the player owns, or the id when it is not a real card. */
@@ -1447,7 +1447,7 @@ function opponentDeckFold(opponent) {
   list.className = "opponent-deck-cards";
   list.replaceChildren(
     ...cards.map((card) =>
-      card.id === opponent.signature ? deckCardRow(card, signatureNote) : deckCardRow(card)
+      card.id === opponent.signature ? deckCardRow(card, { note: signatureNote }) : deckCardRow(card)
     )
   );
 
@@ -2379,10 +2379,16 @@ function signatureNote(text) {
   return note;
 }
 
-/** One card in the deck, shown as its picture and read as its name and three
- * numbers, so the deck reads as a hand of cards. `note`, when given, is the mark
- * an opponent's signature card carries in the picker's deck fold. */
-function deckCardRow(card, note) {
+/**
+ * One card in the deck, shown as its picture and read as its name and three
+ * numbers, so the deck reads as a hand of cards.
+ *
+ * `note`, when given, is the mark an opponent's signature card carries in the
+ * picker's deck fold. `canRemove` gives the face the one control that takes this
+ * copy out of the deck; only the deck panel a player builds asks for it, because
+ * the home screen and an opponent's fold show the same faces read-only.
+ */
+function deckCardRow(card, { note = null, canRemove = false } = {}) {
   const item = document.createElement("li");
   item.className = "deck-card";
   item.dataset.cardId = card.id;
@@ -2406,7 +2412,24 @@ function deckCardRow(card, note) {
   if (note) item.append(signatureNote(note));
   const ability = cardAbilityNote(card);
   if (ability) item.append(ability);
+  if (canRemove) item.append(deckFaceRemoveControl(card));
   return item;
+}
+
+/**
+ * The control on a deck face that takes one copy of that card back out of the
+ * deck, so a deck is tuned where it is read instead of by hunting the card down
+ * again in the collection. Named for the card, so a screen reader hears which
+ * copy is about to go.
+ */
+function deckFaceRemoveControl(card) {
+  const remove = document.createElement("button");
+  remove.type = "button";
+  remove.className = "btn btn-secondary deck-card-remove";
+  remove.dataset.deckRowRemove = card.id;
+  remove.textContent = `Remove ${card.name} from deck`;
+  remove.addEventListener("click", () => removeDeckFaceCard(card.id));
+  return remove;
 }
 
 // What each view of the set list says it is showing: the words a screen reader
@@ -2596,7 +2619,7 @@ function renderDeck() {
     empty.textContent = "No cards in your deck yet.";
     list.replaceChildren(empty);
   } else {
-    list.replaceChildren(...cards.map(deckCardRow));
+    list.replaceChildren(...cards.map((card) => deckCardRow(card, { canRemove: true })));
   }
 
   renderDeckCurve();
@@ -2791,6 +2814,28 @@ function removeDeckCard(cardId) {
     setDeckMessage(error.message);
   }
   focusDeckControl("deck-remove", cardId);
+}
+
+/**
+ * What pressing the remove control on a deck face does: take one copy back out
+ * of the deck, and keep the player where they were. The list is redrawn under
+ * their focus, so focus moves to the same card's next control while a copy of it
+ * remains, and back to the list itself once that card is gone — a keyboard user
+ * pressing twice never lands on the page body.
+ */
+function removeDeckFaceCard(cardId) {
+  try {
+    removeCardFromDeck(cardId);
+    setDeckMessage(`Removed ${cardName(cardId)} from your deck.`);
+  } catch (error) {
+    setDeckMessage(error.message);
+  }
+  const nextControl = document.querySelector(`[data-deck-row-remove="${cardId}"]`);
+  if (nextControl) {
+    nextControl.focus();
+    return;
+  }
+  document.getElementById("deck-list")?.focus();
 }
 
 /** Persist the deck beside the collection and redraw everything that reads it. */
