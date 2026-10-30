@@ -80,6 +80,14 @@ const COLLECTION_VIEWS = [
 // against, so a caller cannot ask for an order the page does not show.
 const COLLECTION_ORDERS = ["catalog", "cost"];
 
+// The views built around an ability — everything the set list can show except the
+// whole set and the plain still-to-collect list. These are the views that can be
+// narrowed to only the cards the player has not collected yet, so the set can be
+// completed around a theme: which sweeping cards are still to earn, say, rather
+// than the whole missing list read card by card. Derived from COLLECTION_VIEWS so
+// a view added there is narrowable without being added again here.
+const COLLECTION_ABILITY_VIEWS = COLLECTION_VIEWS.filter((view) => view !== "all" && view !== "missing");
+
 // The four things a card can do the moment it is played, in the very words its
 // face prints them. Each ability is written once in docs/cards.js; the shared
 // "When played:" prefix is dropped here because the rule's own label already
@@ -194,6 +202,13 @@ const state = {
   // order, "cost" cheapest first. Like the view, it is a page-only choice, so
   // switching it never touches the collection or the deck.
   collectionOrder: "catalog",
+  // Whether the ability view on screen is narrowed to only the cards the player
+  // has not collected yet — false until the "Only what I'm missing" button or the
+  // set-collection-missing-only tool turns it on. It layers over the ability
+  // views rather than replacing one, and choosing another view clears it, so the
+  // list never opens narrowed without the button saying so. Page-only, like the
+  // view and the order: switching it never touches the collection or the deck.
+  collectionMissingOnly: false,
   // The opponent the next match will be against, chosen from the picker on the
   // Play screen. It belongs to the page rather than to a match: a match already
   // running keeps the opponent it was started against.
@@ -247,6 +262,11 @@ const collectionViewButtons = [...document.querySelectorAll("[data-collection-vi
 // The two buttons that order the set list by the catalog or by cost, gathered
 // once so their pressed state can be redrawn.
 const collectionOrderButtons = [...document.querySelectorAll("[data-collection-order]")];
+// The row holding the narrowing toggle, and the toggle itself. Both optional, so
+// a missing one degrades to a list that is not narrowed rather than a page that
+// will not render.
+const collectionNarrowingGroup = document.getElementById("collection-narrowing");
+const collectionMissingOnlyButton = document.getElementById("action-collection-missing-only");
 // The home screen's promise of what the next win will add, and the place its
 // card is drawn. Both optional, so a missing one degrades to no figure.
 const nextRewardHeading = document.getElementById("next-reward-heading");
@@ -1877,13 +1897,47 @@ export function toggleSaveRestore() {
  * tool does on their behalf. It only changes what the list shows: the collection and the deck are
  * untouched.
  * Refused, with the reason, when the view is not one of COLLECTION_VIEWS.
+ * Choosing a view clears the still-to-collect narrowing, so a list a player
+ * narrowed around one ability is never carried silently over to another — the
+ * view a caller asks for is the view it gets.
  * Returns the state afterwards, the same shape readState() gives.
  */
 export function setCollectionView(view) {
   if (!COLLECTION_VIEWS.includes(view)) {
     throw new Error(`there is no "${view}" view of the collection to show — pick one of: ${COLLECTION_VIEWS.join(", ")}`);
   }
+  if (view !== state.collectionView) state.collectionMissingOnly = false;
   state.collectionView = view;
+  renderCollection();
+  return readState();
+}
+
+/**
+ * Narrow the ability view on screen to only the cards the player has not
+ * collected yet — what a visitor does by pressing the "Only what I'm missing"
+ * button in the ability views, and what the set-collection-missing-only tool
+ * does on their behalf. It layers over the view rather than replacing it: with
+ * "sweeps" showing, `true` leaves only the sweeping cards still to earn, and
+ * `false` puts the whole sweeping list back. It only changes what the list
+ * shows: the collection and the deck are untouched.
+ *
+ * Refused, with the reason, when the value is not a boolean, and when the view
+ * on screen cannot be narrowed — "all" and "missing" already answer the
+ * question this asks, and the button is not on screen for them. Returns the
+ * state afterwards, the same shape readState() gives.
+ */
+export function setCollectionMissingOnly(value) {
+  if (typeof value !== "boolean") {
+    throw new Error(
+      `the collection's still-to-collect narrowing is a boolean — pass true to leave only the cards you have not collected, or false to list them all`
+    );
+  }
+  if (!isCollectionAbilityView()) {
+    throw new Error(
+      `the "${state.collectionView}" view cannot be narrowed to what you are missing — switch to one of the ability views first: ${COLLECTION_ABILITY_VIEWS.join(", ")}`
+    );
+  }
+  state.collectionMissingOnly = value;
   renderCollection();
   return readState();
 }
@@ -2435,7 +2489,11 @@ function deckFaceRemoveControl(card) {
 // What each view of the set list says it is showing: the words a screen reader
 // hears for the list, and the note it prints when the view has nothing to list.
 // Written once per view, so a view's label and its empty note always describe
-// the same cards.
+// the same cards. The ability views carry a second pair — `narrowedLabel` and
+// `narrowedEmpty` — for when the view is narrowed to only the cards still to
+// collect, so a narrowed list is named, and its empty note worded, for what it
+// actually shows rather than for the full ability view. The whole set and the plain
+// still-to-collect list cannot be narrowed, so they carry no second pair.
 export const COLLECTION_VIEW_TEXT = {
   all: {
     label: "Every card in the game, with the cards in your collection marked",
@@ -2448,36 +2506,69 @@ export const COLLECTION_VIEW_TEXT = {
   abilities: {
     label: "Cards in the game that act when played",
     empty: "No card in the game acts when played.",
+    narrowedLabel: "Cards not collected yet that act when played",
+    narrowedEmpty: "You have collected every card that acts when played.",
   },
   mends: {
     label: "Cards in the game that mend your hero when played",
     empty: "No card in the game mends your hero when played.",
+    narrowedLabel: "Cards not collected yet that mend your hero when played",
+    narrowedEmpty: "You have collected every card that mends your hero when played.",
   },
   strikes: {
     label: "Cards in the game that strike the opponent's front card when played",
     empty: "No card in the game strikes the opponent's front card when played.",
+    narrowedLabel: "Cards not collected yet that strike the opponent's front card when played",
+    narrowedEmpty: "You have collected every card that strikes the opponent's front card when played.",
   },
   draws: {
     label: "Cards in the game that draw you a card",
     empty: "No card in the game draws you a card.",
+    narrowedLabel: "Cards not collected yet that draw you a card",
+    narrowedEmpty: "You have collected every card that draws you a card.",
   },
   falls: {
     label: "Cards in the game that act when they fall",
     empty: "No card in the game acts when it falls.",
+    narrowedLabel: "Cards not collected yet that act when they fall",
+    narrowedEmpty: "You have collected every card that acts when it falls.",
   },
   grows: {
     label: "Cards in the game that grow while they stay",
     empty: "No card in the game grows while it stays.",
+    narrowedLabel: "Cards not collected yet that grow while they stay",
+    narrowedEmpty: "You have collected every card that grows while it stays.",
   },
   twice: {
     label: "Cards in the game that act twice, carrying more than one ability",
     empty: "No card in the game carries two abilities, so none acts twice.",
+    narrowedLabel: "Cards not collected yet that act twice, carrying more than one ability",
+    narrowedEmpty: "You have collected every card that carries two abilities.",
   },
   sweeps: {
     label: "Cards in the game that sweep every card on the opponent's table when played",
     empty: "No card in the game sweeps the opponent's table.",
+    narrowedLabel: "Cards not collected yet that sweep every card on the opponent's table when played",
+    narrowedEmpty: "You have collected every card that sweeps the opponent's table.",
   },
 };
+
+/** Whether the ability view showing now can be narrowed to what is still to collect. */
+function isCollectionAbilityView() {
+  return COLLECTION_ABILITY_VIEWS.includes(state.collectionView);
+}
+
+/**
+ * What the list on screen says it is showing: the view's own label and empty
+ * note, or the narrowed pair for the same view when the narrowing is on. One
+ * place decides, so the aria-label and the empty note can never describe
+ * different lists.
+ */
+function activeCollectionViewText() {
+  const view = COLLECTION_VIEW_TEXT[state.collectionView];
+  if (!state.collectionMissingOnly || !view.narrowedLabel) return view;
+  return { label: view.narrowedLabel, empty: view.narrowedEmpty };
+}
 
 /**
  * Whether a card belongs in the view the set list is showing: every card in
@@ -2493,6 +2584,10 @@ export const COLLECTION_VIEW_TEXT = {
  * every card on the opponent's table — dealing damage to each of them at once
  * — in "sweeps". A card that heals only as it falls is not in "mends": the
  * view is for the mending you play, not the mending a trade pays back.
+ *
+ * The chosen view is then narrowed when `collectionMissingOnly` is on: only the
+ * cards that view lists that the player does not hold yet, so a set can be
+ * completed around one ability instead of among the whole missing list.
  */
 /**
  * Whether a card acts twice: more than one of the three moments a face can act
@@ -2505,6 +2600,16 @@ function actsTwice(card) {
 }
 
 function isInCollectionView(card) {
+  if (!isInChosenCollectionView(card)) return false;
+  // The narrowing layers over whichever ability view is showing: the cards the
+  // view would list, minus the ones already held. "all" and "missing" are never
+  // narrowed — the first would be "missing" by another name and the second is
+  // already narrowed — so a page that cannot narrow leaves every card listed.
+  return !state.collectionMissingOnly || !card.owned;
+}
+
+/** The cards the chosen view lists on its own, before any narrowing. */
+function isInChosenCollectionView(card) {
   if (state.collectionView === "missing") return !card.owned;
   if (state.collectionView === "abilities") return card.ability !== null;
   if (state.collectionView === "mends") return card.ability === HEAL_ON_PLAY;
@@ -2539,14 +2644,17 @@ function collectionViewCards() {
  * while they stay, in the "twice" view, only those that carry more than one
  * ability and so act at more than one moment, or, in the "sweeps" view, only
  * those whose face deals damage to each card on the opponent's table at once,
- * so any ability can be chosen for on purpose. When a view has nothing to list, it says so rather than reading as
+ * so any ability can be chosen for on purpose — narrowed, when
+ * `collectionMissingOnly` is on, to only those of them the player has not
+ * collected yet, so completing the set around a theme shows just what is left
+ * to earn. When a view has nothing to list, it says so rather than reading as
  * an empty set.
  */
 function renderCollectionCards() {
   const list = document.getElementById("collection-list");
   if (!list) return;
 
-  const view = COLLECTION_VIEW_TEXT[state.collectionView];
+  const view = activeCollectionViewText();
   const catalogCards = listAllCards(state.cards);
   const catalogIndexById = new Map(catalogCards.map((card, index) => [card.id, index]));
   const shown = collectionViewCards();
@@ -2603,6 +2711,19 @@ function renderCollectionView() {
 function renderCollectionOrder() {
   for (const button of collectionOrderButtons) {
     button.setAttribute("aria-pressed", String(button.dataset.collectionOrder === state.collectionOrder));
+  }
+}
+
+/**
+ * Draw the narrowing control: the row is only on screen for a view it can
+ * narrow, and the button's `aria-pressed` says whether the list before the
+ * player is narrowed or whole — so a visitor reads the state of the narrowing
+ * without telling colours apart, and an agent can find the button to press.
+ */
+function renderCollectionMissingOnly() {
+  if (collectionNarrowingGroup) collectionNarrowingGroup.hidden = !isCollectionAbilityView();
+  if (collectionMissingOnlyButton) {
+    collectionMissingOnlyButton.setAttribute("aria-pressed", String(state.collectionMissingOnly));
   }
 }
 
@@ -2776,6 +2897,7 @@ function renderCollection() {
   renderCollectionCards();
   renderCollectionView();
   renderCollectionOrder();
+  renderCollectionMissingOnly();
   renderDeck();
 }
 
@@ -2941,7 +3063,12 @@ function confirmClearDeck() {
  * restore" button carries — the toggle-save-restore tool flips it), whether the
  * Collection screen's save-code panel is open (`saveCodeShown`, the same fact
  * the "Show save code"/"Hide save code" button carries — the get-save-code tool
- * returns the code itself),
+ * returns the code itself), which cards the Collection screen's set list is
+ * showing (`collectionView`) and whether that ability view is narrowed to only
+ * the cards the player has not collected yet (`collectionMissingOnly`, the same
+ * fact the "Only what I'm missing" button's pressed state carries — the
+ * set-collection-missing-only tool flips it, and choosing another view clears
+ * it), and in which order it reads them (`collectionOrder`),
  * whether the Collection screen is waiting on the player's answer about a pasted
  * save code before it replaces the game (`restorePending`) and what its restore
  * status line says (`restoreMessage` — why a code was refused, or what a
@@ -3007,6 +3134,11 @@ export function readState() {
     // "abilities", "mends", "strikes", "draws", "falls", "grows", "twice" or
     // "sweeps".
     collectionView: state.collectionView,
+    // Whether that ability view is narrowed to only the cards the player has not
+    // collected yet — the same fact the "Only what I'm missing" button's
+    // aria-pressed carries. Always false in "all" and "missing", which cannot be
+    // narrowed, and cleared by choosing another view.
+    collectionMissingOnly: state.collectionMissingOnly,
     // How that list is read: "catalog" for the game's own order, "cost" cheapest first.
     collectionOrder: state.collectionOrder,
     // Whether the Collection screen's save-and-restore section is open right
@@ -3301,7 +3433,9 @@ export function readMatch() {
  * card when played, only those that act when they fall, only
  * those that grow while they stay, only those that carry more than one
  * ability and so act twice, or only those that sweep the opponent's table —
- * and `order` how those cards are read, in
+ * `collectionMissingOnly` says whether that view is narrowed to only the cards
+ * still to collect, so a caller sees the same list a visitor does — and `order`
+ * how those cards are read, in
  * the game's own catalog order or cheapest first. `viewCollected` of `viewTotal` is how much of that view the player
  * already holds, the same "2 of 5 collected" line the ability views print.
  * `deckClears` is how many of the deck's cards sweep the opponent's table —
@@ -3321,6 +3455,9 @@ export function readCollection() {
     // "abilities", "mends", "strikes", "draws", "falls", "grows", "twice" or
     // "sweeps".
     view: state.collectionView,
+    // Whether that ability view is narrowed to only the cards the player has not
+    // collected yet, so the caller sees the same list a visitor does.
+    collectionMissingOnly: state.collectionMissingOnly,
     // How that list is read: "catalog" for the game's own order, "cost" cheapest first.
     order: state.collectionOrder,
     // How many of the cards the active view lists the player already holds, and
@@ -3455,6 +3592,7 @@ for (const button of collectionViewButtons) {
 for (const button of collectionOrderButtons) {
   button.addEventListener("click", () => setCollectionOrder(button.dataset.collectionOrder));
 }
+collectionMissingOnlyButton?.addEventListener("click", () => setCollectionMissingOnly(!state.collectionMissingOnly));
 saveRestoreToggle?.addEventListener("click", () => toggleSaveRestore());
 saveCodeButton?.addEventListener("click", () => setSaveCodeShown(!state.saveCodeShown));
 copySaveCodeButton?.addEventListener("click", () => copySaveCode());
