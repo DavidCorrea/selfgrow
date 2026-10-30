@@ -433,6 +433,32 @@
               By cost
             </button>
           </div>
+          <!-- The narrowing over the ability views: with one of "Acts when
+               played", "Mends your hero", "Strikes the board", "Draws a card",
+               "Acts when they fall", "Grows each turn", "Acts twice" or "Sweeps
+               the table" showing, this leaves only the cards of it the player
+               has not collected yet — so completing the set around a theme
+               shows just what is left to earn. A toggle layered over the view
+               rather than another view, so the ability stays chosen while the
+               narrowing comes on and off; it cannot narrow the whole set or the
+               still-to-collect list, so its row is hidden for those, and
+               choosing another view clears it. -->
+          <div
+            class="collection-view"
+            id="collection-narrowing"
+            role="group"
+            aria-label="Narrow the cards the set lists to those you have not collected"
+            hidden
+          >
+            <button
+              type="button"
+              class="btn btn-secondary"
+              id="action-collection-missing-only"
+              aria-pressed="false"
+            >
+              Only what I'm missing
+            </button>
+          </div>
           <ul
             class="collection-list"
             id="collection-list"

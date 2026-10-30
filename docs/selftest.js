@@ -6275,6 +6275,196 @@ export async function checks() {
       );
     }
 
+    // --- An ability view can be narrowed to what is still to collect ---------
+
+    // A player hunting the last card that sweeps, or the missing cards that
+    // mend, narrows the ability view they are looking at to only the cards they
+    // have not collected, instead of reading the whole missing list card by
+    // card. The narrowing layers over the view rather than replacing it: turning
+    // it off gives the full ability list back, and choosing another view clears
+    // it, so a narrowed list is never carried silently to a view nobody
+    // narrowed.
+    const setMissingOnlyTool = toolNamed("set-collection-missing-only");
+    const narrowingRow = document.getElementById("collection-narrowing");
+    const narrowingButton = document.getElementById("action-collection-missing-only");
+    if (!setMissingOnlyTool) {
+      fail(
+        'no "set-collection-missing-only" tool is declared, so an agent cannot narrow an ability view to the cards still to collect'
+      );
+    } else if (!narrowingRow || !narrowingButton) {
+      fail(
+        'the Collection screen has no "Only what I\'m missing" control, so a visitor cannot narrow an ability view to the cards still to collect'
+      );
+    } else {
+      const setRowIds = () => [...setList.querySelectorAll("[data-card-id]")].map((row) => row.dataset.cardId);
+      const heldNow = new Set(game.readCollection().ownedCards.map((card) => card.id));
+      const uncollectedNow = (ids) => ids.filter((id) => !heldNow.has(id));
+
+      // The whole set cannot be narrowed — "still to collect" is its own view —
+      // so the control is not on screen for it and a caller asking from there is
+      // refused with a reason rather than left guessing.
+      await setCollectionViewTool.execute({ view: "all" });
+      const refusedNarrowing = await setMissingOnlyTool.execute({ value: true });
+      if (!refusedNarrowing.error) {
+        fail('narrowing the set to what is still to collect was accepted in the "all" view, though the whole set cannot be narrowed');
+      }
+      if (game.readState().collectionMissingOnly !== false || game.readCollection().collectionMissingOnly !== false) {
+        fail('a refused narrowing left the collection reporting itself as narrowed');
+      }
+      if (!narrowingRow.hidden) {
+        fail('the "Only what I\'m missing" control is on screen in the "all" view, where the whole set cannot be narrowed');
+      }
+
+      // In the "abilities" view the narrowing leaves only the ability cards the
+      // player does not hold — the same cards the catalog says carry a
+      // when-played ability, minus the ones read off the collection.
+      await setCollectionViewTool.execute({ view: "abilities" });
+      if (narrowingRow.hidden) {
+        fail('the "Only what I\'m missing" control is hidden in the "abilities" view, where an ability view can be narrowed');
+      }
+      if (narrowingButton.getAttribute("aria-pressed") !== "false") {
+        fail(
+          `the "abilities" view opens with its narrowing control reading aria-pressed="${narrowingButton.getAttribute("aria-pressed")}" instead of "false"`
+        );
+      }
+      const fullAbilityLabel = setList.getAttribute("aria-label");
+      const narrowedAbility = await setMissingOnlyTool.execute({ value: true });
+      if (narrowedAbility.collectionMissingOnly !== true) {
+        fail(
+          `narrowing the "abilities" view reports collectionMissingOnly as ${narrowedAbility.collectionMissingOnly} instead of true`
+        );
+      }
+      if (game.readCollection().collectionMissingOnly !== true) {
+        fail(
+          `list-collection reports collectionMissingOnly as ${game.readCollection().collectionMissingOnly} while the "abilities" view is narrowed`
+        );
+      }
+      if (narrowingButton.getAttribute("aria-pressed") !== "true") {
+        fail('the narrowing control does not read as pressed while the "abilities" view is narrowed');
+      }
+      const expectedNarrowed = uncollectedNow(abilityIds);
+      if (!expectedNarrowed.length) {
+        fail(
+          `the player already holds every ability card (${abilityIds.join(", ")}), so narrowing the "abilities" view cannot be shown to leave anything`
+        );
+      }
+      const narrowedRows = setRowIds();
+      if (narrowedRows.join(", ") !== expectedNarrowed.join(", ")) {
+        const stillHeld = narrowedRows.filter((id) => !expectedNarrowed.includes(id));
+        const hidden = expectedNarrowed.filter((id) => !narrowedRows.includes(id));
+        fail(
+          `the narrowed "abilities" view lists ${narrowedRows.length} card(s) where ${expectedNarrowed.length} of the game's ability cards are still to collect` +
+            `${stillHeld.length ? `; it shows ${stillHeld.join(", ")}, which the player already holds or which carry no ability` : ""}` +
+            `${hidden.length ? `; it hides ${hidden.join(", ")}, which are still to collect` : ""}`
+        );
+      }
+      if (setList.querySelectorAll(".owned-card").length) {
+        fail(
+          `the narrowed "abilities" view marks ${setList.querySelectorAll(".owned-card").length} card(s) as owned, though it should list only cards still to collect`
+        );
+      }
+      if (setList.getAttribute("aria-label") === fullAbilityLabel) {
+        fail('the narrowed "abilities" view names itself the same way as the full one, so a screen reader cannot tell which list is showing');
+      }
+      // The "N of M collected" line reads the narrowed list, so a narrowed view
+      // never claims cards it is not showing.
+      const narrowedListed = game.readCollection();
+      if (narrowedListed.viewTotal !== expectedNarrowed.length || narrowedListed.viewCollected !== 0) {
+        fail(
+          `the narrowed "abilities" view reports ${narrowedListed.viewCollected} of ${narrowedListed.viewTotal} collected where it lists ${expectedNarrowed.length} card(s) the player holds none of`
+        );
+      }
+
+      // Turning the narrowing off gives the full ability list back, and leaves
+      // the view the player chose exactly where it was.
+      const unnarrowed = await setMissingOnlyTool.execute({ value: false });
+      if (unnarrowed.collectionMissingOnly !== false || unnarrowed.collectionView !== "abilities") {
+        fail(
+          `turning the narrowing off reports the collection as "${unnarrowed.collectionView}" with collectionMissingOnly ${unnarrowed.collectionMissingOnly}, where "abilities" unnarrowed is expected`
+        );
+      }
+      const restoredRows = setRowIds();
+      if (restoredRows.join(", ") !== abilityIds.join(", ")) {
+        fail(
+          `turning the narrowing off lists ${restoredRows.length} card(s) where the full "abilities" view lists ${abilityIds.length}`
+        );
+      }
+      if (setList.getAttribute("aria-label") !== fullAbilityLabel) {
+        fail('the "abilities" view does not name itself the way it did before the narrowing was turned on');
+      }
+
+      // Choosing another view clears the narrowing, so the list never opens
+      // narrowed on a view nobody narrowed.
+      await setMissingOnlyTool.execute({ value: true });
+      const afterViewChange = await setCollectionViewTool.execute({ view: "sweeps" });
+      if (afterViewChange.collectionMissingOnly !== false) {
+        fail(
+          `switching to the "sweeps" view left collectionMissingOnly ${afterViewChange.collectionMissingOnly} instead of clearing it`
+        );
+      }
+      const sweepRowsAfterChange = setRowIds();
+      if (sweepRowsAfterChange.join(", ") !== sweepIds.join(", ")) {
+        fail(
+          `the "sweeps" view switched to from a narrowed "abilities" view lists ${sweepRowsAfterChange.length} card(s) where the game's ${sweepIds.length} sweeping card(s) are expected`
+        );
+      }
+
+      // When every card of the ability is already collected the narrowed list
+      // says there are none left to earn, rather than reading as a blank list.
+      const abilitiesText = game.COLLECTION_VIEW_TEXT?.abilities;
+      if (!abilitiesText || typeof abilitiesText.narrowedEmpty !== "string" || !/collect/i.test(abilitiesText.narrowedEmpty)) {
+        fail(
+          `the narrowed "abilities" view has no note saying every ability card is collected (it reads "${abilitiesText?.narrowedEmpty}")`
+        );
+      } else {
+        const collectionBeforeEveryCard = collection.saveCode();
+        const everyCardCode = collection.saveCode(
+          stubStorage({
+            [collection.STORAGE_KEY]: JSON.stringify({
+              version: 1,
+              cards: cardCatalog.CARDS.map((card) => ({ id: card.id, copies: 1 })),
+              deck: game.readState().deck.map((card) => card.id),
+            }),
+          })
+        );
+        try {
+          game.restoreSaveCode(everyCardCode);
+          game.setCollectionView("abilities");
+          game.setCollectionMissingOnly(true);
+          const leftToEarn = setRowIds();
+          if (leftToEarn.length) {
+            fail(
+              `narrowing the "abilities" view with every card in the game collected still lists ${leftToEarn.length} card(s) (${leftToEarn.join(", ")})`
+            );
+          }
+          const emptyNote = setList.querySelector(".collection-empty");
+          if (!emptyNote || textOf(emptyNote) !== abilitiesText.narrowedEmpty) {
+            fail(
+              `the narrowed "abilities" view with nothing left to earn reads "${textOf(emptyNote)}" where "${abilitiesText.narrowedEmpty}" is expected`
+            );
+          }
+        } catch (error) {
+          fail(`collecting every card to check what a narrowed view says when nothing is left was refused: ${error.message}`);
+        } finally {
+          try {
+            game.restoreSaveCode(collectionBeforeEveryCard);
+          } catch (error) {
+            fail(`restoring the collection after the narrowed empty-note check was refused: ${error.message}`);
+          }
+        }
+      }
+
+      // The narrowing is a page choice, so it leaves the collection and the deck
+      // exactly as they were, and both readers agree with the buttons.
+      const afterNarrowingState = game.readState();
+      if (JSON.stringify(afterNarrowingState.deck) !== JSON.stringify(beforeState.deck)) {
+        fail("narrowing the set to what is still to collect changed the deck");
+      }
+      game.setCollectionView("all");
+      if (game.readState().collectionMissingOnly !== false || game.readCollection().collectionMissingOnly !== false) {
+        fail("the collection was left narrowed while showing the whole set, so every check after this one would start narrowed");
+      }
+    }
     // A view the page does not have is refused with a reason, and changes nothing.
     const refusedView = await setCollectionViewTool.execute({ view: "everything" });
     if (!refusedView.error) {
