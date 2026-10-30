@@ -1443,6 +1443,10 @@ function opponentOption(opponent) {
  * opponent is chosen with the deck in sight instead of on the promise of a
  * sentence.
  *
+ * Under them, the counts the player's own deck panel prints: what that deck is
+ * built around, so the one sentence about how the opponent plays is backed by
+ * numbers a player can check before committing a match.
+ *
  * Folded rather than always drawn because ten faces under every opponent would
  * push the picker, and Start match with it, off the first screen — and the line
  * above still says the kind of deck each one brings for a player who never
@@ -1471,8 +1475,39 @@ function opponentDeckFold(opponent) {
     )
   );
 
-  fold.append(toggle, list);
+  fold.append(toggle, list, opponentDeckTotals(opponent.deck));
   return fold;
+}
+
+/**
+ * What an opponent's deck is built around, counted under its cards in the very
+ * words the player's own deck panel uses: one labelled row per ability the ten
+ * cards carry, and no row at all for one they do not — so a player reading a
+ * deck sees how much of it sweeps or mends instead of inferring it from ten
+ * faces, and the counts add up to the cards above them.
+ */
+function opponentDeckTotals(cardIds) {
+  const abilities = deckAbilities(cardIds);
+  const rows = DECK_ABILITY_LABELS.filter(({ key }) => abilities[key]).map(({ key, label }) => {
+    const row = document.createElement("div");
+    row.className = "deck-total-row";
+
+    const term = document.createElement("dt");
+    term.className = "deck-total-label";
+    term.textContent = label;
+
+    const value = document.createElement("dd");
+    value.className = "deck-total-value";
+    value.textContent = String(abilities[key]);
+
+    row.append(term, value);
+    return row;
+  });
+
+  const totals = document.createElement("dl");
+  totals.className = "deck-totals opponent-deck-totals";
+  totals.replaceChildren(...rows);
+  return totals;
 }
 
 /**
@@ -2792,17 +2827,33 @@ function deckCostCurve() {
     .map(([cost, count]) => ({ cost, count }));
 }
 
+/** The abilities a deck's cards can carry, in the order the deck panel prints
+ * them: the key each total is held under, and the words a player reads for it.
+ * The player's deck panel and every opponent's deck fold read this one list, so
+ * one ability is never counted under two names. */
+const DECK_ABILITY_LABELS = [
+  { key: "whenPlayed", label: "Acts when played" },
+  { key: "mends", label: "Mends your hero" },
+  { key: "strikes", label: "Strikes the board" },
+  { key: "whenFalls", label: "Acts when they fall" },
+  { key: "grows", label: "Grows each turn" },
+  { key: "twice", label: "Acts twice" },
+  { key: "draws", label: "Draws a card" },
+  { key: "clears", label: "Sweeps the table" },
+];
+
 /**
  * The deck's strength as two sums — the attack it brings and the health it can
  * absorb — beside how many of its cards act when played, how many act when they
  * fall, how many mend your hero, how many strike the opponent's front card as
  * they land, how many grow each turn, how many act twice, how many draw a card
  * and how many sweep the opponent's table, over the same cards the deck panel
- * draws, so the totals and the deck can never disagree.
+ * draws, so the totals and the deck can never disagree. Totals whatever cards it
+ * is given, so an opponent's fixed deck is counted by the very same sums the
+ * player's own deck panel prints.
  * Null for an empty deck, so nothing is shown where there is nothing to total.
  */
-function deckTotals() {
-  const cards = listDeckCards(state.deck);
+function deckTotals(cards = listDeckCards(state.deck)) {
   if (!cards.length) return null;
   return cards.reduce(
     (totals, card) => ({
@@ -2828,6 +2879,20 @@ function deckTotals() {
       clears: totals.clears + (card.ability === CLEAR_ON_PLAY ? 1 : 0),
     }),
     { attack: 0, health: 0, whenPlayed: 0, whenFalls: 0, mends: 0, strikes: 0, grows: 0, twice: 0, draws: 0, clears: 0 }
+  );
+}
+
+/**
+ * What a fixed deck is built around: how many of its cards carry each ability,
+ * keyed exactly as the player's own deck totals are. An ability the deck does not
+ * carry is left out rather than counted zero, so a caller reads only what the
+ * deck actually does and the counts add up to the cards they describe.
+ */
+function deckAbilities(cardIds) {
+  const totals = deckTotals(listDeckCards(cardIds));
+  if (!totals) return {};
+  return Object.fromEntries(
+    DECK_ABILITY_LABELS.map(({ key }) => [key, totals[key]]).filter(([, count]) => count > 0)
   );
 }
 
@@ -3250,6 +3315,13 @@ export function readState() {
         // once it is already earned — the player owns it or has beaten them.
         signatureNote: signatureMarkText(isSignatureEarned({ id, signature })),
         deck: [...deck],
+        // What that deck is built around, counted over the same cards `deck`
+        // lists and worded like the player's own deck panel: one key per ability
+        // it carries (`whenPlayed`, `mends`, `strikes`, `whenFalls`, `grows`,
+        // `twice`, `draws`, `clears`), valued with how many of its cards carry
+        // it. An ability the deck does not carry is absent rather than zero, so
+        // the counts always add up to the cards above them.
+        abilities: deckAbilities(deck),
         deckShown: Boolean(fold && fold.open && !fold.closest("[hidden]")),
         // How the player has fared against this opponent, as the picker's own
         // record line reads it: the matches played, the wins, and whether they

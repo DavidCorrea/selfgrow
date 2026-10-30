@@ -7064,6 +7064,53 @@ export async function checks() {
           `"${beforeMatchState.selectedOpponentId}" is`
       );
     }
+    // The abilities a deck can be built around, keyed the way the state counts
+    // them, each with the id of the span the player's own deck panel prints its
+    // count in — so an opponent's counts can only be worded the way the player's
+    // deck words them, rather than in a second vocabulary invented here.
+    const ABILITY_PANEL_VALUE_IDS = {
+      whenPlayed: "deck-total-when-played",
+      mends: "deck-total-mends",
+      strikes: "deck-total-strikes",
+      whenFalls: "deck-total-when-falls",
+      grows: "deck-total-grows",
+      twice: "deck-total-twice",
+      draws: "deck-total-draws",
+      clears: "deck-total-clears",
+    };
+
+    /** The label the player's deck panel prints beside one ability's count. */
+    const panelAbilityLabel = (key) => {
+      const value = document.getElementById(ABILITY_PANEL_VALUE_IDS[key]);
+      return textOf(value?.closest(".deck-total-row")?.querySelector(".deck-total-label"));
+    };
+
+    /**
+     * How many of a deck's cards carry each ability, counted from the same
+     * catalog the page totals by — an ability the deck does not carry is left
+     * out, matching what the fold and the state are asked to show.
+     */
+    const deckAbilityCounts = (cardIds) => {
+      const actsTwice = (card) =>
+        [card.ability, card.growthAbility, card.fallAbility].filter((ability) => ability !== null).length >= 2;
+      const cards = collection.listDeckCards(cardIds);
+      const counts = {
+        whenPlayed: cards.filter((card) => card.ability !== null).length,
+        mends: cards.filter((card) => card.ability === cardCatalog.HEAL_ON_PLAY).length,
+        strikes: cards.filter((card) => card.ability === cardCatalog.STRIKE_ON_PLAY).length,
+        whenFalls: cards.filter((card) => card.fallAbility !== null).length,
+        grows: cards.filter((card) => card.growthAbility !== null).length,
+        twice: cards.filter(actsTwice).length,
+        draws: cards.filter(cardCatalog.drawsACard).length,
+        clears: cards.filter((card) => card.ability === cardCatalog.CLEAR_ON_PLAY).length,
+      };
+      return Object.fromEntries(Object.entries(counts).filter(([, count]) => count > 0));
+    };
+
+    /** Counts as sorted pairs, so two objects telling the same story compare equal. */
+    const asCountPairs = (counts) =>
+      Object.entries(counts ?? {}).sort(([left], [right]) => left.localeCompare(right));
+
     for (const radio of pickerRadios) {
       const option = radio.closest("label") ?? radio.parentElement;
       const words = textOf(option);
@@ -7166,6 +7213,72 @@ export async function checks() {
         }
       }
 
+      // Under the faces, the counts the player's own deck panel prints: what
+      // that deck is built around, so the one sentence about how it plays is
+      // backed by numbers a player can check before committing a match — a row
+      // for each ability the ten cards carry, in the panel's own words, and no
+      // row for one they do not.
+      const totalsBlock = fold.querySelector(".opponent-deck-totals");
+      const expectedCounts = deckAbilityCounts(opponent.deck);
+      if (!totalsBlock) {
+        fail(
+          `"${opponent.name}"'s deck fold counts none of the abilities its cards carry, so a player choosing ` +
+            "who to face has to infer from ten faces how much of that deck sweeps or mends"
+        );
+      } else {
+        const shownCounts = {};
+        for (const row of totalsBlock.querySelectorAll(".deck-total-row")) {
+          const label = textOf(row.querySelector(".deck-total-label"));
+          const value = textOf(row.querySelector(".deck-total-value"));
+          const key = Object.keys(ABILITY_PANEL_VALUE_IDS).find((entry) => panelAbilityLabel(entry) === label);
+          if (!key) {
+            fail(
+              `"${opponent.name}"'s deck counts an ability as ${JSON.stringify(label)}, which is not one of ` +
+                "the words the player's own deck panel uses for an ability"
+            );
+            continue;
+          }
+          if (key in shownCounts) {
+            fail(`"${opponent.name}"'s deck counts ${JSON.stringify(label)} on more than one row`);
+            continue;
+          }
+          shownCounts[key] = Number(value);
+          if (String(Number(value)) !== value || Number(value) < 1) {
+            fail(
+              `"${opponent.name}"'s deck counts ${JSON.stringify(label)} as ${JSON.stringify(value)}, which is ` +
+                "not a positive whole number of cards"
+            );
+          }
+        }
+
+        for (const [key, count] of Object.entries(expectedCounts)) {
+          if (shownCounts[key] !== count) {
+            fail(
+              `"${opponent.name}"'s deck shows ${JSON.stringify(shownCounts[key] ?? null)} for ` +
+                `${JSON.stringify(panelAbilityLabel(key))} while ${count} of its cards carry that ability`
+            );
+          }
+        }
+        for (const key of Object.keys(shownCounts)) {
+          if (!(key in expectedCounts)) {
+            fail(
+              `"${opponent.name}"'s deck claims ${JSON.stringify(shownCounts[key])} for ` +
+                `${JSON.stringify(panelAbilityLabel(key))} while none of its cards carry that ability`
+            );
+          }
+        }
+
+        // The counts an agent reads are the counts on screen: one story about
+        // what a deck is built around, whichever surface it is read from.
+        const stateAbilities = game.readState().opponents.find((entry) => entry.id === opponent.id)?.abilities;
+        if (JSON.stringify(asCountPairs(stateAbilities)) !== JSON.stringify(asCountPairs(shownCounts))) {
+          fail(
+            `the state says "${opponent.name}"'s deck carries ${JSON.stringify(stateAbilities)} while the picker ` +
+              `counts ${JSON.stringify(shownCounts)} under its cards`
+          );
+        }
+      }
+
       // The deck is the one the match deals, not a second list kept beside it:
       // the engine, given this opponent, deals exactly the cards the option shows.
       if (matchEngine) {
@@ -7230,6 +7343,18 @@ export async function checks() {
         fail(
           `the toggle-opponent-deck tool reports ${JSON.stringify(opened?.deckShown)} open while the state says ` +
             `${JSON.stringify(shownAfter)} is — opening one opponent's deck should show that one and only that one`
+        );
+      }
+      // Opening a deck is how a caller asks what it is built around, so the tool
+      // answers with the same counts the picker prints under those cards.
+      const openedCounts = opened?.abilities;
+      const stateCounts = game
+        .readState()
+        .opponents.find((entry) => entry.id === foldedOpponent.id)?.abilities;
+      if (JSON.stringify(asCountPairs(openedCounts)) !== JSON.stringify(asCountPairs(stateCounts))) {
+        fail(
+          `toggle-opponent-deck reports ${JSON.stringify(openedCounts)} as what "${foldedOpponent.name}"'s deck ` +
+            `is built around while the state says ${JSON.stringify(stateCounts)}`
         );
       }
       const closed = await deckTool.execute({ opponentId: foldedOpponent.id });

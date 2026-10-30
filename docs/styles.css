@@ -1343,6 +1343,21 @@ body {
   font-size: 0.7rem;
 }
 
+/* What an opponent's deck is built around, under the hand it brings: the same
+   labelled counts the player's own deck panel prints, in the panel's own words,
+   with a row only for an ability that deck actually carries — so how much of it
+   sweeps or mends is read as numbers rather than inferred from ten faces. */
+.opponent-deck-totals {
+  margin-top: 0.3rem;
+  padding-top: 0.3rem;
+  border-top: 1px solid var(--edge-soft);
+}
+
+.opponent-deck-totals .deck-total-row {
+  font-size: 0.72rem;
+  line-height: 1.25;
+}
+
 /* The one card in an opponent's deck a first win earns: the fact is written on
    the card itself, so a player choosing who to face sees what is on offer and
    which card stands for how that character plays — and a screen reader or an
