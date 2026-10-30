@@ -156,7 +156,7 @@ export function tools() {
       name: "remove-card-to-deck",
       title: "Remove a card from your deck",
       description:
-        "Removes one copy of a card from your deck and returns it to the collection, exactly as pressing its \"Remove … from deck\" button on the Collection screen does — one call drops one copy, so a card held twice needs two calls to leave the deck entirely. Refused, with an `error` field naming the reason, when no copy of the card is in the deck; nothing is changed when it is. Returns the state afterwards so you can see the deck it changed.",
+        "Removes one copy of a card from your deck and returns it to the collection, exactly as pressing its \"Remove … from deck\" button on the Collection screen does — either the button beside the card in the set or the one under the card's own face in the deck panel, where a deck is shaped — one call drops one copy, so a card held twice needs two calls to leave the deck entirely. Refused, with an `error` field naming the reason, when no copy of the card is in the deck; nothing is changed when it is. Returns the state afterwards so you can see the deck it changed.",
       inputSchema: {
         type: "object",
         properties: {

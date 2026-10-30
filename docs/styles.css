@@ -633,6 +633,26 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
+/* The control that takes one copy out of the deck, on the face it removes:
+   full width under the picture and numbers so it is one easy target a thumb
+   reaches, and sized down so a face at two columns on a phone still fits. */
+.btn.deck-card-remove {
+  width: 100%;
+  min-width: 0;
+  padding: 0.35rem 0.45rem;
+  font-size: 0.75rem;
+  line-height: 1.2;
+  text-align: center;
+}
+
+/* The list takes focus when a card's last copy leaves it, so it has to show
+   where focus went rather than handing a keyboard user an invisible position. */
+.deck-list:focus {
+  outline: 2px solid var(--foil);
+  outline-offset: 3px;
+  border-radius: var(--radius-control);
+}
+
 .deck-empty {
   color: var(--ink-muted);
   font-size: 0.9rem;
@@ -684,6 +704,13 @@ body {
   gap: 0.35rem;
   padding-top: 0.15rem;
   border-top: 1px solid var(--edge);
+}
+
+/* Without this the block keeps its `display: grid` and refuses to fold, so an
+   empty deck would still show the totals' labels and the curve's heading with
+   nothing under them. */
+.deck-curve[hidden] {
+  display: none;
 }
 
 /* The deck's strength beside its curve: total attack and total health as a

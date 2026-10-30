@@ -257,7 +257,10 @@
             A match needs at least <span data-field="minimumDeckSize">5</span> cards, and holds at most
             <span data-field="deckLimit">10</span>.
           </p>
-          <ul class="deck-list" id="deck-list" aria-label="Cards in your deck"></ul>
+          <!-- Focus lands back on the list when a card's last copy leaves it, so
+               a keyboard user emptying a deck is never dropped on the page
+               body. `tabindex="-1"` keeps the list itself out of the tab order. -->
+          <ul class="deck-list" id="deck-list" aria-label="Cards in your deck" tabindex="-1"></ul>
 
           <!-- One control that empties the whole deck, so building a new one
                does not mean taking the old one apart a card at a time. The
